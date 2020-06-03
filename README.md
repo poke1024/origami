@@ -15,6 +15,14 @@ conda install scikit-geometry -c conda-forge
 
 If you want to run `origami.batch.detect.lines`, you also need to install Tesseract and `tesseract-ocr`.
 
+On Windows, you probably will need to run these:
+
+```
+conda install shapely  -c conda-forge
+conda install -c anaconda cairo
+conda install -c conda-forge tesserocr
+```
+
 ## General Usage
 
 ```
