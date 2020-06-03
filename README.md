@@ -17,8 +17,10 @@ If you want to run `origami.batch.detect.lines`, you also need to install Tesser
 
 ## General Usage
 
+```
 cd /path/to/origami
 python -m origami.batch.detect.binarize
+```
 
 All command line tools will give you help information on their arguments when called as above.
 
@@ -46,7 +48,7 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 <dl>
   <dt>origami.batch.detect.segment</dt>
   <dd>needs: images</dd>
-  <dd>⁂ Perform segmentation (e.g. separation into text and background) on all images using a neural network model. By default, this uses <a href=„[https://github.com/poke1024/bbz-segment]“>origami’s own model.</a>. The predicted classes and labels are embedded in the downloaded model.</dd>
+  <dd>⁂ Perform segmentation (e.g. separation into text and background) on all images using a neural network model. By default, this uses <a href="https://github.com/poke1024/bbz-segment">origami’s own model.</a>. The predicted classes and labels are embedded in the downloaded model.</dd>
 </dl>
 
 <dl>
@@ -78,7 +80,7 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 <dl>
   <dt>origami.batch.export.pagexml  (debugging only)</dt>
   <dd>needs: images, lines</dd>
-  <dd>⁂ Export polygonns of lines detected during lines batch as PageXML.</dd>
+  <dd>⁂ Export polygons of lines detected during lines batch as PageXML.</dd>
 </dl>
 
 
