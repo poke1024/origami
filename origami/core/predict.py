@@ -177,25 +177,27 @@ class NetPredictor(Predictor):
 		classes = meta["classes"]
 
 		import segmentation_models
+
+		# the following commented code fails to work.
+		# see https://github.com/qubvel/segmentation_models/issues/153
+		# and https://stackoverflow.com/questions/54835331/how-do-i-load-a-keras-saved-model-with-custom-optimizer
+		'''
+		model = getattr(segmentation_models, meta["model"])(
+			meta["backbone"],
+			classes=len(classes),
+			activation="softmax")
+		logging.info("loading model at %s" % str(network_path / "model.h5"))
+		model.load_weights(str(network_path / "model.h5"))
+		'''
+
+		# note that we need keras.models.load_model, as
+		# tensorflow.keras.models.load_model won't work,
+		# see https://github.com/keras-team/keras-contrib/issues/488
+		# and https://github.com/tensorflow/tensorflow/issues/25200
+		# so we need a separate keras installation here.
 		from keras.models import load_model
 
-		if False:
-			model = getattr(segmentation_models, meta["model"])(
-				meta["backbone"],
-				classes=len(classes),
-				activation="softmax")
-			logging.info("loading model at %s" % str(network_path / "model.h5"))
-			model.load_weights(str(network_path / "model.h5"))
-		else:
-			# see https://github.com/qubvel/segmentation_models/issues/153
-
-			# see https://stackoverflow.com/questions/54835331/how-do-i-load-a-keras-saved-model-with-custom-optimizer
-
-			# also note that we need  keras.models.load_model, as
-			# tensorflow.keras.models.load_model won't work,
-			# see https://github.com/keras-team/keras-contrib/issues/488
-
-			model = load_model(str(network_path / "model.h5"), compile=False)
+		model = load_model(str(network_path / "model.h5"), compile=False)
 			
 		self._preprocess = segmentation_models.get_preprocessing(
 			meta["backbone"])
