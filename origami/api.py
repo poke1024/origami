@@ -76,33 +76,46 @@ class Segmentation:
 
 
 class SegmentationPredictor:
-	def __init__(self, models_path):
+	def __init__(self, models_path, target="quality"):
 		import origami.core.predict as predict
 
-		loaded = predict.load([
-			(predict.NetPredictor, "v3/sep/1"),
-			(predict.NetPredictor, "v3/sep/2"),
-			(predict.NetPredictor, "v3/sep/4"),
-			(predict.NetPredictor, "v3/blkx/1"),
-			(predict.NetPredictor, "v3/blkx/2"),
-			(predict.NetPredictor, "v3/blkx/3"),
-			(predict.NetPredictor, "v3/blkx/4"),
-			(predict.NetPredictor, "v3/blkx/5"),
+		if target == "speed":
+			loaded = predict.load([
+				(predict.NetPredictor, "v3/sep/1"),
+				(predict.NetPredictor, "v3/blkx/2"),
 			], models_path=models_path)
 
-		self._predictors = [
-			predict.VotingPredictor(
+			self._predictors = [
 				loaded["v3/sep/1"],
-				loaded["v3/sep/2"],
-				loaded["v3/sep/4"],
-				name="separators"),
-			predict.VotingPredictor(
-				loaded["v3/blkx/1"],
-				loaded["v3/blkx/2"],
-				loaded["v3/blkx/3"],
-				loaded["v3/blkx/4"],
-				loaded["v3/blkx/5"],
-				name="regions")]
+				loaded["v3/blkx/2"]
+			]
+		elif target == "quality":
+			loaded = predict.load([
+				(predict.NetPredictor, "v3/sep/1"),
+				(predict.NetPredictor, "v3/sep/2"),
+				(predict.NetPredictor, "v3/sep/4"),
+				(predict.NetPredictor, "v3/blkx/1"),
+				(predict.NetPredictor, "v3/blkx/2"),
+				(predict.NetPredictor, "v3/blkx/3"),
+				(predict.NetPredictor, "v3/blkx/4"),
+				(predict.NetPredictor, "v3/blkx/5"),
+				], models_path=models_path)
+
+			self._predictors = [
+				predict.VotingPredictor(
+					loaded["v3/sep/1"],
+					loaded["v3/sep/2"],
+					loaded["v3/sep/4"],
+					name="separators"),
+				predict.VotingPredictor(
+					loaded["v3/blkx/1"],
+					loaded["v3/blkx/2"],
+					loaded["v3/blkx/3"],
+					loaded["v3/blkx/4"],
+					loaded["v3/blkx/5"],
+					name="regions")]
+		else:
+			raise ValueError(target)
 
 	def __call__(self, path):
 		page = Page(path)
