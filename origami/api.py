@@ -106,5 +106,5 @@ class SegmentationPredictor:
 
 	def __call__(self, path):
 		page = Page(path)
-		return Segmentation([p(page) for k, p in self._predictors])
+		return Segmentation([p(page) for p in self._predictors])
 
