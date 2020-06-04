@@ -12,6 +12,7 @@ from origami.batch.core.processor import Processor
 
 class BinarizationProcessor(Processor):
 	def __init__(self, options):
+		super().__init__(options)
 		self._options = options
 
 	def should_process(self, p: Path) -> bool:
@@ -21,7 +22,7 @@ class BinarizationProcessor(Processor):
 	def process(self, p: Path):
 		im = PIL.Image.open(p)
 
-		pixels = np.array(im)
+		pixels = np.array(im.convert("L"))
 		thresh_sauvola = skimage.filters.threshold_sauvola(
 			pixels, window_size=self._options["window_size"])
 		binarized = pixels > thresh_sauvola
@@ -49,6 +50,12 @@ class BinarizationProcessor(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'--nolock',
+	is_flag=True,
+	default=False,
+	help="Do not lock files while processing. Breaks concurrent batches, "
+	"but is necessary on some network file systems.")
 def binarize(data_path, **kwargs):
 	""" Perform binarization on all document images in DATA_PATH. """
 	processor = BinarizationProcessor(kwargs)

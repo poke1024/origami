@@ -14,6 +14,7 @@ from origami.core.block import Line
 
 class ExportPageXMLProcessor(BlockProcessor):
 	def __init__(self, options):
+		super().__init__(options)
 		self._options = options
 
 	def should_process(self, p: Path) -> bool:
@@ -59,6 +60,12 @@ class ExportPageXMLProcessor(BlockProcessor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'--nolock',
+	is_flag=True,
+	default=False,
+	help="Do not lock files while processing. Breaks concurrent batches, "
+	"but is necessary on some network file systems.")
 def export_page_xml(data_path, **kwargs):
 	""" Export PageXML for all document images in DATA_PATH. Needs
 	information from line_detect batch. """

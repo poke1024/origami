@@ -21,6 +21,7 @@ from origami.core.predict import PredictorType
 
 class ContoursProcessor(Processor):
 	def __init__(self, options):
+		super().__init__(options)
 		self._options = options
 
 	def _process_region_contours(self, zf, annotations, prediction, binarized):
@@ -153,6 +154,12 @@ class ContoursProcessor(Processor):
 	type=int,
 	default=5,
 	help="Opening amount to remove ink overflow between columns.")
+@click.option(
+	'--nolock',
+	is_flag=True,
+	default=False,
+	help="Do not lock files while processing. Breaks concurrent batches, "
+	"but is necessary on some network file systems.")
 def extract_contours(data_path, **kwargs):
 	""" Extract contours from all document images in DATA_PATH.
 	Information from segmentation and binarize batch needs to be present. """

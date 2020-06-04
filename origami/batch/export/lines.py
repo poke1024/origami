@@ -12,6 +12,7 @@ from origami.pagexml.transcriptions import TranscriptionReader
 
 class LineExtractionProcessor(BlockProcessor):
 	def __init__(self, options):
+		super().__init__(options)
 		self._options = options
 
 	def should_process(self, p: Path) -> bool:
@@ -91,6 +92,12 @@ class LineExtractionProcessor(BlockProcessor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'--nolock',
+	is_flag=True,
+	default=False,
+	help="Do not lock files while processing. Breaks concurrent batches, "
+	"but is necessary on some network file systems.")
 def export_lines(data_path, **kwargs):
 	""" Export line images from all document images in DATA_PATH. Needs
 	information from line_detect batch. """

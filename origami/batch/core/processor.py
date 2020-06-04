@@ -3,12 +3,16 @@ import re
 import logging
 import zipfile
 import portalocker
+import contextlib
 
 from pathlib import Path
 from tqdm import tqdm
 
 
 class Processor:
+	def __init__(self, options):
+		self._lock_files = not options["nolock"]
+
 	def traverse(self, path: Path):
 		if not Path(path).is_dir():
 			raise FileNotFoundError("%s is not a valid path." % path)
@@ -45,10 +49,16 @@ class Processor:
 		pass
 
 	def page_lock(self, path):
-		return portalocker.Lock(path, "r", flags=portalocker.LOCK_EX, timeout=1)
+		if self._lock_files:
+			return portalocker.Lock(path, "r", flags=portalocker.LOCK_EX, timeout=1)
+		else:
+			return contextlib.nullcontext()
 
 	def lock(self, path, mode):
-		return portalocker.Lock(path, mode, flags=portalocker.LOCK_EX, timeout=1)
+		if self._lock_files:
+			return portalocker.Lock(path, mode, flags=portalocker.LOCK_EX, timeout=1)
+		else:
+			return contextlib.nullcontext()
 
 	@property
 	def compression(self):

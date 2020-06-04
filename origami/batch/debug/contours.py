@@ -11,6 +11,7 @@ from origami.batch.core.block_processor import BlockProcessor
 
 class DebugContoursProcessor(BlockProcessor):
 	def __init__(self, options):
+		super().__init__(options)
 		self._options = options
 
 	def should_process(self, p: Path) -> bool:

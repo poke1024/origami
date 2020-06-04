@@ -13,6 +13,7 @@ from origami.core.block import LineDetector
 
 class LineDetectionProcessor(BlockProcessor):
 	def __init__(self, options):
+		super().__init__(options)
 		self._options = options
 
 	def should_process(self, p: Path) -> bool:
@@ -76,6 +77,12 @@ class LineDetectionProcessor(BlockProcessor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'--nolock',
+	is_flag=True,
+	default=False,
+	help="Do not lock files while processing. Breaks concurrent batches, "
+	"but is necessary on some network file systems.")
 def detect_lines(data_path, **kwargs):
 	""" Perform line detection on all document images in DATA_PATH. Needs
 	information from contours batch. """

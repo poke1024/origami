@@ -9,7 +9,8 @@ from origami.batch.core.processor import Processor
 
 
 class SegmentationProcessor(Processor):
-	def __init__(self, predictor):
+	def __init__(self, predictor, options):
+		super().__init__(options)
 		self._predictor = predictor
 
 	def should_process(self, p: Path) -> bool:
@@ -34,10 +35,16 @@ class SegmentationProcessor(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
-def segment(data_path, model):
+@click.option(
+	'--nolock',
+	is_flag=True,
+	default=False,
+	help="Do not lock files while processing. Breaks concurrent batches, "
+	"but is necessary on some network file systems.")
+def segment(data_path, model, **kwargs):
 	""" Perform page segmentation on all document images in DATA_PATH. """
 	predictor = SegmentationPredictor(model)
-	processor = SegmentationProcessor(predictor)
+	processor = SegmentationProcessor(predictor, kwargs)
 	processor.traverse(data_path)
 
 

@@ -45,6 +45,7 @@ def _parse_samplers(spec):
 
 class SampleProcessor(BlockProcessor):
 	def __init__(self, data_path, options):
+		super().__init__(options)
 		self._data_path = Path(data_path)
 		self._options = options
 
@@ -181,6 +182,12 @@ class SampleProcessor(BlockProcessor):
 	default=False,
 	is_flag=True,
 	help="Import only transcribed lines.")
+@click.option(
+	'--nolock',
+	is_flag=True,
+	default=False,
+	help="Do not lock files while processing. Breaks concurrent batches, "
+	"but is necessary on some network file systems.")
 def sample_lines(data_path, **kwargs):
 	""" Create line database from document images in DATA_PATH.
 	Information from lines batch needs to be present. """
