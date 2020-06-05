@@ -5,22 +5,9 @@ Building and using OCR tools can be hard. origami is a low-overhead suite of bat
 # Installation 
 
 ```
-conda create --name origami python=3.7
+conda create --name origami python=3.7 -c defaults -c conda-forge --file origami/requirements/conda.txt
 conda activate origami
-pip install -r origami/requirements.txt
-
-# now install scikit geometry:
-conda install scikit-geometry -c conda-forge
-```
-
-If you want to run `origami.batch.detect.lines`, you also need to install Tesseract and `tesseract-ocr`.
-
-On Windows, you probably will need to run these:
-
-```
-conda install shapely  -c conda-forge
-conda install -c anaconda cairo
-conda install -c conda-forge tesserocr
+pip install -r origami/requirements/pip.txt
 ```
 
 ## General Usage
