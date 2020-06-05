@@ -46,12 +46,13 @@ class OCRProcessor(BlockProcessor):
 		names = []
 		images = []
 		for stem, line in lines.items():
-			names.append(stem)
+			names.append("/".join(stem))
 
 			images.append(np.array(line.normalized_image(
 				target_height=self._line_height,
 				deskewed=not self._options["do_not_deskew"],
-				binarized=self._options["binarized"]).convert("L")))
+				binarized=self._options["binarize"],
+				window_size=self._options["binarize_window_size"])))
 
 		texts = []
 		for prediction in self._predictor.predict_raw(images, progress_bar=False):
@@ -77,10 +78,15 @@ class OCRProcessor(BlockProcessor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-b', '--binarized',
+	'-b', '--binarize',
 	is_flag=True,
 	default=False,
-	help="Binarize exported line images.")
+	help="binarize line images (important if your model expects this).")
+@click.option(
+	'-w', '--binarize-window-size',
+	type=int,
+	default=0,
+	help="binarization window size for Sauvola or 0 for Otsu.")
 @click.option(
 	'-s', '--do-not-deskew',
 	default=False,

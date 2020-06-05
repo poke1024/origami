@@ -3,6 +3,7 @@ import shapely
 import math
 import cv2
 import skimage
+import skimage.filters
 import PIL.Image
 import shapely.wkt
 
@@ -45,7 +46,7 @@ class Line:
 	def set_text(self, text):
 		self._text = text
 
-	def normalized_image(self, target_height=48, binarized=False, deskewed=True):
+	def normalized_image(self, target_height=48, binarized=False, deskewed=True, window_size=None):
 		if deskewed:
 			p, right, up = self._p, self._right, self._up
 			width = int(math.ceil(np.linalg.norm(right)))
@@ -78,8 +79,16 @@ class Line:
 			cutout, _ = mask.extract(self._block.layout.page.pixels, background=self._block.background)
 
 		if binarized:
-			thresh_sauvola = skimage.filters.threshold_sauvola(cutout, window_size=target_height // 2 - 1)
-			cutout = (cutout > thresh_sauvola).astype(np.uint8) * 255
+			if window_size is None:
+				window_size = target_height // 2 - 1
+			if window_size <= 0:
+				try:
+					thresh = skimage.filters.threshold_otsu(cutout)
+				except ValueError:
+					thresh = 128
+			else:
+				thresh = skimage.filters.threshold_sauvola(cutout, window_size=window_size)
+			cutout = (cutout > thresh).astype(np.uint8) * 255
 
 		return PIL.Image.fromarray(cutout)
 

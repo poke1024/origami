@@ -37,7 +37,8 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 <dl>
   <dt>origami.batch.detect.binarize</dt>
   <dd>needs: images</dd>
-  <dd>⁂ Binarize all images in the given folder according to the specified arguments using Sauvola binarization.</dd>
+  <dd>⁂ Binarize all images in the given folder according to the specified arguments using Sauvola binarization. This is
+  used in the origami.batch.detect.contours batch to detect column overflow.</dd>
 </dl>
 
 <dl>
@@ -61,7 +62,20 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 <dl>
   <dt>origami.batch.detect.ocr</dt>
   <dd>needs: images, lines</dd>
-  <dd>⁂ Performs OCR on each detected line using the specified Calamari OCR model. </dd>
+  <dd>⁂ Performs OCR on each detected line using the specified Calamari OCR model. Note that the binarization
+  you can specify here in independent of the one performed in origami.batch.detect.binarize.</dd>
+</dl>
+
+<dl>
+  <dt>origami.batch.detect.xycut</dt>
+  <dd>needs: images, contours</dd>
+  <dd>⁂ Tries to find a reading order using a variant of the XY Cut algorithm.</dd>
+</dl>
+
+<dl>
+  <dt>origami.batch.detect.compose</dt>
+  <dd>needs: images, lines, ocr, xycut</dd>
+  <dd>⁂ Composes text into one file using the detected reading order.</dd>
 </dl>
 
 ## Debugging

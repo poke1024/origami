@@ -75,7 +75,7 @@ def _find_image_path(path):
 
 class Page:
 	def __init__(self, path):
-		self._im = PIL.Image.open(str(_find_image_path(path)))
+		self._im = PIL.Image.open(str(_find_image_path(path))).convert("L")
 
 	@property
 	def size(self):

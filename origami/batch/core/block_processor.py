@@ -49,5 +49,5 @@ class BlockProcessor(Processor):
 					parts = tuple(stem.split("/"))
 					block = blocks[tuple(parts[:3])]
 					line_info = json.loads(zf.read(name))
-					lines[stem] = Line(block, **line_info)
+					lines[parts] = Line(block, **line_info)
 		return lines
