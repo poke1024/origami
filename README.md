@@ -58,6 +58,12 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
   <dd>⁂ Detects baselines and line boundaries for each text line. For details, see  command line arguments. </dd>
 </dl>
 
+<dl>
+  <dt>origami.batch.detect.ocr</dt>
+  <dd>needs: images, lines</dd>
+  <dd>⁂ Performs OCR on each detected line using the specified Calamari OCR model. </dd>
+</dl>
+
 ## Debugging
 
 <dl>
