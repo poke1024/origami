@@ -113,6 +113,7 @@ class Line:
 				ascent=self._tesseract_data['ascent'],
 				height=self._tesseract_data['height']))
 
+	@property
 	def length(self):
 		return np.linalg.norm(self._right)
 
