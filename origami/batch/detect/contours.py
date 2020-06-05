@@ -9,6 +9,7 @@ import scipy.ndimage
 
 from pathlib import Path
 from atomicwrites import atomic_write
+from ast import literal_eval as make_tuple
 
 from origami.batch.core.processor import Processor
 
@@ -19,17 +20,40 @@ from origami.core.block import Block
 from origami.core.predict import PredictorType
 
 
+def _build_filter(f, spread_spec):
+	spread = (make_tuple(spread_spec) + (1, 1, 1))[:3]
+	w, h, i = spread
+
+	if w < 1 or h < 1 or i < 1:
+		return lambda pixels: pixels
+
+	structure = np.ones((w, h))
+
+	return lambda pixels: f(
+		pixels, structure=structure, iterations=i)
+
+
 class ContoursProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
 
 	def _process_region_contours(self, zf, annotations, prediction, binarized):
-		ink = scipy.ndimage.morphology.binary_dilation(
-			binarized, structure=np.ones((3, 3)), iterations=self._options["ink_spread"])
+		ink_erosion = _build_filter(
+			scipy.ndimage.morphology.binary_dilation,
+			self._options["ink_spread"])
+		ink = ink_erosion(binarized)
+
+		region_dilator = _build_filter(
+			scipy.ndimage.morphology.binary_dilation,
+			self._options["region_spread"])
+
+		opening_filter = _build_filter(
+			scipy.ndimage.morphology.binary_opening,
+			self._options["ink_opening"])
 
 		pipeline = [
-			contours.Contours(ink, opening=self._options["ink_opening"]),
+			contours.Contours(ink, opening=opening_filter, dilator=region_dilator),
 			contours.Decompose(),
 			contours.FilterByArea(annotations.magnitude * self._options["region_minsize"])
 		]
@@ -145,14 +169,19 @@ class ContoursProcessor(Processor):
 	default=4 / 1000,
 	help="Simplification of separator polylines.")
 @click.option(
+	'--region-spread',
+	type=str,
+	default="(0, 0)",
+	help="Spread regions with this amount of pixels, e.g. (3, 3).")
+@click.option(
 	'--ink-spread',
-	type=int,
-	default=20,
+	type=str,
+	default="(20, 20)",
 	help="Ink dilation for whitespace detection.")
 @click.option(
 	'--ink-opening',
-	type=int,
-	default=5,
+	type=str,
+	default="(5, 5)",
 	help="Opening amount to remove ink overflow between columns.")
 @click.option(
 	'--nolock',
@@ -169,4 +198,3 @@ def extract_contours(data_path, **kwargs):
 
 if __name__ == "__main__":
 	extract_contours()
-

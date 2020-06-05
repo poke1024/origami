@@ -13,7 +13,6 @@ import logging
 import collections
 import skimage
 import skimage.morphology
-import scipy.ndimage
 import semantic_version
 
 from cached_property import cached_property
@@ -45,22 +44,27 @@ def _as_wl(x):
 
 
 class Contours:
-	def __init__(self, ink=None, opening=5):
+	def __init__(self, ink=None, opening=None, dilator=None):
 		# "ink" allows the caller to define areas that are considered
 		# not connected, independent of the mask provided later.
 		self._ink = ink
 		self._opening = opening
 
+		# "dilator" will expand the contour boundaries by some amount.
+		self._dilator = dilator
+
 	def __call__(self, mask):
+		if self._dilator is not None:
+			mask = self._dilator(mask)
+
 		if self._ink is not None:
 			ink = cv2.resize(
 				self._ink.astype(np.uint8),
 				tuple(reversed(mask.shape)),
 				interpolation=cv2.INTER_NEAREST) > 0
-			mask = np.logical_and(mask, ink)
 
-			mask = scipy.ndimage.morphology.binary_opening(
-				mask, structure=np.ones((3, 3)), iterations=self._opening)
+			mask = np.logical_and(mask, ink)
+			mask = self._opening(mask)
 
 			mask = skimage.morphology.convex_hull_object(mask)
 
