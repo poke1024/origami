@@ -4,6 +4,7 @@ import zipfile
 import json
 import collections
 import codecs
+import shapely.strtree
 
 from pathlib import Path
 from atomicwrites import atomic_write
@@ -39,6 +40,9 @@ class ComposeProcessor(BlockProcessor):
 			block_path = line_path[:3]
 			lines_by_block[block_path].append(line_path)
 
+		block_polys = [block.image_space_polygon for block in blocks.values()]
+		tree = shapely.strtree.STRtree(block_polys)
+
 		line_separator = "\n"
 		block_separator = self._block_separator
 
@@ -46,6 +50,19 @@ class ComposeProcessor(BlockProcessor):
 		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
 			for block_name in xycut_data["order"]:
 				block_path = tuple(block_name.split("/"))
+				block = blocks[block_path]
+
+				ignore = False
+				for p in tree.query(block.image_space_polygon):
+					if p is block.image_space_polygon:
+						continue
+					if p.contains(block.image_space_polygon):
+						ignore = True
+						break
+
+				if ignore:
+					continue
+
 				block_texts = []
 				for line_path in sorted(lines_by_block[block_path]):
 					line_text = zf.read("/".join(line_path) + ".txt").decode("utf8")
