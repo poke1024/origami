@@ -50,7 +50,9 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 <dl>
   <dt>origami.batch.detect.contours</dt>
   <dd>needs: images, binarize, segment</dd>
-  <dd>⁂ From the segmentation, detects connected components to produce polygonal contours for blocks and separator lines.  Uses a couple of rule-based approaches to fix some issues inherent in pixel-based segmentation (for details, see command line arguments). The separator detection is too slow and still work in progress.</dd>
+  <dd>⁂ From the segmentation, detects connected components to produce polygonal contours for blocks and separator lines. 
+  Uses a couple of rule-based approaches to fix some issues inherent in pixel-based segmentation (see --region-spread,
+  --ink-spread and --ink-opening for details). Note that the separator detection is very slow and still work in progress.</dd>
 </dl>
 
 <dl>
