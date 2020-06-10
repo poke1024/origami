@@ -5,6 +5,7 @@ import json
 
 from pathlib import Path
 from PySide2 import QtGui
+from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
 from origami.batch.debug.utils import render_blocks
@@ -28,8 +29,9 @@ class DebugXYCutProcessor(BlockProcessor):
 		def get_label(block_path):
 			return str(1 + xycut_data["order"].index("/".join(block_path)))
 
-		im = render_blocks(PIL.Image.open(p), blocks, get_label)
-		im.save(str(p.with_suffix(".debug.xycut.jpg")))
+		qt_im = ImageQt(PIL.Image.open(p))
+		qt_im = render_blocks(qt_im, blocks, get_label)
+		qt_im.save(str(p.with_suffix(".debug.xycut.jpg")))
 
 
 @click.command()

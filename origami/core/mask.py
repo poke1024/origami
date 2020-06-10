@@ -62,6 +62,15 @@ class Mask:
 		finally:
 			surface.finish()
 
+	@property
+	def binary(self):
+		return self._mask
+
+	@property
+	def bounds(self):
+		minx, miny, w, h = self._bbox
+		return minx, miny, minx + w, miny + h
+
 	def _extract(self, bbox, pixels, background=255):
 		x, y, w, h = bbox
 		ph, pw = pixels.shape[:2]

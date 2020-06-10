@@ -10,6 +10,7 @@ from cached_property import cached_property
 from pathlib import Path
 
 from origami.core.math import resize_transform, to_shapely_matrix
+from origami.core.contours import Polyline
 
 
 class Annotations:
@@ -51,8 +52,12 @@ class Annotations:
 		r = collections.defaultdict(list)
 		matrix = self.label_to_image_matrix
 		for k, v in data.items():
-			for polygon in v:
-				r[k].append(shapely.affinity.affine_transform(polygon, matrix))
+			for shape in v:
+				if isinstance(shape, shapely.geometry.base.BaseGeometry):
+					t = shapely.affinity.affine_transform(shape, matrix)
+				else:
+					t = shape.affine_transform(matrix)
+				r[k].append(t)
 
 		return r
 

@@ -4,9 +4,10 @@ import PIL.Image
 
 from pathlib import Path
 from PySide2 import QtGui
+from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.batch.debug.utils import render_blocks
+from origami.batch.debug.utils import render_blocks, render_separators
 
 
 class DebugContoursProcessor(BlockProcessor):
@@ -20,13 +21,16 @@ class DebugContoursProcessor(BlockProcessor):
 
 	def process(self, p: Path):
 		blocks = self.read_blocks(p)
+		separators = self.read_separators(p)
 
 		def get_label(block_path):
 			classifier, segmentation_label, block_id = block_path
 			return str(block_id)
 
-		im = render_blocks(PIL.Image.open(p), blocks, get_label)
-		im.save(str(p.with_suffix(".debug.contours.jpg")))
+		qt_im = ImageQt(PIL.Image.open(p))
+		qt_im = render_blocks(qt_im, blocks, get_label)
+		qt_im = render_separators(qt_im, separators)
+		qt_im.save(str(p.with_suffix(".debug.contours.jpg")))
 
 
 @click.command()

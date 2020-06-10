@@ -96,17 +96,18 @@ class ContoursProcessor(Processor):
 				contours.Simplify(annotations.magnitude * self._options["sep_threshold"])
 			]
 
-		constructor = contours.multi_class_constructor(
-			pipeline=build_pipeline, classes=prediction.classes)
-
-		separator_contours = constructor(prediction.labels)
+		region_separators = annotations.create_multi_class_contours(
+			prediction.labels,
+			contours.multi_class_constructor(
+				pipeline=build_pipeline,
+				classes=prediction.classes))
 
 		for mode in prediction.classes:
 			if mode == prediction.classes.BACKGROUND:
 				continue
 
 			widths = []
-			for separator_id, polyline in enumerate(separator_contours[mode]):
+			for separator_id, polyline in enumerate(region_separators[mode]):
 				zf.writestr("%s/%s/%03d.wkt" % (
 					prediction.name, mode.name, separator_id), polyline.line_string.wkt)
 				widths.append(polyline.width)

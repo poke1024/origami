@@ -1,9 +1,46 @@
-from PIL.ImageQt import ImageQt
 from PySide2 import QtGui, QtCore
 
 
-def render_blocks(im, blocks, get_label):
-	qt_im = ImageQt(im)
+class Pens:
+	def __init__(self, keys):
+		self._pens = dict()
+
+		for i, k in enumerate(keys):
+			color = QtGui.QColor.fromHsv(255 * (i / (1 + len(keys))), 200, 200)
+			pen = QtGui.QPen()
+			pen.setWidth(10)
+			pen.setColor(color)
+			pen.setCapStyle(QtCore.Qt.RoundCap)
+			self._pens[k] = pen
+
+	def get(self, key):
+		return self._pens[key]
+
+
+def render_separators(qt_im, separators):
+	pixmap = QtGui.QPixmap.fromImage(qt_im)
+
+	pens = Pens(set(p[:2] for p in separators.keys()))
+
+	qp = QtGui.QPainter()
+	qp.begin(pixmap)
+
+	try:
+		qp.setOpacity(0.75)
+
+		for line_path, separator in separators.items():
+			qp.setPen(pens.get(line_path[:2]))
+
+			pts = [QtCore.QPointF(x, y) for x, y in separator.coords]
+			qp.drawPolyline(pts)
+
+	finally:
+		qp.end()
+
+	return pixmap.toImage()
+
+
+def render_blocks(qt_im, blocks, get_label):
 	pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 	pen = QtGui.QPen()

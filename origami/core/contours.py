@@ -5,6 +5,7 @@ import networkx as nx
 import shapely.geometry
 import shapely.ops
 import shapely.strtree
+import shapely.affinity
 import functools
 import types
 import sympy
@@ -18,6 +19,8 @@ import semantic_version
 from cached_property import cached_property
 
 import origami.core.geometry as geometry
+from origami.core.skeleton import FastSkeleton
+from origami.core.mask import Mask
 
 
 def _without_closing_point(pts):
@@ -66,7 +69,8 @@ class Contours:
 			mask = np.logical_and(mask, ink)
 			mask = self._opening(mask)
 
-			mask = skimage.morphology.convex_hull_object(mask)
+			# this is incredibly slow.
+			#mask = skimage.morphology.convex_hull_object(mask)
 
 		result = cv2.findContours(
 			mask.astype(np.uint8),
@@ -259,7 +263,10 @@ def _farthest(G, source):
 	backward = dict()
 	for u, v, t in nx.dfs_labeled_edges(G, source=source):
 		if t == 'forward':
-			u_v_len = np.linalg.norm(np.array(u) - np.array(v))
+			if u == v:
+				u_v_len = 0
+			else:
+				u_v_len = G[u][v]["distance"]
 			path_len = len_up_to[u] + u_v_len
 			len_up_to[v] = path_len
 
@@ -318,13 +325,34 @@ def _clip_path_2(path, radius):
 	return path
 
 
+def _expand_path(G, path):
+	expanded_path = []
+	for p, q in zip(path, path[1:]):
+		cont = G[p][q]["path"]
+		if expanded_path:
+			while cont and cont[0] == expanded_path[-1]:
+				cont = cont[1:]
+		if cont:
+			expanded_path.extend(cont)
+
+	return expanded_path
+
+
 class Polyline:
 	def __init__(self, coords, width):
 		self._coords = np.array(coords)
 		self._width = width
 
+	def affine_transform(self, matrix):
+		coords = shapely.affinity.affine_transform(
+			self.line_string, matrix)
+		return Polyline(coords, self._width)
+
 	@staticmethod
 	def joined(lines):
+		lines = [l for l in lines if l is not None]
+		if not lines:
+			return None
 		return Polyline(
 			np.vstack([l.coords for l in lines]),
 			np.max([l.width for l in lines]))
@@ -387,9 +415,6 @@ def _extract_simple_polygons(coords, orientation=None):
 	for a, b in zip(coords, coords[1:] + [coords[0]]):
 		arr.insert(sg.Segment2(sg.Point2(*a), sg.Point2(*b)))
 
-	def _tuple(p):
-		return (float(p.x()), float(p.y()))
-
 	polygons = []
 
 	for _, boundary in geometry.face_boundaries(arr):
@@ -397,29 +422,18 @@ def _extract_simple_polygons(coords, orientation=None):
 			list(reversed(_without_closing_point(boundary)))))
 
 	if len(polygons) > 1 and orientation is not None:
-		polygons = sorted(polygons, key=lambda p:np.dot(p.coords[0], orientation))
+		polygons = sorted(polygons, key=lambda p: np.dot(p.coords[0], orientation))
 
 	return polygons
 
 
 class EstimatePolyline:
-	def __init__(self, orientation=None, cache=None):
+	def __init__(self, orientation=None):
 		self._orientation = orientation
-		self._cache = cache
+		self._fast_skeleton = FastSkeleton()
+		self._skeleton_path = self._best_skeleton_path
 
-	def _simple_polyline(self, polygon):
-		cache_key = ("estimate-polyline", self._orientation, list(polygon.coords))
-		if self._cache is not None and cache_key in self._cache:
-			coords, width = self._cache[cache_key]
-			return Polyline(coords, width)
-
-		if polygon.orientation() == sg.Sign.NEGATIVE:
-			logging.error("encountered negative orientation polygon")
-			return None
-
-		if polygon.orientation() != sg.Sign.POSITIVE:
-			return None
-
+	def _best_skeleton_path(self, polygon):
 		try:
 			skeleton = sg.skeleton.create_interior_straight_skeleton(polygon)
 		except RuntimeError as e:
@@ -430,16 +444,47 @@ class EstimatePolyline:
 		G.add_nodes_from([_point_to_tuple(v.point) for v in skeleton.vertices])
 
 		if len(G) < 2:
+			return None, 0
+
+		uvs = [(_point_to_tuple(h.vertex.point), _point_to_tuple(h.opposite.vertex.point))
+			for h in skeleton.halfedges if h.is_bisector]
+
+		G.add_weighted_edges_from([
+			(u, v, np.linalg.norm(np.array(u) - np.array(v))) for u, v in uvs], weight="distance")
+
+		path = _longest_path(G)
+		line_width = float(max(v.time for v in skeleton.vertices))
+
+		return np.array(path), line_width
+
+	def _fast_skeleton_path(self, polygon):
+		mask = Mask(_skgeom_to_shapely(polygon))
+		G = self._fast_skeleton(mask.binary, time=True)
+
+		if len(G) < 2:
+			return None, 0
+
+		path = _longest_path(G)
+		path = _expand_path(G, path)
+
+		origin = np.array(mask.bounds[:2])
+		path = [np.array(p) + origin for p in path]
+
+		line_width = float(max(G.nodes[v]["time"] for v in G))
+
+		return np.array(path), line_width
+
+	def _simple_polyline(self, polygon):
+		if polygon.orientation() == sg.Sign.NEGATIVE:
+			logging.error("encountered negative orientation polygon")
 			return None
 
-		G.add_edges_from([(
-			_point_to_tuple(h.vertex.point),
-			_point_to_tuple(h.opposite.vertex.point))
-			for h in skeleton.halfedges if h.is_bisector])
+		if polygon.orientation() != sg.Sign.POSITIVE:
+			return None
 
-		path = np.array(_longest_path(G))
-
-		line_width = float(max(v.time for v in skeleton.vertices))
+		path, line_width = self._skeleton_path(polygon)
+		if path is None:
+			return None
 
 		path = _clip_path_2(path, line_width)
 		if not path:
@@ -449,9 +494,6 @@ class EstimatePolyline:
 
 		if self._orientation is not None:
 			polyline = polyline.oriented(self._orientation)
-
-		if self._cache is not None:
-			self._cache.set(cache_key, (list(polyline.coords), polyline.width))
 
 		return polyline		
 
@@ -465,11 +507,11 @@ class EstimatePolyline:
 				_without_closing_point(coords), self._orientation)
 
 			if len(simple_polygons) == 0:
-				logging.error("no simple polygons")
+				# logging.error("no simple polygons")
 				return
 			elif len(simple_polygons) > 1:
 				if self._orientation is None:
-					logging.error("multiple simple polygons without orientation")
+					# logging.error("multiple simple polygons without orientation")
 					return
 
 				joined = Polyline.joined(

@@ -7,3 +7,4 @@ cython>=0.29
 networkx>=2.4
 pandas>=1.0.3
 scikit-geometry>=0.1.2
+numba>=0.49.1

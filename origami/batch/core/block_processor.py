@@ -12,10 +12,7 @@ from origami.core.block import Block, Line
 
 
 class BlockProcessor(Processor):
-	def read_blocks(self, page_path: Path):
-		page = Page(page_path)
-		blocks = dict()
-
+	def read_contours(self, page_path: Path, pred_type):
 		with self.lock(page_path.with_suffix(".contours.zip"), "rb") as f:
 			with zipfile.ZipFile(f, "r") as zf:
 				meta = json.loads(zf.read("meta.json"))
@@ -29,13 +26,27 @@ class BlockProcessor(Processor):
 					prediction_name = parts[0]
 
 					t = PredictorType[meta[prediction_name]["type"]]
-					if t != PredictorType.REGION:
+					if t != pred_type:
 						continue
 
-					blocks[parts] = Block(
-						page, shapely.wkt.loads(zf.read(name).decode("utf8")))
+					yield parts, shapely.wkt.loads(zf.read(name).decode("utf8"))
 
-			return blocks
+	def read_blocks(self, page_path: Path):
+		page = Page(page_path)
+		blocks = dict()
+
+		for parts, polygon in self.read_contours(page_path, PredictorType.REGION):
+			blocks[parts] = Block(page, polygon)
+
+		return blocks
+
+	def read_separators(self, page_path: Path):
+		separators = dict()
+
+		for parts, polygon in self.read_contours(page_path, PredictorType.SEPARATOR):
+			separators[parts] = polygon
+
+		return separators
 
 	def read_lines(self, page_path: Path, blocks):
 		lines = dict()
