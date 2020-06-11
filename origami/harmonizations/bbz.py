@@ -1,13 +1,55 @@
+# BBZ-specific transcription harmonization schema, built for use
+# with text from the Berliner Börsen-Zeitung.
+
 {
 	"channels": {
 		"unstyled": {
 			"transform": "unstyled",
-			"alphabet": "△<>-?!.,:;‚'äöüÄÖÜßçàáâôéè1234567890%§&£$*†+=/() abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+			"alphabet": {
+				"lowercase": "abcdefghijklmnopqrstuvwxyzß",
+				"uppercase": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+
+				"lowercase_diacritic": "äöüàáâôéèç",
+				"uppercase_diacritic": "ÄÖÜ",
+
+				"punctutation": "-?!.,:;‚' ",
+
+				"brackets": "()<>",
+				"slashes": "/",
+				"math": "+=%",
+
+				"markers": "*†",
+
+				"digits": "1234567890",
+				"currencies": "£$",
+
+				"symbols": "§&△"
+			},
 			"tests": ["common", "unstyled"]
 		},
 		"styled": {
 			"transform": "styled",
-			"alphabet": "△<>-?!.,:;‚'äöüÄÖÜßçàáâôéè1234567890%§&£$*+†=/[]{}() abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+			"alphabet": {
+				"lowercase": "abcdefghijklmnopqrstuvwxyzß",
+				"uppercase": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+
+				"lowercase_diacritic": "äöüàáâôéèç",
+				"uppercase_diacritic": "ÄÖÜ",
+
+				"punctutation": "-?!.,:;‚' ",
+
+				"brackets": "()<>",
+				"slashes": "/",
+				"math": "+=%",
+
+				"markers": "*†",
+
+				"digits": "1234567890",
+				"currencies": "£$",
+
+				"symbols": "§&△",
+				"styles": "{}[]"
+			},
 			"tests": ["common", "styled"]
 		}
 	},
@@ -31,7 +73,6 @@
 		],
 		"unstyled": [
 			("{a} [b]", "a b"),
-			#("[115]061", "115 061")
 		],
 		"common": [
 			("a  b c", "a b c"),
@@ -49,12 +90,12 @@
 			("1 %", "1%"),
 			("12 - 34", "12-34"),
 			("12 -- 34", "12--34"),
-			("12 , 34", "12,34")
+			("12 , 34", "12,34"),
+			("Stückà3", "Stück à 3")
 		]
 	},
 	"transforms": {
 		"unstyled": [
-			#("re", r"([0-9]+)\]([0-9]+)", r"\g<1>] \g<2>"),  # e.g. [115]061 -> [115] 061
 			("re", r"{|}|\[|\]", ""),
 			("tfm", "default")
 		],
@@ -67,29 +108,44 @@
 			("re", r"\s+", " ")
 		],
 		"default": [
-			("str", "½", " <1/2> "),
-			("str", "¼", " <1/4> "),
-			("str", "¾", " <3/4> "),
-			("str", "+", " + "),
-			("str", "à", " à "),
+			# normalize style annotations.
+			("re", r"\{\s*\[", "[{"),
+			("re", r"\]\s*\}", "}]"),
+
+			# normalize dashes.
 			("str", "―", "--"),
 			("str", "•", "-"),
 
+			# normalize whitespace before and after quotes.
+			("str", "„", " „"),
+			("re", r"„\s+", "„"),
+
+			("str", "”", "” "),
+			("re", r"\s+”", "”"),
+
+			# normalize quotes and apostrophes.
+            ("str", "”", "''"),
+            ("str", "„", "‚‚"),
+
+			# expand fractions and other composite symbols.
+			("str", "½", " <1/2> "),
+			("str", "¼", " <1/4> "),
+			("str", "¾", " <3/4> "),
+
+			# normalize whitespace around operator symbols.
+			("str", "+", " + "),
+			("re", r"à([0-9]+)", r" à \g<1>"),
+
+			# normalize whitespace after punctuation symbols.
 			("str", ":", ": "),
 			("str", ";", "; "),
 			("str", ".", ". "),
-			#("re", r"([0-9]+)\s*\.\s*([0-9]+)", r"\g<1>.\g<2>"),
 			("str", ",", ", "),
 			("re", r"([0-9]+)\s*,\s*([0-9]+)", r"\g<1>,\g<2>"),
 			("str", "!", "! "),
 			("str", "?", "? "),
 
-			("str", "„", " „"),
-			("str", "”", "” "),
-
-			("re", r"\{\s*\[", "[{"),
-			("re", r"\]\s*\}", "}]"),
-
+			# normalize whitespace before punctuation symbols.
 			("re", r"\s+\:", ":"),
 			("re", r"\s+\;", ";"),
 			("re", r"\s+\.", "."),
@@ -97,6 +153,7 @@
 			("re", r"\s+\!", "!"),
 			("re", r"\s+\?", "?"),
 
+			# normalize whitespace before and after parentheses.
 			("re", r"\s+\)", ")"),
 			("re", r"\(\s+", "("),
 
@@ -111,9 +168,7 @@
 			("re", r"\!\s+\)", "!)"),
 			("re", r"\?\s+\)", "?)"),
 
-			("re", r"„\s+", "„"),
-			("re", r"\s+”", "”"),
-
+			# normalize whitespace around dashes.
 			("re", r"\-([^\s-])", r"- \g<1>"),
 			("re", r"([^\s-])\-", r"\g<1> -"),
 			("re", r"([0-9]+)\s*\-\-\s*([0-9]+)", r"\g<1>--\g<2>"),
@@ -123,8 +178,7 @@
             ("re", r"([0-9]+)\s*-\s*([0-9]+)", r"\g<1>-\g<2>"),
             ("re", r"([0-9]+)\s*,\s*([0-9]+)", r"\g<1>,\g<2>"),
 
-            ("str", "”", "''"),
-            ("str", "„", "‚‚"),
+            # normalize multiple whitespace symbols.
 			("re", r"\s+", " ")
 		]
 	}

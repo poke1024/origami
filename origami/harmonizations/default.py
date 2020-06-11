@@ -1,26 +1,31 @@
+# generic transcription harmonization schema, built for use
+# with text from various sources.
+
 {
 	"channels": {
 		"default": {
 			"transform": "default",
 			"alphabet": {
-				"lowercase": "abcdefghijklmnopqrstuvwxyzçøß",
+				"lowercase": "abcdefghijklmnopqrstuvwxyzßø",
 				"uppercase": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
 
 				"ligatures": "æÆ",
-				"lowercase_diacritic": "äöüàáâåãéèëêẽôòõîĩůûùũñ",
+				"lowercase_diacritic": "äöüàáâåãéèëêẽôòõîĩůûùũñç",
 				"uppercase_diacritic": "ÄÖÜÅÊ",
 
-				"punct": "_-?!.,:;‚' ",
+				"punctuation": "_-?!.,:;‚' ",
 				"brackets": "()[]<>«»",
-				"slash": "/|",
+				"slashes": "/|",
 				"math": "*+=%",
 
 				"digits": "1234567890",
 				"currency": "€£",
 
-				"symbols": "§&ꝛ⏓⏑",
+				"symbols": "§&",
+				"poetry": "⏓⏑",
 				"greek": "Ἰϰχεά",
-				"old_english": "ð"
+				"rotunda": "ꝛ",
+				"eth": "ð"
 			},
 			"tests": ["default"]
 		}
@@ -65,6 +70,13 @@
 			("str", "ꝑ", "p"),  # in tesseract prediction
 			("str", ("chr", 868), "e"),  # upper e
 
+			# normalize whitespace before and after quotes.
+			("str", "„", " „"),
+			("re", r"„\s+", "„"),
+
+			("str", "”", "” "),
+			("re", r"\s+”", "”"),
+
 			# normalize quotes and apostrophes.
 			("str", "’", "'"),
             ("str", "\"", "''"),
@@ -87,7 +99,7 @@
 			("str", "¼", " 1/4 "),
 			("str", "¾", " 3/4 "),
 			("str", "⅔", " 2/3 "),
-			("str", "…", "..."), # in tesseract prediction
+			("str", "…", "..."),  # in tesseract prediction
 
 			# normalize whitespace after punctuation symbols.
 			("str", ":", ": "),
@@ -105,13 +117,6 @@
 			("re", r"\s+\,", ","),
 			("re", r"\s+\!", "!"),
 			("re", r"\s+\?", "?"),
-
-			# normalize whitespace before and after quotes.
-			("str", "„", " „"),
-			("str", "”", "” "),
-
-			("re", r"„\s+", "„"),
-			("re", r"\s+”", "”"),
 
 			# normalize whitespace before and after parentheses.
 			("re", r"\s+\)", ")"),

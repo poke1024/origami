@@ -3,6 +3,7 @@ import re
 import os
 import click
 import unicodedata
+import itertools
 
 from pathlib import Path
 from tqdm import tqdm
@@ -46,7 +47,14 @@ class Transformer:
 class Channel:
 	def __init__(self, name, alphabet, transform, tests):
 		self._name = name
-		self._alphabet = set([c for c in alphabet]) if alphabet else None
+
+		if alphabet is None:
+			self._alphabet = None
+		elif isinstance(alphabet, dict):
+			self._alphabet = set().union(*itertools.chain(*alphabet.values()))
+		else:
+			self._alphabet = set(alphabet)
+
 		self._transform = transform
 		self._tests = tests
 
@@ -97,11 +105,7 @@ class Channel:
 
 
 class Schema:
-	def __init__(self, path=None):
-		if path is None:
-			script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
-			path = script_dir.parent / "harmonizations" / "generic.py"  # default schema
-
+	def __init__(self, path):
 		with open(path, "r") as f:
 			data = ast.literal_eval(f.read())
 
@@ -120,6 +124,14 @@ class Schema:
 				tests=v.get("tests", [])))
 
 		self._run_tests()
+
+	@staticmethod
+	def get_schema_path(name):
+		script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
+		schema_path = script_dir.parent / "harmonizations" / ("%s.py" % name)
+		if not schema_path.exists():
+			raise ValueError("schema with name '%s' does not exist" % name)
+		return schema_path
 
 	def _run_tests(self):
 		all_ok = True
@@ -146,10 +158,15 @@ class Schema:
 	'gt-path',
 	type=click.Path(exists=True))
 @click.option(
-	'-s', '--schema-path',
+	'-s', '--schema-name',
+	type=str,
+	help='name of built-in harmonization schema',
+	required=False)
+@click.option(
+	'-f', '--schema-file',
 	type=click.Path(exists=True),
-	help='path to normalization schema',
-	required=True)
+	help='path to harmonization schema file',
+	required=False)
 @click.option(
 	'-o', '--output-path',
 	type=click.Path(exists=False),
@@ -161,15 +178,26 @@ class Schema:
 	default=".gt.txt",
 	help='which text files to process',
 	required=True)
-def cli(gt_path, schema_path, output_path, extension):
+def cli(gt_path, schema_name, schema_file, output_path, extension):
 	output_path = Path(output_path).resolve()
 	gt_path = Path(gt_path).resolve()
 	assert gt_path != output_path
 
-	schema = Schema(Path(schema_path))
+	if output_path.exists():
+		raise ValueError("%s already exists." % output_path)
+
+	if not schema_name and not schema_file:
+		schema_name = "default"
+
+	if schema_name and schema_file:
+		raise ValueError("cannot specify both schema name and schema path.")
+	elif schema_name:
+		schema_file = Schema.get_schema_path(schema_name)
+
+	schema = Schema(Path(schema_file))
 
 	if len(schema.channels) != 1:
-		raise RuntimeError("illegal number of channels in schema")
+		raise RuntimeError("number of channels in schema must be 1")
 	channel = schema.channels[0]
 
 	paths = [p for p in gt_path.iterdir() if p.name.endswith(extension)]

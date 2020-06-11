@@ -4,7 +4,6 @@ import json
 
 from pathlib import Path
 from tqdm import tqdm
-import numpy as np
 
 from origami.tool.lineload import LineLoader
 from origami.tool.harmonize import Schema
@@ -20,7 +19,7 @@ class ExportProcessor:
 		self._data_path = Path(data_path)
 		self._options = options
 
-		self._schema = Schema(self._options["schema"])
+		self._schema = Schema(Schema.get_schema_path(options["schema_name"]))
 		self._output_path = Path(self._options["output_path"])
 		if self._output_path.exists():
 			if click.confirm("%s already exists. Do you want to add to it?" % self._output_path):
@@ -159,24 +158,24 @@ class ExportProcessor:
 	'-o', '--output-path',
 	type=click.Path(exists=False),
 	required=True,
-	help="Where exported files are written.")
+	help="where exported files are written.")
 @click.option(
-	'-s', '--schema',
-	type=click.File(),
-	required=False,
-	help="Schema for output folder contents.")
+	'-s', '--schema-name',
+	type=str,
+	required=True,
+	help="name of built-in harmonization schema.")
 @click.option(
 	'-h', '--line-height',
 	type=int,
 	default=48,
-	help="Pixel height of exported line images.")
+	help="pixel height of exported line images.")
 @click.option(
 	'-b', '--binarized',
 	is_flag=True,
 	default=False,
-	help="Binarize exported line images.")
+	help="binarize exported line images.")
 @click.option(
-	'-s', '--do-not-deskew',
+	'-d', '--do-not-deskew',
 	default=False,
 	is_flag=True,
 	help='do not deskew line images')
