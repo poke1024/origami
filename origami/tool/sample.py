@@ -62,6 +62,8 @@ class SampleProcessor(BlockProcessor):
 		db_path = options["db_path"]
 		if db_path is None:
 			db_path = self._data_path / "annotations.db"
+		else:
+			db_path = Path(db_path)
 		#if db_path.exists():
 		#	raise click.UsageError("%s already exists." % db_path)
 		self._conn = sqlite3.connect(db_path)
