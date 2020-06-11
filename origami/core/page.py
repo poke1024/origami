@@ -49,17 +49,17 @@ class Annotations:
 	def create_multi_class_contours(self, labels, c):
 		data = c(labels)
 
-		r = collections.defaultdict(list)
+		results = collections.defaultdict(list)
 		matrix = self.label_to_image_matrix
-		for k, v in data.items():
-			for shape in v:
+		for prediction_class, shapes in data.items():
+			for shape in shapes:
 				if isinstance(shape, shapely.geometry.base.BaseGeometry):
-					t = shapely.affinity.affine_transform(shape, matrix)
+					t_shape = shapely.affinity.affine_transform(shape, matrix)
 				else:
-					t = shape.affine_transform(matrix)
-				r[k].append(t)
+					t_shape = shape.affine_transform(matrix)
+				results[prediction_class].append(t_shape)
 
-		return r
+		return results
 
 
 def _find_image_path(path):

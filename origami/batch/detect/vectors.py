@@ -62,16 +62,14 @@ class ContoursProcessor(Processor):
 			prediction.labels,
 			contours.fold_operator([
 				contours.multi_class_constructor(
-					pipeline=pipeline, classes=prediction.classes),
+					pipeline=pipeline,
+					classes=[c for c in prediction.classes if c != prediction.classes.BACKGROUND]),
 				contours.HeuristicFrameDetector(
 					annotations.size, self._options["margin_noise"]).multi_class_filter
 			]))
 
-		for mode in prediction.classes:
-			if mode == prediction.classes.BACKGROUND:
-				continue
-
-			for region_id, polygon in enumerate(region_contours[mode]):
+		for prediction_class, shapes in region_contours.items():
+			for region_id, polygon in enumerate(shapes):
 				block = Block(annotations.page, polygon)
 
 				if self._options["export_images"]:
@@ -81,10 +79,10 @@ class ContoursProcessor(Processor):
 						data = f.getvalue()
 
 					zf.writestr("%s/%s/%03d.png" % (
-						prediction.name, mode.name, region_id), data)
+						prediction.name, prediction_class.name, region_id), data)
 
 				zf.writestr("%s/%s/%03d.wkt" % (
-					prediction.name, mode.name, region_id), polygon.wkt)
+					prediction.name, prediction_class.name, region_id), polygon.wkt)
 
 	def _process_separator_contours(self, zf, annotations, prediction, binarized):
 
@@ -100,20 +98,17 @@ class ContoursProcessor(Processor):
 			prediction.labels,
 			contours.multi_class_constructor(
 				pipeline=build_pipeline,
-				classes=prediction.classes))
+				classes=[c for c in prediction.classes if c != prediction.classes.BACKGROUND]))
 
-		for mode in prediction.classes:
-			if mode == prediction.classes.BACKGROUND:
-				continue
-
+		for prediction_class, shapes in region_separators.items():
 			widths = []
-			for separator_id, polyline in enumerate(region_separators[mode]):
+			for separator_id, polyline in enumerate(shapes):
 				zf.writestr("%s/%s/%03d.wkt" % (
-					prediction.name, mode.name, separator_id), polyline.line_string.wkt)
+					prediction.name, prediction_class.name, separator_id), polyline.line_string.wkt)
 				widths.append(polyline.width)
 
 			zf.writestr("%s/%s/meta.json" % (
-				prediction.name, mode.name), json.dumps(dict(width=widths)))
+				prediction.name, prediction_class.name), json.dumps(dict(width=widths)))
 
 	def should_process(self, p: Path) -> bool:
 		return (imghdr.what(p) is not None) and\
