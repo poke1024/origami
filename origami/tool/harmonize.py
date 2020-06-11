@@ -100,7 +100,7 @@ class Schema:
 	def __init__(self, path=None):
 		if path is None:
 			script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
-			path = script_dir / "schema.txt"  # default schema
+			path = script_dir.parent / "harmonizations" / "generic.py"  # default schema
 
 		with open(path, "r") as f:
 			data = ast.literal_eval(f.read())

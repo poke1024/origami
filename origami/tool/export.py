@@ -7,7 +7,7 @@ from tqdm import tqdm
 import numpy as np
 
 from origami.tool.lineload import LineLoader
-from origami.tool.schema import Schema
+from origami.tool.harmonize import Schema
 from origami.tool.split import optimal_split, LineClustering
 
 

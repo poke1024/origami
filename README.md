@@ -38,7 +38,7 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
   <dt>origami.batch.detect.binarize</dt>
   <dd>needs: images</dd>
   <dd>⁂ Binarize all images in the given folder according to the specified arguments using Sauvola binarization. This is
-  used in the origami.batch.detect.contours batch to detect column overflow.</dd>
+  used in the origami.batch.detect.vectors batch to detect column overflow.</dd>
 </dl>
 
 <dl>
@@ -48,9 +48,9 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 </dl>
 
 <dl>
-  <dt>origami.batch.detect.contours</dt>
+  <dt>origami.batch.detect.vectors</dt>
   <dd>needs: images, binarize, segment</dd>
-  <dd>⁂ From the segmentation, detects connected components to produce polygonal contours for blocks and separator lines. 
+  <dd>⁂ From the segmentation, detects connected components to produce vectorized polygonal contours for blocks and separator lines. 
   Uses a couple of rule-based approaches to fix some issues inherent in pixel-based segmentation (see --region-spread,
   --ink-spread and --ink-opening for details). Note that the separator detection is very slow and still work in progress.</dd>
 </dl>
@@ -70,7 +70,7 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 
 <dl>
   <dt>origami.batch.detect.xycut</dt>
-  <dd>needs: images, contours</dd>
+  <dd>needs: images, vectors</dd>
   <dd>⁂ Tries to find a reading order using a variant of the XY Cut algorithm.</dd>
 </dl>
 
@@ -83,9 +83,9 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 ## Debugging
 
 <dl>
-  <dt>origami.batch.debug.contours (debugging only)</dt>
-  <dd>needs: images, contours</dd>
-  <dd>⁂ Produces debug images for understanding the result of the contours batch stage. <img src="/docs/img/sample-2436020X_1925-02-27_70_98_009.debug.contours.jpg"></dd>
+  <dt>origami.batch.debug.vectors (debugging only)</dt>
+  <dd>needs: images, vectors</dd>
+  <dd>⁂ Produces debug images for understanding the result of the vectors batch stage. <img src="/docs/img/sample-2436020X_1925-02-27_70_98_009.debug.contours.jpg"></dd>
 </dl>
 
 <dl>
