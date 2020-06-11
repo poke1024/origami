@@ -152,7 +152,7 @@ class ContoursProcessor(Processor):
 @click.option(
 	'-r', '--region-minsize',
 	type=float,
-	default=0.1,
+	default=0.01,  # might be a single word.
 	help="Ignore regions below this relative size.")
 @click.option(
 	'-m', '--margin-noise',

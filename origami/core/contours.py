@@ -12,8 +12,10 @@ import sympy
 import itertools
 import logging
 import collections
+import scipy
 import skimage
 import skimage.morphology
+import skimage.measure
 import semantic_version
 
 from cached_property import cached_property
@@ -69,8 +71,19 @@ class Contours:
 			mask = np.logical_and(mask, ink)
 			mask = self._opening(mask)
 
-			# this is incredibly slow.
-			#mask = skimage.morphology.convex_hull_object(mask)
+			isolated_fragments_mask = np.zeros(mask.shape)
+			min_block_area = mask.size * 0.01
+			for p in skimage.measure.regionprops(skimage.measure.label(mask, background=0)):
+				if p.label == 0:
+					continue
+				if p.area < min_block_area:
+					miny, minx, maxy, maxx = p.bbox
+					isolated_fragments_mask[miny:maxy, minx:maxx] = np.logical_or(
+						isolated_fragments_mask[miny:maxy, minx:maxx], p.image)
+			isolated_fragments_mask = scipy.ndimage.morphology.binary_dilation(
+					isolated_fragments_mask, iterations=3)
+			mask = np.logical_or(
+				mask, isolated_fragments_mask)
 
 		result = cv2.findContours(
 			mask.astype(np.uint8),
@@ -90,10 +103,6 @@ class Contours:
 				continue
 
 			polygon = shapely.geometry.Polygon(pts)
-
-			#with open("/Users/liebl/debug.txt", "a") as f:
-			#	f.write(_as_wl([1 if polygon.is_valid else 0, pts]) + ",\n")
-			#	f.flush()
 
 			yield polygon
 

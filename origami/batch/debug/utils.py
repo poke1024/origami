@@ -6,7 +6,7 @@ class Pens:
 		self._pens = dict()
 
 		for i, k in enumerate(keys):
-			color = QtGui.QColor.fromHsv(255 * (i / (1 + len(keys))), 200, 200)
+			color = QtGui.QColor.fromHsv(20 + 230 * (i / (1 + len(keys))), 200, 250)
 			pen = QtGui.QPen()
 			pen.setWidth(10)
 			pen.setColor(color)
@@ -20,7 +20,7 @@ class Pens:
 def render_separators(qt_im, separators):
 	pixmap = QtGui.QPixmap.fromImage(qt_im)
 
-	pens = Pens(set(p[:2] for p in separators.keys()))
+	pens = Pens(sorted(p[:2] for p in separators.keys()))
 
 	qp = QtGui.QPainter()
 	qp.begin(pixmap)
