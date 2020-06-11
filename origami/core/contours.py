@@ -307,8 +307,8 @@ def _clip_path(origin, radius, path):
 
 			if intersections:
 				pt = intersections[0].evalf()
-				path[0, :] = np.array([pt.x, pt.y], dtype=path.dtype)
-				break
+				origin = np.array([pt.x, pt.y], dtype=path.dtype)
+				return np.vstack([[origin], path])
 			else:
 				path = path[1:]
 
@@ -431,7 +431,11 @@ class EstimatePolyline:
 	def __init__(self, orientation=None):
 		self._orientation = orientation
 		self._fast_skeleton = FastSkeleton()
-		self._skeleton_path = self._best_skeleton_path
+		self._skeleton_path = dict(
+			fast=self._fast_skeleton_path,
+			best=self._best_skeleton_path)
+		self._tolerance = 0.5
+		self._quality = "fast"
 
 	def _best_skeleton_path(self, polygon):
 		try:
@@ -455,10 +459,14 @@ class EstimatePolyline:
 		path = _longest_path(G)
 		line_width = float(max(v.time for v in skeleton.vertices))
 
+		path = list(shapely.geometry.LineString(
+			path).simplify(self._tolerance).coords)
+
 		return np.array(path), line_width
 
 	def _fast_skeleton_path(self, polygon):
-		mask = Mask(_skgeom_to_shapely(polygon))
+		# need buffer of 1 to fix time computation (otherwise there might be no border background).
+		mask = Mask(_skgeom_to_shapely(polygon), buffer=1)
 		G = self._fast_skeleton(mask.binary, time=True)
 
 		if len(G) < 2:
@@ -466,6 +474,9 @@ class EstimatePolyline:
 
 		path = _longest_path(G)
 		path = _expand_path(G, path)
+
+		path = list(shapely.geometry.LineString(
+			path).simplify(self._tolerance).coords)
 
 		origin = np.array(mask.bounds[:2])
 		path = [np.array(p) + origin for p in path]
@@ -482,13 +493,15 @@ class EstimatePolyline:
 		if polygon.orientation() != sg.Sign.POSITIVE:
 			return None
 
-		path, line_width = self._skeleton_path(polygon)
+		path, line_width = self._skeleton_path[self._quality](polygon)
+
 		if path is None:
 			return None
 
-		path = _clip_path_2(path, line_width)
-		if not path:
-			return None
+		if self._quality == "best":
+			path = _clip_path_2(path, line_width)
+			if not path:
+				return None
 
 		polyline = Polyline(path, line_width)
 

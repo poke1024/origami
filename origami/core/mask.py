@@ -5,11 +5,16 @@ import cairocffi as cairo
 
 
 class Mask:
-	def __init__(self, shape, bounds=None):
+	def __init__(self, shape, bounds=None, buffer=0):
 		if bounds is None:
 			minx, miny, maxx, maxy = shape.bounds
 			minx, miny = np.floor([minx, miny]).astype(np.int32)
 			maxx, maxy = np.ceil([maxx, maxy]).astype(np.int32)
+			if buffer > 0:
+				minx -= buffer
+				miny -= buffer
+				maxx += buffer
+				maxy += buffer
 		else:
 			minx, miny, maxx, maxy = bounds
 
