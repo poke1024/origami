@@ -132,16 +132,20 @@ class ExportProcessor:
 		for page_path, line_path in tqdm(sets.keys(), desc="exporting"):
 			line_id = _make_line_id(page_path, line_path)
 
+			try:
+				im = self._line_loader.load_line_image(
+					self._data_path / page_path,
+					line_path,
+					target_height=self._options["line_height"],
+					deskewed=not self._options["do_not_deskew"],
+					binarized=self._options["binarized"])
+			except KeyError:
+				print("failed to load %s/%s." % (page_path, line_path))
+				continue
+
 			for channel in self._schema.channels:
 				with open(self._output_path / "txt" / channel.name / ("%s.gt.txt" % line_id), "w") as f:
 					f.write(text_data[(page_path, line_path, channel.name)])
-
-			im = self._line_loader.load_line_image(
-				self._data_path / page_path,
-				line_path,
-				target_height=self._options["line_height"],
-				deskewed=not self._options["do_not_deskew"],
-				binarized=self._options["binarized"])
 
 			im.save(self._output_path / "img" / image_channel / ("%s.png" % line_id))
 
