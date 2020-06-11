@@ -9,16 +9,16 @@
 				"lowercase": "abcdefghijklmnopqrstuvwxyzß",
 				"uppercase": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
 
-				"lowercase_diacritic": "äöüàáâôéèç",
+				"lowercase_diacritic": "äöüàáâôéèêëç",
 				"uppercase_diacritic": "ÄÖÜ",
 
-				"punctutation": "-?!.,:;‚' ",
-
+				"punctuation": "-?!.,:; ",
+				"quotes": "‚'",
 				"brackets": "()<>",
 				"slashes": "/",
 				"math": "+=%",
 
-				"markers": "*†",
+				"footnote": "*†",
 
 				"digits": "1234567890",
 				"currencies": "£$",
@@ -33,7 +33,7 @@
 				"lowercase": "abcdefghijklmnopqrstuvwxyzß",
 				"uppercase": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
 
-				"lowercase_diacritic": "äöüàáâôéèç",
+				"lowercase_diacritic": "äöüàáâôéèêëç",
 				"uppercase_diacritic": "ÄÖÜ",
 
 				"punctutation": "-?!.,:;‚' ",
@@ -42,7 +42,7 @@
 				"slashes": "/",
 				"math": "+=%",
 
-				"markers": "*†",
+				"footnote": "*†",
 
 				"digits": "1234567890",
 				"currencies": "£$",
@@ -91,7 +91,11 @@
 			("12 - 34", "12-34"),
 			("12 -- 34", "12--34"),
 			("12 , 34", "12,34"),
-			("Stückà3", "Stück à 3")
+			("Stückà3", "Stück à 3"),
+			("a\"b", "a'' b"),
+			("a'''b", "a''' b"),
+			("a„b", "a ‚‚b"),
+			("a‚‚‚b", "a ‚‚‚b")
 		]
 	},
 	"transforms": {
@@ -116,21 +120,24 @@
 			("str", "―", "--"),
 			("str", "•", "-"),
 
-			# normalize whitespace before and after quotes.
-			("str", "„", " „"),
-			("re", r"„\s+", "„"),
-
-			("str", "”", "” "),
-			("re", r"\s+”", "”"),
-
 			# normalize quotes and apostrophes.
             ("str", "”", "''"),
             ("str", "„", "‚‚"),
+			("str", "\"", "''"),
+
+			# normalize whitespace before and after quotes.
+			("re", r"([^‚\s])‚‚", r"\g<1> ‚‚"),
+			("re", r"‚‚\s+", "‚‚"),
+
+			("re", r"''([^'\s])", r"'' \g<1>"),
+			("re", r"\s+''", "''"),
+
 
 			# expand fractions and other composite symbols.
 			("str", "½", " <1/2> "),
 			("str", "¼", " <1/4> "),
 			("str", "¾", " <3/4> "),
+			("str", "°", "<0 "),
 
 			# normalize whitespace around operator symbols.
 			("str", "+", " + "),

@@ -13,7 +13,8 @@
 				"lowercase_diacritic": "äöüàáâåãéèëêẽôòõîĩůûùũñç",
 				"uppercase_diacritic": "ÄÖÜÅÊ",
 
-				"punctuation": "_-?!.,:;‚' ",
+				"punctuation": "_-?!.,:; ",
+				"quotes": "‚'",
 				"brackets": "()[]<>«»",
 				"slashes": "/|",
 				"math": "*+=%",
@@ -70,12 +71,6 @@
 			("str", "ꝑ", "p"),  # in tesseract prediction
 			("str", ("chr", 868), "e"),  # upper e
 
-			# normalize whitespace before and after quotes.
-			("str", "„", " „"),
-			("re", r"„\s+", "„"),
-
-			("str", "”", "” "),
-			("re", r"\s+”", "”"),
 
 			# normalize quotes and apostrophes.
 			("str", "’", "'"),
@@ -86,6 +81,13 @@
             ("str", "“", "''"),
 
 			("str", ("chr", 0x2018), "'"),  # apostrophe
+
+			# normalize whitespace before and after quotes.
+			("re", r"([^‚\s])‚‚", r"\g<1> ‚‚"),
+			("re", r"‚‚\s+", "‚‚"),
+
+			("re", r"''([^'\s])", r"'' \g<1>"),
+			("re", r"\s+''", "''"),
 
 			# ignore esoteric symbols.
 			("str", "¶", ""),  # in tesseract prediction
