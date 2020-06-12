@@ -9,9 +9,9 @@
 				"lowercase": "abcdefghijklmnopqrstuvwxyzßø",
 				"uppercase": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
 
-				"ligatures": "æÆ",
+				"ligatures": "æÆœ",
 				"lowercase_diacritic": "äöüàáâåãéèëêẽôòõîĩůûùũñç",
-				"uppercase_diacritic": "ÄÖÜÅÊ",
+				"uppercase_diacritic": "ÄÖÜÅÊÇÙÛÚÒ",
 
 				"punctuation": "_-?!.,:; ",
 				"quotes": "‚'",
@@ -70,6 +70,8 @@
 			("str", "ꝓ", "p"),  # in gt4hist prediction
 			("str", "ꝑ", "p"),  # in tesseract prediction
 			("str", ("chr", 868), "e"),  # upper e
+			("str", "ꝰ", "9"),  # upper 9
+			("str", "ν", "v"),
 
 
 			# normalize quotes and apostrophes.
