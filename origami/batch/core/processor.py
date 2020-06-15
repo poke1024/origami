@@ -32,7 +32,7 @@ class Processor:
 				if self.should_process(p):
 					queued.append(p)
 
-		for p in tqdm(queued):
+		for p in tqdm(sorted(queued)):
 			try:
 				with self.page_lock(p) as _:
 					self.process(p)
