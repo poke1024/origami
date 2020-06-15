@@ -10,7 +10,6 @@ from cached_property import cached_property
 from pathlib import Path
 
 from origami.core.math import resize_transform, to_shapely_matrix
-from origami.core.contours import Polyline
 
 
 class Annotations:
