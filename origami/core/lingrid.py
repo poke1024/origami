@@ -64,7 +64,8 @@ class Box:
 			sympy.geometry.Point(*b))
 		intersection = sympy.geometry.intersection(
 			ray, self._box)
-		assert len(intersection) >= 1
+		if len(intersection) < 1:
+			raise ValueError("points outside given domain, ray %s does not hit %s" % (ray, self._box))
 
 		pt = intersection[0]
 		borders = set()
