@@ -30,7 +30,7 @@ class Document:
 
 		page = ET.Element('Page')
 		page.set('imageFilename', filename)
-		page.set('imageWidth', "%d" %image_size[0])
+		page.set('imageWidth', "%d" % image_size[0])
 		page.set('imageHeight', "%d" % image_size[1])
 		root.append(page)
 
@@ -40,11 +40,12 @@ class Document:
 	def append(self, element):
 		self._page.append(element._node)
 
-	def write(self, path):
+	def write(self, path, validate=True):
 		if Path(path).exists():
 			raise ValueError("xml file already exists")
 		ET.ElementTree(self._root).write(path)
-		self.validate(path)
+		if validate:
+			self.validate(path)
 
 	def validate(self, path):
 		script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
@@ -68,6 +69,15 @@ def make_coords_node(coords):
 	return node
 
 
+def make_text_node(text):
+	unicode_node = ET.Element('Unicode')
+	unicode_node.text = text
+
+	text_equiv_node = ET.Element('TextEquiv')
+	text_equiv_node.append(unicode_node)
+	return text_equiv_node
+
+
 class TextRegion:
 	def __init__(self, id_, type_=None, primary_language="German"):
 		self._node = ET.Element('TextRegion')
@@ -78,6 +88,9 @@ class TextRegion:
 
 	def append_coords(self, coords):
 		self._node.append(make_coords_node(coords))
+
+	def append_text_equiv(self, text):
+		self._node.append(make_text_node(text))
 
 	def append(self, element):
 		self._node.append(element._node)
