@@ -13,6 +13,8 @@ from functools import lru_cache
 from origami.core.mask import Mask
 from origami.core.math import to_shapely_matrix
 
+BACKGROUND = 0.8
+
 
 class Line:
 	def __init__(self, block, p, right, up, tesseract_data, wkt=None, text_area=None):
@@ -68,7 +70,7 @@ class Line:
 						self._polygon, to_shapely_matrix(matrix)),
 					bounds=(0, 0, width, target_height))
 	
-				background = np.quantile(warped, 0.8)
+				background = np.quantile(warped, BACKGROUND)
 				cutout = mask.cutout(warped, background=background)
 
 			except ValueError:
@@ -106,7 +108,8 @@ class Line:
 	@property
 	def image(self):
 		mask = Mask(self.image_space_polygon)
-		image, pos = mask.extract_image(self._block.page.pixels)
+		image, pos = mask.extract_image(
+			self._block.page.pixels, background=self._block.background)
 		return image
 
 	@property
@@ -174,7 +177,7 @@ class Block:
 	@lru_cache(maxsize=3)
 	def extract_image(self, buffer=10):
 		mask = Mask(self.image_space_polygon.buffer(buffer))
-		return mask.extract_image(self.page.pixels)
+		return mask.extract_image(self.page.pixels, background=self.background)
 
 	@property
 	def image_space_polygon(self):
@@ -200,8 +203,10 @@ class Block:
 
 	@cached_property
 	def background(self):
-		pixels = np.array(self.image)
-		return np.quantile(pixels, 0.8)
+		mask = Mask(self.image_space_polygon)
+		im, _ = mask.extract_image(self.page.pixels, background=None)
+		pixels = np.array(im)
+		return np.quantile(pixels, BACKGROUND)
 
 	@property
 	def _extent(self):

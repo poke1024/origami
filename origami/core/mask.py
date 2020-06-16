@@ -90,7 +90,8 @@ class Mask:
 
 		cutout = pixels[ty:ty + th, tx:tx + tw].copy()
 		assert cutout.shape[:2] == (th, tw)
-		cutout[np.logical_not(self._mask[sy:sy + th, sx:sx + tw])] = background
+		if background is not None:
+			cutout[np.logical_not(self._mask[sy:sy + th, sx:sx + tw])] = background
 		return cutout, (tx, ty)
 
 	def extract(self, pixels, background=255):
