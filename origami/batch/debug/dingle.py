@@ -15,6 +15,12 @@ def parse_line_path(path):
 	return region, kind, int(block_id), int(line_id)
 
 
+def normalize_text(text):
+	text = text.replace("‚‚", "„")
+	text = text.replace("''", "\"")
+	return text
+
+
 class DinglehopperProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
@@ -28,7 +34,7 @@ class DinglehopperProcessor(BlockProcessor):
 		texts = dict()
 		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
 			for name in zf.namelist():
-				texts[name] = zf.read(name).decode("utf8")
+				texts[name] = normalize_text(zf.read(name).decode("utf8"))
 
 		paths = list(map(parse_line_path, list(texts.keys())))
 		path_to_name = dict(zip(paths, texts.keys()))
