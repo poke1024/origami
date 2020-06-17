@@ -23,23 +23,35 @@ class OCRProcessor(BlockProcessor):
 		if len(models) < 1:
 			raise FileNotFoundError(
 				"no Calamari models found at %s" % self._model_path)
+		self._models = models
 
-		if len(models) == 1:
-			self._predictor = Predictor(str(models[0]))
+		self._predictor = None
+		self._voter = None
+		self._line_height = None
+
+	def _load_models(self):
+		if self._predictor is not None:
+			return
+
+		if len(self._models) == 1:
+			self._predictor = Predictor(str(self._models[0]))
 			self._voter = None
 			self._line_height = int(self._predictor.model_params.line_height)
 		else:
-			print("using Calamari voting with %d models." % len(models))
-			self._predictor = MultiPredictor(checkpoints=[str(p) for p in models])
+			print("using Calamari voting with %d models." % len(self._models))
+			self._predictor = MultiPredictor(checkpoints=[str(p) for p in self._models])
 			self._voter = ConfidenceVoter()
 			self._line_height = int(self._predictor.predictors[0].model_params.line_height)
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
 			p.with_suffix(".lines.zip").exists() and\
-			not p.with_suffix(".ocr.zip").exists()
+			not p.with_suffix(".ocr.zip").exists() and\
+			not p.with_suffix(".dewarp.json").exists()
 
 	def process(self, page_path: Path):
+		self._load_models()
+
 		blocks = self.read_blocks(page_path)
 		lines = self.read_lines(page_path, blocks)
 
