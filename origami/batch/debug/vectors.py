@@ -10,7 +10,7 @@ from origami.batch.core.block_processor import BlockProcessor
 from origami.batch.debug.utils import render_blocks, render_separators
 
 
-class DebugContoursProcessor(BlockProcessor):
+class DebugVectorsProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -44,12 +44,12 @@ class DebugContoursProcessor(BlockProcessor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
-def debug_contours(data_path, **kwargs):
-	""" Export debug information on contours for all document images in DATA_PATH. """
-	processor = DebugContoursProcessor(kwargs)
+def debug_vectors(data_path, **kwargs):
+	""" Export debug information on vectors for all document images in DATA_PATH. """
+	processor = DebugVectorsProcessor(kwargs)
 	processor.traverse(data_path)
 
 
 if __name__ == "__main__":
 	app = QtGui.QGuiApplication()
-	debug_contours()
+	debug_vectors()
