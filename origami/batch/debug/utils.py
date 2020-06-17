@@ -46,7 +46,7 @@ def block_hsv(classes):
 		yield tuple(c), (255 * (i / (1 + len(classes))), 100, 200)
 
 
-def render_blocks(qt_im, blocks, get_label):
+def render_blocks(qt_im, blocks, get_label, matrix=None):
 	pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 	pen = QtGui.QPen()
@@ -60,6 +60,11 @@ def render_blocks(qt_im, blocks, get_label):
 		brushes[c] = QtGui.QBrush(
 			QtGui.QColor.fromHsv(*hsv))
 
+	def point(x, y):
+		if matrix is not None:
+			x, y = matrix @ np.array([x, y, 1])
+		return QtCore.QPointF(x, y)
+
 	qp = QtGui.QPainter()
 	qp.begin(pixmap)
 
@@ -72,7 +77,7 @@ def render_blocks(qt_im, blocks, get_label):
 
 			poly = QtGui.QPolygonF()
 			for x, y in block.image_space_polygon.exterior.coords:
-				poly.append(QtCore.QPointF(x, y))
+				poly.append(point(x, y))
 			qp.drawPolygon(poly)
 
 		qp.setBrush(QtGui.QBrush(QtGui.QColor("white")))
@@ -86,16 +91,17 @@ def render_blocks(qt_im, blocks, get_label):
 
 		for block_path, block in blocks.items():
 			x, y = block.image_space_polygon.centroid.coords[0]
+			p = point(x, y)
 
 			qp.setOpacity(0.8)
-			qp.drawEllipse(QtCore.QPoint(x, y), 50, 50)
+			qp.drawEllipse(p, 50, 50)
 
 			qp.setOpacity(1)
 			# flags=QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter does
 			# not work. fix it manually.
 			label = get_label(block_path)
 			w = fm.horizontalAdvance(label)
-			qp.drawText(x - w / 2, y + fm.descent(), label)
+			qp.drawText(p.x() - w / 2, p.y() + fm.descent(), label)
 
 	finally:
 		qp.end()

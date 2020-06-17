@@ -18,6 +18,7 @@ from origami.core.xycut import reading_order
 class XYCutProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
+		self._buffer = 10
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
@@ -43,7 +44,7 @@ class XYCutProcessor(BlockProcessor):
 		for block_path, block in blocks.items():
 			names.append("/".join(block_path))
 			bounds.append(shapely.affinity.affine_transform(
-				block.image_space_polygon, m).bounds)
+				block.image_space_polygon.buffer(-self._buffer), m).bounds)
 
 		data = dict(
 			skew=skew,

@@ -2,6 +2,9 @@ import imghdr
 import click
 import PIL.Image
 import json
+import math
+import cv2
+import numpy as np
 
 from pathlib import Path
 from PySide2 import QtGui
@@ -29,8 +32,14 @@ class DebugXYCutProcessor(BlockProcessor):
 		def get_label(block_path):
 			return str(1 + xycut_data["order"].index("/".join(block_path)))
 
-		qt_im = ImageQt(PIL.Image.open(p))
-		qt_im = render_blocks(qt_im, blocks, get_label)
+		matrix = cv2.getRotationMatrix2D(
+			(0, 0), xycut_data["skew"] * (180 / math.pi), 1)
+		im = PIL.Image.open(p)
+		pixels = cv2.warpAffine(np.array(im), matrix, (im.width, im.height))
+		im = PIL.Image.fromarray(pixels)
+
+		qt_im = ImageQt(im)
+		qt_im = render_blocks(qt_im, blocks, get_label, matrix=matrix)
 		qt_im.save(str(p.with_suffix(".debug.xycut.jpg")))
 
 
