@@ -43,7 +43,8 @@ class Document:
 	def write(self, path, validate=True):
 		if Path(path).exists():
 			raise ValueError("xml file already exists")
-		ET.ElementTree(self._root).write(path)
+		ET.ElementTree(self._root).write(
+			path, encoding='utf-8', xml_declaration=True)
 		if validate:
 			self.validate(path)
 
