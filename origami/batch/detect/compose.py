@@ -17,6 +17,9 @@ class ComposeProcessor(BlockProcessor):
 		super().__init__(options)
 		self._options = options
 
+		if options["filter"]:
+			self._block_filter = [tuple(options["filter"].split("."))]
+
 		# see https://stackoverflow.com/questions/4020539/
 		# process-escape-sequences-in-a-string-in-python
 		self._block_separator = codecs.escape_decode(bytes(
@@ -50,6 +53,9 @@ class ComposeProcessor(BlockProcessor):
 		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
 			for block_name in xycut_data["order"]:
 				block_path = tuple(block_name.split("/"))
+				if block_path[:2] not in self._block_filter:
+					continue
+
 				block = blocks[block_path]
 
 				ignore = False
@@ -79,10 +85,15 @@ class ComposeProcessor(BlockProcessor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-b', '--block_separator',
+	'-b', '--block-separator',
 	type=str,
 	default="\n\n",
 	help="Character sequence used to separate different blocks.")
+@click.option(
+	'-f', '--filter',
+	type=str,
+	default=None,
+	help="Only export text from given block path, e.g. -f \"regions.TEXT\".")
 @click.option(
 	'--nolock',
 	is_flag=True,
