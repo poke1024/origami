@@ -2,6 +2,7 @@ import imghdr
 import click
 import zipfile
 import PIL.Image
+import json
 
 from pathlib import Path
 
@@ -25,10 +26,13 @@ class DinglehopperProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._use_xy_cut = True
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".ocr.zip").exists()
+			p.with_suffix(".ocr.zip").exists() and\
+			p.with_suffix(".xycut.json").exists() and\
+			not p.with_suffix(".dinglehopper.xml").exists()
 
 	def process(self, page_path: Path):
 		texts = dict()
@@ -39,15 +43,29 @@ class DinglehopperProcessor(BlockProcessor):
 		paths = list(map(parse_line_path, list(texts.keys())))
 		path_to_name = dict(zip(paths, texts.keys()))
 
-		blocks = sorted(list(set([p[:3] for p in paths])))
-		lines = dict((k, []) for k in blocks)
+		block_paths = sorted(list(set([p[:3] for p in paths])))
+		lines = dict((k, []) for k in block_paths)
 		for p in paths:
 			lines[p[:3]].append(p[3:])
 
 		im = PIL.Image.open(page_path)
 		doc = pagexml.Document(page_path.name, im.size)
 
-		for i, block_path in enumerate(blocks):
+		if self._use_xy_cut:
+			with open(page_path.with_suffix(".xycut.json"), "r") as f:
+				xycut_data = json.loads(f.read())
+
+			ordered_blocks = []
+			for block_name in xycut_data["order"]:
+				region, kind, block_id = block_name.split("/")
+				ordered_blocks.append((region, kind, int(block_id)))
+		else:
+			ordered_blocks = block_paths
+
+		for block_path in ordered_blocks:
+			if block_path not in lines:
+				continue
+
 			region = pagexml.TextRegion("-".join(map(str, block_path)))
 			doc.append(region)
 
