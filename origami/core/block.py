@@ -184,14 +184,9 @@ class Block:
 		return self._image_space_polygon
 
 	def text_area(self, fringe_limit=0.1, buffer=10):
-		text_area = self.image_space_polygon.buffer(buffer).convex_hull
-		box = shapely.geometry.box(*text_area.bounds)
-
-		# if the text area is too fringy, we use the bbox instead.
-		if text_area.area / box.area > (1 - fringe_limit):
-			return text_area
-		else:
-			return box
+		# fringe_limit is currently ignored. this used to have a bbox fallback,
+		# which was a very bad idea, since it was not aware of skew.
+		return self.image_space_polygon.buffer(buffer).convex_hull
 
 	@property
 	def coords(self):
