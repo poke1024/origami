@@ -19,6 +19,8 @@ class ComposeProcessor(BlockProcessor):
 
 		if options["filter"]:
 			self._block_filter = [tuple(options["filter"].split("."))]
+		else:
+			self._block_filter = None
 
 		# see https://stackoverflow.com/questions/4020539/
 		# process-escape-sequences-in-a-string-in-python
@@ -53,7 +55,7 @@ class ComposeProcessor(BlockProcessor):
 		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
 			for block_name in xycut_data["order"]:
 				block_path = tuple(block_name.split("/"))
-				if block_path[:2] not in self._block_filter:
+				if  self._block_filter and block_path[:2] not in self._block_filter:
 					continue
 
 				block = blocks[block_path]
