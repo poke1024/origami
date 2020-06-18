@@ -42,8 +42,9 @@ class DebugXYCutProcessor(BlockProcessor):
 		im = PIL.Image.fromarray(pixels)
 
 		qt_im = ImageQt(im)
-		qt_im = render_blocks(qt_im, blocks, get_label, matrix=matrix)
-		qt_im.save(str(p.with_suffix(".annotate.xycut.jpg")))
+		pixmap = QtGui.QPixmap.fromImage(qt_im)
+		pixmap = render_blocks(pixmap, blocks, get_label, matrix=matrix)
+		pixmap.toImage().save(str(p.with_suffix(".annotate.xycut.jpg")))
 
 
 @click.command()

@@ -28,9 +28,12 @@ class DebugVectorsProcessor(BlockProcessor):
 			return str(block_id)
 
 		qt_im = ImageQt(PIL.Image.open(p))
-		qt_im = render_blocks(qt_im, blocks, get_label)
-		qt_im = render_separators(qt_im, separators)
-		qt_im.save(str(p.with_suffix(".annotate.vectors.jpg")))
+		pixmap = QtGui.QPixmap.fromImage(qt_im)
+
+		pixmap = render_blocks(pixmap, blocks, get_label)
+		pixmap = render_separators(pixmap, separators)
+
+		pixmap.toImage().save(str(p.with_suffix(".annotate.vectors.jpg")))
 
 
 @click.command()
