@@ -59,10 +59,10 @@ class LabelBrushes:
 		return self._brushes[(classifier, label)]
 
 
-def default_pen():
+def default_pen(color="black", width=5):
 	pen = QtGui.QPen()
-	pen.setWidth(5)
-	pen.setColor(QtGui.QColor("black"))
+	pen.setWidth(width)
+	pen.setColor(QtGui.QColor(color))
 	pen.setCapStyle(QtCore.Qt.RoundCap)
 	return pen
 

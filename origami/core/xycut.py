@@ -43,6 +43,10 @@ class Box:
 	def coords(self):
 		return self._p
 
+	@property
+	def bounds(self):
+		return self._p.flatten()
+
 
 class LabeledCoordinates:
 	def __init__(self, objs, axis):
@@ -103,29 +107,53 @@ class LabeledCoordinates:
 			split_after = c
 
 
-def _xy_cut(objs):
-	coords = [np.array(o.coords, dtype=np.float64) for o in objs]
-	lcs = [LabeledCoordinates(coords, axis) for axis in (0, 1)]
-	splits = list(chain(*[lc.candidate_splits() for lc in lcs]))
+class XYCut:
+	def __init__(self, objs):
+		coords = [np.array(o.coords, dtype=np.float64) for o in objs]
+		lcs = [LabeledCoordinates(coords, axis) for axis in (0, 1)]
+		splits = list(chain(*[lc.candidate_splits() for lc in lcs]))
 
-	if not splits:
-		return None
+		if not splits:
+			self._split = None
+			self._axis = None
+			self._x = None
+		else:
+			best = sorted(splits, key=lambda x: (-x.overlap, x.gap))[-1]
 
-	best = sorted(splits, key=lambda x: (-x.overlap, x.gap))[-1]
+			if best.overlap > 0:  # go for smallest gap step instead.
+				best = sorted(splits, key=lambda x: (-x.overlap, -x.gap))[-1]
 
-	if best.overlap > 0:  # go for smallest gap step instead.
-		best = sorted(splits, key=lambda x: (-x.overlap, -x.gap))[-1]
+			ia, ib = best.axis.split_at(best.x, best.overlap > 0)
+			self._split = [objs[i] for i in ia], [objs[i] for i in ib]
 
-	ia, ib = best.axis.split_at(best.x, best.overlap > 0)
-	return [objs[i] for i in ia], [objs[i] for i in ib]
+			self._axis = lcs.index(best.axis)
+			self._x = best.x
+
+	@property
+	def valid(self):
+		return self._split is not None
+
+	def __iter__(self):
+		return iter(self._split)
+
+	def __getitem__(self, i):
+		return self._split[i]
+
+	@property
+	def axis(self):
+		return self._axis
+
+	@property
+	def x(self):
+		return self._x
 
 
 def _rxy_cut(boxes):
 	if len(boxes) <= 1:
 		return [*boxes], []
 
-	cut = _xy_cut(boxes)
-	if cut is None:
+	cut = XYCut(boxes)
+	if not cut.valid:
 		return [*boxes], []
 
 	if max(len(cut[0]), len(cut[1])) < len(boxes):
