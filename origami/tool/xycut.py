@@ -92,8 +92,10 @@ class Canvas(QtWidgets.QScrollArea):
 					if cut.valid:
 						if cut.axis == 0:
 							coords = [(cut.x, 0), (cut.x, self._pixmap.height())]
+							#print("(%d) x split at %.2f" % (i + 1, cut.x))
 						else:
 							coords = [(0, cut.x), (self._pixmap.width(), cut.x)]
+							#print("(%d) y split at %.2f" % (i + 1, cut.x))
 
 						qp.drawPolyline([QtCore.QPointF(*p) for p in coords])
 
@@ -145,6 +147,7 @@ class Form(QtWidgets.QDialog):
 	def __init__(self, page_path, parent=None):
 		super().__init__(parent)
 		self.page_path = page_path
+		self.setWindowTitle(page_path.name)
 
 		self.canvas = Canvas(page_path)
 		self.edit = QtWidgets.QLineEdit("")

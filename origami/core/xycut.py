@@ -13,8 +13,8 @@ import numpy as np
 from itertools import chain
 
 
-SplitCandidate = collections.namedtuple(
-	'SplitCandidate', ['axis', 'overlap', 'x', 'gap'])
+Candidate = collections.namedtuple(
+	'Candidate', ['axis', 'x', 'score'])
 
 
 def _offset(x0, x1, amount):
@@ -48,12 +48,12 @@ class Box:
 		return self._p.flatten()
 
 
-class LabeledCoordinates:
+class Coordinates:
 	def __init__(self, objs, axis):
-		self._sizes = np.array([len(coords) for coords in objs])
+		xs = np.array([coords[:, axis] for coords in objs])
 
-		c = np.hstack([coords[:, axis] for coords in objs])
-		i = np.repeat(range(len(objs)), self._sizes)
+		c = np.hstack(xs)
+		i = np.repeat(range(len(objs)), 2)
 
 		s = np.argsort(c)
 
@@ -63,67 +63,83 @@ class LabeledCoordinates:
 		self._x = c[s]
 		self._label = i[s]
 
-	def split_at(self, c, has_overlaps=False):
+		self._min = np.min(xs, axis=-1)
+		self._max = np.max(xs, axis=-1)
+
+		ys = np.array([coords[:, 1 - axis] for coords in objs])
+		self._ext = np.max(ys, axis=-1) - np.min(ys, axis=-1)
+
+	def split_at(self, c):
 		mask = self._x <= c
 
-		a = np.unique(self._label[mask])
-		b = np.unique(self._label[np.logical_not(mask)])
+		# fix overlaps.
+		a = set(self._label[mask])
+		b = set(self._label[np.logical_not(mask)])
 
-		if has_overlaps:
-			a = set(a)
-			b = set(b)
+		for i in a & b:
+			if abs(c - self._min[i]) < abs(c - self._max[i]):
+				a.remove(i)
+			else:
+				b.remove(i)
 
-			for i in a & b:
-				x0, x1 = self._objs[i][:, self._axis]
-				if abs(x0 - c) < abs(x1 - c):
-					a.remove(i)
-				else:
-					b.remove(i)
+		a = list(a)
+		b = list(b)
 
-			a = list(a)
-			b = list(b)
+		if not a:
+			k = np.argmin([self._min[i] for i in b])
+			a.append(b[k])
+			del b[k]
+		elif not b:
+			k = np.argmax([self._max[i] for i in a])
+			b.append(a[k])
+			del a[k]
 
 		return a, b
 
 	def items(self):
 		return zip(self._x, self._label)
 
-	def candidate_splits(self):
-		counts = collections.defaultdict(int)
-		sizes = self._sizes
+	def candidate_splits(self, eps):
+		active_set = collections.defaultdict(int)
+		items = list(self.items())
 
-		split_after = None
+		for (x0, i0), (x1, i1) in zip(items, items[1:]):
+			active_set[i0] += 1
+			if active_set[i0] == 2:
+				del active_set[i0]
 
-		for c, i in self.items():
-
-			if split_after is not None and len(counts) != 1:
-				yield SplitCandidate(
-					self, len(counts), split_after, c - split_after)
-
-			counts[i] += 1
-			if counts[i] == sizes[i]:
-				del counts[i]
-
-			split_after = c
+			if x0 > self._x[0] + eps:
+				n = len(active_set)
+				if n == 0:  # classic xy cut on whitespace.
+					yield Candidate(
+						self, x0, x1 - x0)
+				elif n >= 1:
+					err = 0
+					for j in active_set.keys():
+						err += self._ext[j] * min(
+							abs(x0 - self._min[j]),
+							abs(x0 - self._max[j]))
+					yield Candidate(
+						self, x0, -err)
 
 
 class XYCut:
-	def __init__(self, objs):
-		coords = [np.array(o.coords, dtype=np.float64) for o in objs]
-		lcs = [LabeledCoordinates(coords, axis) for axis in (0, 1)]
-		splits = list(chain(*[lc.candidate_splits() for lc in lcs]))
+	def __init__(self, objs, eps=5):
+		if len(objs) >= 2:
+			coords = [np.array(o.coords, dtype=np.float64) for o in objs]
+			lcs = [Coordinates(coords, axis) for axis in (0, 1)]
+			splits = list(chain(*[lc.candidate_splits(eps=eps) for lc in lcs]))
+		else:
+			splits = None
 
 		if not splits:
 			self._split = None
 			self._axis = None
 			self._x = None
 		else:
-			best = sorted(splits, key=lambda x: (-x.overlap, x.gap))[-1]
+			best = max(splits, key=lambda x: x.score)
 
-			if best.overlap > 0:  # go for smallest gap step instead.
-				best = sorted(splits, key=lambda x: (-x.overlap, -x.gap))[-1]
-
-			ia, ib = best.axis.split_at(best.x, best.overlap > 0)
+			ia, ib = best.axis.split_at(best.x)
 			self._split = [objs[i] for i in ia], [objs[i] for i in ib]
 
 			self._axis = lcs.index(best.axis)
