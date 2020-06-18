@@ -29,8 +29,11 @@ class DebugXYCutProcessor(BlockProcessor):
 		with open(p.with_suffix(".xycut.json"), "r") as f:
 			xycut_data = json.loads(f.read())
 
+		order = dict((tuple(path.split("/")), i) for i, path in enumerate(xycut_data["order"]))
+		blocks = dict((path, blocks[path]) for path in blocks.keys() if path in order)
+
 		def get_label(block_path):
-			return str(1 + xycut_data["order"].index("/".join(block_path)))
+			return str(1 + order[block_path])
 
 		matrix = cv2.getRotationMatrix2D(
 			(0, 0), xycut_data["skew"] * (180 / math.pi), 1)

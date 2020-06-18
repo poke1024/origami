@@ -6,6 +6,7 @@ import cv2
 import math
 import json
 import shapely.affinity
+import collections
 
 from pathlib import Path
 from atomicwrites import atomic_write
@@ -19,6 +20,7 @@ class XYCutProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._buffer = 10
+		self._block_split_limit = 0
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
@@ -32,6 +34,12 @@ class XYCutProcessor(BlockProcessor):
 		if len(lines) < 1:
 			return
 
+		lines_by_block = collections.defaultdict(list)
+		for line_path, line in lines.items():
+			lines_by_block[line_path[:3]].append((line_path, line))
+		for k in list(lines_by_block.keys()):
+			lines_by_block[k] = sorted(lines_by_block[k], key=lambda x: x[0])
+
 		angles = np.array([line.angle for line in lines.values()])
 		lengths = np.array([line.length for line in lines.values()])
 		skew = wquantiles.median(angles, lengths)
@@ -41,10 +49,27 @@ class XYCutProcessor(BlockProcessor):
 
 		names = []
 		bounds = []
+
+		def add(polygon, path):
+			minx, miny, maxx, maxy = shapely.affinity.affine_transform(polygon, m).bounds
+
+			minx = min(minx + self._buffer, maxx)
+			maxx = max(maxx - self._buffer, minx)
+			miny = min(miny + self._buffer, maxy)
+			maxy = max(maxy - self._buffer, miny)
+
+			bounds.append((minx, miny, maxx, maxy))
+			names.append("/".join(path))
+
 		for block_path, block in blocks.items():
-			names.append("/".join(block_path))
-			bounds.append(shapely.affinity.affine_transform(
-				block.image_space_polygon.buffer(-self._buffer), m).bounds)
+			block_lines = lines_by_block[block_path]
+			if len(block_lines) < 1:
+				continue
+			elif 1 < len(block_lines) <= self._block_split_limit:
+				for line_path, line in block_lines:
+					add(line.image_space_polygon, line_path)
+			else:
+				add(block.image_space_polygon, block_path)
 
 		data = dict(
 			skew=skew,
