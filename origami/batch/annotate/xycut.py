@@ -11,7 +11,7 @@ from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.batch.debug.utils import render_blocks
+from origami.batch.annotate.utils import render_blocks
 
 
 class DebugXYCutProcessor(BlockProcessor):
@@ -43,7 +43,7 @@ class DebugXYCutProcessor(BlockProcessor):
 
 		qt_im = ImageQt(im)
 		qt_im = render_blocks(qt_im, blocks, get_label, matrix=matrix)
-		qt_im.save(str(p.with_suffix(".debug.xycut.jpg")))
+		qt_im.save(str(p.with_suffix(".annotate.xycut.jpg")))
 
 
 @click.command()
@@ -58,7 +58,7 @@ class DebugXYCutProcessor(BlockProcessor):
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
 def debug_xycut(data_path, **kwargs):
-	""" Export debug information on xycuts for all document images in DATA_PATH. """
+	""" Export annotate information on xycuts for all document images in DATA_PATH. """
 	processor = DebugXYCutProcessor(kwargs)
 	processor.traverse(data_path)
 

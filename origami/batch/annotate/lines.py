@@ -7,7 +7,7 @@ from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.batch.debug.utils import render_lines
+from origami.batch.annotate.utils import render_lines
 
 
 class DebugLinesProcessor(BlockProcessor):
@@ -29,7 +29,7 @@ class DebugLinesProcessor(BlockProcessor):
 
 		qt_im = ImageQt(PIL.Image.open(page_path))
 		qt_im = render_lines(qt_im, lines, get_label)
-		qt_im.save(str(page_path.with_suffix(".debug.lines.jpg")))
+		qt_im.save(str(page_path.with_suffix(".annotate.lines.jpg")))
 
 
 @click.command()
@@ -44,7 +44,7 @@ class DebugLinesProcessor(BlockProcessor):
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
 def debug_lines(data_path, **kwargs):
-	""" Export debug information on lines for all document images in DATA_PATH. """
+	""" Export annotate information on lines for all document images in DATA_PATH. """
 	processor = DebugLinesProcessor(kwargs)
 	processor.traverse(data_path)
 

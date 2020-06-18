@@ -7,7 +7,7 @@ from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.batch.debug.utils import render_blocks, render_separators
+from origami.batch.annotate.utils import render_blocks, render_separators
 
 
 class DebugVectorsProcessor(BlockProcessor):
@@ -30,7 +30,7 @@ class DebugVectorsProcessor(BlockProcessor):
 		qt_im = ImageQt(PIL.Image.open(p))
 		qt_im = render_blocks(qt_im, blocks, get_label)
 		qt_im = render_separators(qt_im, separators)
-		qt_im.save(str(p.with_suffix(".debug.vectors.jpg")))
+		qt_im.save(str(p.with_suffix(".annotate.vectors.jpg")))
 
 
 @click.command()
@@ -45,7 +45,7 @@ class DebugVectorsProcessor(BlockProcessor):
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
 def debug_vectors(data_path, **kwargs):
-	""" Export debug information on vectors for all document images in DATA_PATH. """
+	""" Export annotate information on vectors for all document images in DATA_PATH. """
 	processor = DebugVectorsProcessor(kwargs)
 	processor.traverse(data_path)
 

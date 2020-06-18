@@ -26,7 +26,7 @@ class Processor:
 
 				if p.name.endswith(".binarized.png"):
 					continue
-				if re.match(r".*\.debug\..*\.(png|jpg)$", p.name):
+				if re.match(r".*\.annotate\..*\.(png|jpg)$", p.name):
 					continue
 
 				if self.should_process(p):
