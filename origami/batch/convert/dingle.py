@@ -28,6 +28,11 @@ class DinglehopperProcessor(BlockProcessor):
 		self._options = options
 		self._use_xy_cut = True
 
+		if options["filter"]:
+			self._block_filter = [tuple(options["filter"].split("."))]
+		else:
+			self._block_filter = None
+
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
 			p.with_suffix(".ocr.zip").exists() and\
@@ -66,6 +71,9 @@ class DinglehopperProcessor(BlockProcessor):
 			if block_path not in lines:
 				continue
 
+			if self._block_filter and block_path[:2] not in self._block_filter:
+				continue
+
 			region = pagexml.TextRegion("-".join(map(str, block_path)))
 			doc.append(region)
 
@@ -84,6 +92,11 @@ class DinglehopperProcessor(BlockProcessor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'-f', '--filter',
+	type=str,
+	default=None,
+	help="Only export text from given block path, e.g. -f \"regions.TEXT\".")
 @click.option(
 	'--nolock',
 	is_flag=True,
