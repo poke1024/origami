@@ -11,6 +11,7 @@ from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.deskew import Deskewer
 from origami.batch.annotate.utils import render_blocks
 
 
@@ -35,15 +36,14 @@ class DebugXYCutProcessor(BlockProcessor):
 		def get_label(block_path):
 			return str(1 + order[block_path])
 
-		matrix = cv2.getRotationMatrix2D(
-			(0, 0), xycut_data["skew"] * (180 / math.pi), 1)
+		deskewer = Deskewer(skew=xycut_data["skew"])
+
 		im = PIL.Image.open(p)
-		pixels = cv2.warpAffine(np.array(im), matrix, (im.width, im.height))
-		im = PIL.Image.fromarray(pixels)
+		im = deskewer.image(im)
 
 		qt_im = ImageQt(im)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
-		pixmap = render_blocks(pixmap, blocks, get_label, matrix=matrix)
+		pixmap = render_blocks(pixmap, blocks, get_label, matrix=deskewer.matrix)
 		pixmap.toImage().save(str(p.with_suffix(".annotate.xycut.jpg")))
 
 

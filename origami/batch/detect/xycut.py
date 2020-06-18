@@ -1,17 +1,16 @@
 import imghdr
 import click
 import numpy as np
-import wquantiles
 import cv2
 import math
 import json
-import shapely.affinity
 import collections
 
 from pathlib import Path
 from atomicwrites import atomic_write
 
 from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.deskew import Deskewer
 from origami.core.math import to_shapely_matrix
 from origami.core.xycut import reading_order
 
@@ -34,24 +33,19 @@ class XYCutProcessor(BlockProcessor):
 		if len(lines) < 1:
 			return
 
+		deskewer = Deskewer(lines)
+
+		names = []
+		bounds = []
+
 		lines_by_block = collections.defaultdict(list)
 		for line_path, line in lines.items():
 			lines_by_block[line_path[:3]].append((line_path, line))
 		for k in list(lines_by_block.keys()):
 			lines_by_block[k] = sorted(lines_by_block[k], key=lambda x: x[0])
 
-		angles = np.array([line.angle for line in lines.values()])
-		lengths = np.array([line.length for line in lines.values()])
-		skew = wquantiles.median(angles, lengths)
-
-		m = to_shapely_matrix(cv2.getRotationMatrix2D(
-			(0, 0), skew * (180 / math.pi), 1))
-
-		names = []
-		bounds = []
-
 		def add(polygon, path):
-			minx, miny, maxx, maxy = shapely.affinity.affine_transform(polygon, m).bounds
+			minx, miny, maxx, maxy = deskewer.shapely(polygon).bounds
 
 			minx = min(minx + self._buffer, maxx)
 			maxx = max(maxx - self._buffer, minx)
@@ -72,7 +66,7 @@ class XYCutProcessor(BlockProcessor):
 				add(block.image_space_polygon, block_path)
 
 		data = dict(
-			skew=skew,
+			skew=deskewer.skew,
 			order=[names[i] for i in reading_order(bounds)])
 
 		zf_path = page_path.with_suffix(".xycut.json")
