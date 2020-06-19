@@ -4,6 +4,8 @@ import os
 import click
 import unicodedata
 import itertools
+import logging
+import traceback
 
 from pathlib import Path
 from tqdm import tqdm
@@ -107,7 +109,11 @@ class Channel:
 class Schema:
 	def __init__(self, path):
 		with open(path, "r") as f:
-			data = ast.literal_eval(f.read())
+			try:
+				data = ast.literal_eval(f.read())
+			except ValueError:
+				logging.info(traceback.format_exc())
+				raise ValueError("Could not process harmonization schema at %s." % path)
 
 		self._tests = data["tests"]
 
