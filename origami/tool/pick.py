@@ -153,6 +153,9 @@ class App:
 			if imghdr.what(p) is not None:
 				if (p.parent / p.with_suffix(".lines.zip")).exists():
 					page_paths.append(p)
+		if not page_paths:
+			raise click.UsageError(
+				"Could not find any line data in %s." % data_path)
 		self._page_paths = sorted(page_paths)
 		self._page_index = 1
 
