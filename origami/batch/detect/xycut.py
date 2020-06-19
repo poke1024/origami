@@ -80,6 +80,11 @@ class XYCutProcessor(BlockProcessor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
+	'--name',
+	type=str,
+	default="",
+	help="Only process paths that conform to the given pattern.")
+@click.option(
 	'--nolock',
 	is_flag=True,
 	default=False,

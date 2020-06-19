@@ -1,5 +1,6 @@
 import imghdr
 import click
+import re
 
 from pathlib import Path
 from atomicwrites import atomic_write
@@ -35,6 +36,11 @@ class SegmentationProcessor(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'--name',
+	type=str,
+	default="",
+	help="Only process paths that conform to the given pattern.")
 @click.option(
 	'--nolock',
 	is_flag=True,

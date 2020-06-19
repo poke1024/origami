@@ -180,6 +180,11 @@ class ContoursProcessor(Processor):
 	default="(5, 5)",
 	help="Opening amount to remove ink overflow between columns.")
 @click.option(
+	'--name',
+	type=str,
+	default="",
+	help="Only process paths that conform to the given pattern.")
+@click.option(
 	'--nolock',
 	is_flag=True,
 	default=False,

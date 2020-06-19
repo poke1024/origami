@@ -12,6 +12,7 @@ from tqdm import tqdm
 class Processor:
 	def __init__(self, options):
 		self._lock_files = not options["nolock"]
+		self._name = options["name"]
 
 	def traverse(self, path: Path):
 		if not Path(path).is_dir():
@@ -27,6 +28,8 @@ class Processor:
 				if p.name.endswith(".binarized.png"):
 					continue
 				if re.match(r".*\.annotate\..*\.(png|jpg)$", p.name):
+					continue
+				if self._name and not re.search(self._name, str(p)):
 					continue
 
 				if self.should_process(p):

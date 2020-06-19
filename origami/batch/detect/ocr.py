@@ -105,6 +105,11 @@ class OCRProcessor(BlockProcessor):
 	is_flag=True,
 	help='do not deskew line images')
 @click.option(
+	'--name',
+	type=str,
+	default="",
+	help="Only process paths that conform to the given pattern.")
+@click.option(
 	'--nolock',
 	is_flag=True,
 	default=False,

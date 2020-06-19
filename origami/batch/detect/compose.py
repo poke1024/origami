@@ -55,7 +55,7 @@ class ComposeProcessor(BlockProcessor):
 		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
 			for block_name in xycut_data["order"]:
 				block_path = tuple(block_name.split("/"))
-				if  self._block_filter and block_path[:2] not in self._block_filter:
+				if self._block_filter and block_path[:2] not in self._block_filter:
 					continue
 
 				block = blocks[block_path]
@@ -96,6 +96,11 @@ class ComposeProcessor(BlockProcessor):
 	type=str,
 	default=None,
 	help="Only export text from given block path, e.g. -f \"regions.TEXT\".")
+@click.option(
+	'--name',
+	type=str,
+	default="",
+	help="Only process paths that conform to the given pattern.")
 @click.option(
 	'--nolock',
 	is_flag=True,
