@@ -17,12 +17,15 @@ import cv2
 import scipy
 import math
 import shapely.geometry
+import shapely.ops
+import matplotlib.tri
 
 from cached_property import cached_property
 
 from origami.batch.core.utils import read_blocks
 from origami.batch.core.utils import read_separators
 from origami.core.lingrid import lingrid
+from origami.core.mask import Mask
 
 
 def make_ellipse(w, h):
@@ -32,8 +35,8 @@ def make_ellipse(w, h):
 
 
 class LineSkewEstimator:
-	def __init__(self, min_length=50, kernel=(16, 8)):
-		self._max_phi = 30 * (math.pi / 180)
+	def __init__(self, max_phi, min_length=50, kernel=(16, 8)):
+		self._max_phi = max_phi * (math.pi / 180)
 		self._min_length = min_length
 		self._kernel = kernel
 
@@ -167,15 +170,27 @@ class ScatteredSkewSamples:
 
 		return coords, phis
 
-	def add_line_skew(self, page_path):
+	def add_line_skew(self, page_path, max_phi):
 		blocks = read_blocks(page_path)
+		estimator = LineSkewEstimator(max_phi=max_phi)
 
-		estimator = LineSkewEstimator()
-		for block in blocks.values():
-			im, pos = block.extract_image()
+		def add(im, pos):
 			for pt, phi in estimator(im):
 				self._points.append(np.array(pt) + np.array(pos))
 				self._values.append(phi)
+
+		if True:  # processing all blocks at once takes 1/2 time.
+			region = shapely.ops.cascaded_union([
+				block.text_area() for block in blocks.values()])
+
+			mask = Mask(region)
+			im = PIL.Image.open(page_path)
+			im, pos = mask.extract_image(np.array(im), background=255)
+			add(im, pos)
+		else:
+			for block in blocks.values():
+				im, pos = block.extract_image()
+				add(im, pos)
 
 	def add_separator_skew(self, separators, sep_types):
 		for path, polyline in separators.items():
@@ -220,11 +235,48 @@ class WarpField:
 		return extent
 
 
+class Transformer:
+	def __init__(self, grid, grid_res):
+		h, w = grid.shape[:2]
+
+		triangles = None
+		'''
+		def p(i, j):
+			return i * w + j
+
+		triangles = np.empty(((w - 1) * (h - 1) * 2, 3), dtype=np.int32)
+		k = 0
+		for i in range(h - 1):
+			for j in range(w - 1):
+				triangles[k] = (p(i + 1, j), p(i, j + 1), p(i, j))
+				k += 1
+				triangles[k] = (p(i + 1, j), p(i + 1, j + 1), p(i, j + 1))
+				k += 1
+		'''
+
+		tri = matplotlib.tri.Triangulation(
+			grid[:, :, 0].flatten(),
+			grid[:, :, 1].flatten(),
+			triangles)
+
+		z = np.flip(np.dstack(np.mgrid[0:h, 0:w]), axis=-1) * grid_res
+
+		self._ix = matplotlib.tri.LinearTriInterpolator(tri, z[:, :, 0].flatten())
+		self._iy = matplotlib.tri.LinearTriInterpolator(tri, z[:, :, 1].flatten())
+
+	def __call__(self, x, y):
+		tx = self._ix(x, y).compressed()
+		ty = self._iy(x, y).compressed()
+		return tx, ty
+
+
 class Dewarper:
 	horizontal_separators = ["H"]
 	vertical_separators = ["V", "T"]
 
-	def __init__(self, page_path, grid_res=25, add_separators=True, rescale_separators=False):
+	def __init__(self, page_path, grid_res=25, max_phi=10,
+		add_separators=True, rescale_separators=False):
+
 		im = PIL.Image.open(page_path)
 		self._im = im
 
@@ -247,7 +299,7 @@ class Dewarper:
 		if separators:
 			self._samples_h.add_separator_skew(
 				separators, Dewarper.horizontal_separators)
-		self._samples_h.add_line_skew(page_path)
+		self._samples_h.add_line_skew(page_path, max_phi=max_phi)
 
 		self._samples_v = ScatteredSkewSamples()
 		if separators:
@@ -367,3 +419,9 @@ class Dewarper:
 		return PIL.Image.fromarray(cv2.remap(
 			np.array(self._im), x_grid_hv.astype(np.float32),
 			None, interpolation=cv2.INTER_LINEAR))
+
+	@cached_property
+	def transformer(self):
+		x_grid_hv = self._full_res_grid()
+		r = self._grid_res
+		return Transformer(x_grid_hv[::r, ::r], r)
