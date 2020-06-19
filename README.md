@@ -135,3 +135,13 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
     <a href="https://github.com/Calamari-OCR/calamari">Calamari</a>. See command line for details.</dd>
 </dl>
 
+## How to create ground truth
+
+You first need to detect lines in your pages: in order to do this, run `origami.batch.detect.binarize`,
+`origami.batch.detect.segment`, `origami.batch.detect.vectors` and `origami.batch.detect.lines` on your
+`DATA_PATH` that contains your page images.
+
+Now run `python -m origami.tool.sample DATA_PATH` (look at the `-s` parameter to specify which content
+you want to annotate) to generate an `annotations.db` with a sample of lines. You can now run
+`python -m origami.tool.pick DATA_PATH` to extend this sample with hand-picked lines from various pages
+(optional). Finally, run `python -m origami.tool.annotate DATA_PATH`, to edit and review transcriptions.

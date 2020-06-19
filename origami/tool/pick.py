@@ -87,10 +87,6 @@ class BetterDialog(tkinter.simpledialog.Dialog):
 
 		self.protocol("WM_DELETE_WINDOW", self.cancel)
 
-		#if self.parent is not None:
-		#	self.geometry("+%d+%d" % (parent.winfo_rootx() + 50,
-		#							  parent.winfo_rooty() + 50))
-
 		self.deiconify()  # become visible now
 
 		self.initial_focus.focus_set()
@@ -155,7 +151,8 @@ class App:
 		page_paths = []
 		for p in self._data_path.iterdir():
 			if imghdr.what(p) is not None:
-				page_paths.append(p)
+				if (p.parent / p.with_suffix(".lines.zip")).exists():
+					page_paths.append(p)
 		self._page_paths = sorted(page_paths)
 		self._page_index = 1
 
@@ -250,13 +247,16 @@ class App:
 		self._page_path_text.set("%s [%d/%d]" % (relative_page_path, self._page_index, len(self._page_paths)))
 
 		lines = dict()
-		zf_path = page_path.parent / (page_path.name.replace(".jpg", ".lines.zip"))
-		with zipfile.ZipFile(zf_path, "r") as zf:
-			for filename in zf.namelist():
-				if filename.endswith(".json"):
-					line_data = json.loads(zf.read(filename))
-					name = filename.rsplit('.', 1)[0]
-					lines[name] = shapely.wkt.loads(line_data["wkt"])
+		zf_path = page_path.parent / page_path.with_suffix(".lines.zip")
+		if zf_path.exists():
+			with zipfile.ZipFile(zf_path, "r") as zf:
+				for filename in zf.namelist():
+					if filename.endswith(".json"):
+						line_data = json.loads(zf.read(filename))
+						name = filename.rsplit('.', 1)[0]
+						lines[name] = shapely.wkt.loads(line_data["wkt"])
+		else:
+			print("could not load line information for %s" % page_path)
 
 		cursor = self._conn.cursor()
 		cursor.execute(

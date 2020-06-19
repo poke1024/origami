@@ -106,8 +106,8 @@ class SampleProcessor(BlockProcessor):
 				del all_lines[k]
 
 		lines_by_region = collections.defaultdict(list)
-		for line_path, line in all_lines.items():
-			parts = line_path.split("/")
+		for parts, line in all_lines.items():
+			line_path = "/".join(parts)
 			lines_by_region[tuple(parts[:2])].append(
 				(relative_page_path, line_path, line))
 

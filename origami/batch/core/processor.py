@@ -12,7 +12,7 @@ from tqdm import tqdm
 class Processor:
 	def __init__(self, options):
 		self._lock_files = not options["nolock"]
-		self._name = options["name"]
+		self._name = options.get("name", "")
 
 	def traverse(self, path: Path):
 		if not Path(path).is_dir():
