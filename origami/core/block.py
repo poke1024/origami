@@ -38,6 +38,10 @@ class Line:
 		return self._block
 
 	@property
+	def center(self):
+		return self._p + self._right / 2
+
+	@property
 	def angle(self):
 		return math.atan2(self._right[1], self._right[0])
 

@@ -5,13 +5,13 @@ import click
 import shapely.ops
 import shapely.wkt
 import zipfile
+import PIL.Image
 
 from pathlib import Path
 from atomicwrites import atomic_write
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.core.dewarp import Dewarper
-from origami.api import Segmentation
+from origami.core.dewarp import Dewarper, Grid
 
 
 def dewarped_contours(page_path, transformer):
@@ -29,34 +29,35 @@ class DewarpProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
-		self._dewarp_threshold = options["threshold"]
 
 	def should_process(self, p: Path) -> bool:
 		return not p.name.endswith(".dewarped.jpg") and\
 			imghdr.what(p) is not None and\
 			p.with_suffix(".segment.zip").exists() and\
 			p.with_suffix(".contours.zip").exists() and\
-			not p.with_suffix(".dewarp.png").exists() and\
-			not p.with_suffix(".dewarp.json").exists()
+			p.with_suffix(".lines.zip").exists() and\
+			not p.with_suffix(".dewarp.zip").exists()
 
 	def process(self, page_path: Path):
-		dewarper = Dewarper(page_path, grid_res=self._options["grid_cell_size"])
+		im = PIL.Image.open(page_path)
 
-		# dewarping is expensive and might go wrong. do not do it  unless it seems necessary.
-		if dewarper.warping >= self._dewarp_threshold:
-			zf_path = page_path.with_suffix(".dewarp.contours.zip")
-			with atomic_write(zf_path, mode="wb", overwrite=False) as f:
-				with zipfile.ZipFile(f, "w", self.compression) as zf:
-					for name, data in dewarped_contours(page_path, dewarper.transformer):
-						zf.writestr(name, data)
+		separators = self.read_separators(page_path)
+		blocks = self.read_blocks(page_path)
+		lines = self.read_lines(page_path, blocks)
 
-			im = dewarper.dewarped
-			im.save(page_path.with_suffix(".dewarp.png"))
+		grid = Grid.create(
+			im.size,
+			blocks, lines, separators,
+			grid_res=self._options["grid_cell_size"])
 
-		dewarp_data = dict(warping=dewarper.warping)
+		zf_path = page_path.with_suffix(".dewarp.contours.zip")
+		with atomic_write(zf_path, mode="wb", overwrite=False) as f:
+			with zipfile.ZipFile(f, "w", self.compression) as zf:
+				for name, data in dewarped_contours(page_path, grid.transformer):
+					zf.writestr(name, data)
 
-		with atomic_write(page_path.with_suffix(".dewarp.json"), mode="w", overwrite=False) as f:
-			f.write(json.dumps(dewarp_data))
+		with atomic_write(page_path.with_suffix(".dewarp.zip"), mode="wb", overwrite=False) as f:
+			grid.save(f)
 
 
 @click.command()
@@ -65,12 +66,7 @@ class DewarpProcessor(BlockProcessor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-t', '--threshold',
-	type=float,
-	default=0.02,
-	help="only dewarp if page is warped above this threshold (0 = always dewarp).")
-@click.option(
-	'-g', '--grid-cell-size',
+	'-c', '--grid-cell-size',
 	type=int,
 	default=25,
 	help="grid cell size used for dewarping (smaller is better, but takes longer).")

@@ -18,13 +18,14 @@ import scipy
 import math
 import shapely.geometry
 import shapely.ops
-import matplotlib.tri
+import io
+import zipfile
+import json
 
 from cached_property import cached_property
+from functools import lru_cache
 
-from origami.batch.core.utils import read_blocks
-from origami.batch.core.utils import read_separators
-from origami.core.lingrid import lingrid
+from origami.core.lingrid import lininterp
 from origami.core.mask import Mask
 
 
@@ -133,7 +134,10 @@ def subdivide(coords):
 	yield coords[-1]
 
 
-class ScatteredSkewSamples:
+class Samples:
+	horizontal_separators = ["H"]
+	vertical_separators = ["V", "T"]
+
 	def __init__(self):
 		self._points = []
 		self._values = []
@@ -147,7 +151,7 @@ class ScatteredSkewSamples:
 		return self._values
 
 	@property
-	def warping(self):
+	def std(self):
 		if len(self._values) > 3:
 			return np.std(self._values)
 		else:
@@ -170,8 +174,13 @@ class ScatteredSkewSamples:
 
 		return coords, phis
 
-	def add_line_skew(self, page_path, max_phi):
-		blocks = read_blocks(page_path)
+	def add_line_skew_hq(self, blocks, lines, max_phi):
+		for line in lines.values():
+			if abs(line.angle) < max_phi:
+				self._points.append(line.center)
+				self._values.append(line.angle)
+
+	def add_line_skew_lq(self, blocks, lines, max_phi):
 		estimator = LineSkewEstimator(max_phi=max_phi)
 
 		def add(im, pos):
@@ -200,93 +209,57 @@ class ScatteredSkewSamples:
 				self._values.extend(sep_values)
 
 
-class WarpField:
+class Field:
 	def __init__(self, samples, size):
-		warp_field = lingrid(
+		self._size = size
+
+		self._interp = lininterp(
 			samples.points, samples.values, size[0], size[1])
 
-		warp_cos = np.cos(warp_field, dtype=np.float32)
-		warp_sin = np.sin(warp_field, dtype=np.float32)
-		self._warp_vec = np.dstack([warp_cos, warp_sin])
-
-	def __call__(self, x, y):
-		vec = self._warp_vec
-
-		wx = int(x)
-		wy = int(y)
-
-		wx = min(max(wx, 0), vec.shape[0] - 1)
-		wy = min(max(wy, 0), vec.shape[1] - 1)
-
-		return vec[wx, wy]
+	def get(self, pts):
+		angles = self._interp(pts)
+		dx = np.cos(angles, dtype=np.float32)
+		dy = np.sin(angles, dtype=np.float32)
+		return np.squeeze(np.dstack([dx, dy]), axis=0)
 
 	def estimate_extent(self, axis, limit, step_size):
-		vec = self._warp_vec
-		extent = 0
-		for y in range(vec.shape[1 - axis]):
-			p = np.array([0, y]) if axis == 0 else np.array([y, 0])
-			n_steps = 1
-			max_steps = (2 * limit) // step_size
-			while p[axis] < limit and n_steps < max_steps:
-				v = self(*p)
-				p = p + v * step_size
-				n_steps += 1
-			extent = max(extent, n_steps)
-		return extent
+		pts = np.array([[0, y] for y in range(
+			0, self._size[1 - axis], step_size)]).astype(np.float32)
+		if axis != 0:
+			pts = np.flip(pts, axis=-1)
+
+		n_steps = 1
+		max_steps = 2 * (1 + self._size[axis] // n_steps)
+
+		while np.any(pts[:, axis] < limit) and n_steps < max_steps:
+			pts += self.get(pts) * step_size
+			n_steps += 1
+
+		return n_steps
 
 
 class Transformer:
 	def __init__(self, grid, grid_res):
 		h, w = grid.shape[:2]
 
-		triangles = None
-		'''
-		def p(i, j):
-			return i * w + j
-
-		triangles = np.empty(((w - 1) * (h - 1) * 2, 3), dtype=np.int32)
-		k = 0
-		for i in range(h - 1):
-			for j in range(w - 1):
-				triangles[k] = (p(i + 1, j), p(i, j + 1), p(i, j))
-				k += 1
-				triangles[k] = (p(i + 1, j), p(i + 1, j + 1), p(i, j + 1))
-				k += 1
-		'''
-
-		tri = matplotlib.tri.Triangulation(
-			grid[:, :, 0].flatten(),
-			grid[:, :, 1].flatten(),
-			triangles)
-
-		z = np.flip(np.dstack(np.mgrid[0:h, 0:w]), axis=-1) * grid_res
-
-		self._ix = matplotlib.tri.LinearTriInterpolator(tri, z[:, :, 0].flatten())
-		self._iy = matplotlib.tri.LinearTriInterpolator(tri, z[:, :, 1].flatten())
+		self._interp = scipy.interpolate.LinearNDInterpolator(
+			grid.reshape((h * w, 2)),
+			np.flip(np.dstack(np.mgrid[0:h, 0:w]), axis=-1).reshape((h * w, 2)) * grid_res)
 
 	def __call__(self, x, y):
-		tx = self._ix(x, y).compressed()
-		ty = self._iy(x, y).compressed()
-		return tx, ty
+		pts = self._interp(np.squeeze(np.dstack([x, y]), axis=0))
+		return pts[:, 0], pts[:, 1]
 
 
-class Dewarper:
-	horizontal_separators = ["H"]
-	vertical_separators = ["V", "T"]
+class GridFactory:
+	def __init__(self, size, blocks, lines, separators, grid_res=25, max_phi=30,
+		rescale_separators=False):
 
-	def __init__(self, page_path, grid_res=25, max_phi=10,
-		add_separators=True, rescale_separators=False):
-
-		im = PIL.Image.open(page_path)
-		self._im = im
-
-		self._width = im.width
-		self._height = im.height
+		self._width = size[0]
+		self._height = size[1]
 		self._grid_res = grid_res
 
-		if add_separators:
-			separators = read_separators(page_path)
-
+		if separators is not None:
 			if rescale_separators:  # legacy mode
 				sx = im.width / 1280
 				sy = im.height / 2400
@@ -295,104 +268,161 @@ class Dewarper:
 		else:
 			separators = None
 
-		self._samples_h = ScatteredSkewSamples()
+		self._samples_h = Samples()
 		if separators:
 			self._samples_h.add_separator_skew(
-				separators, Dewarper.horizontal_separators)
-		self._samples_h.add_line_skew(page_path, max_phi=max_phi)
+				separators, Samples.horizontal_separators)
+		self._samples_h.add_line_skew_hq(blocks, lines, max_phi=max_phi)
 
-		self._samples_v = ScatteredSkewSamples()
+		self._samples_v = Samples()
 		if separators:
 			self._samples_v.add_separator_skew(
-				separators, Dewarper.vertical_separators)
-
-		self._warp_field_h = None
-		self._warp_field_v = None
+				separators, Samples.vertical_separators)
 
 	@property
-	def warping(self):
-		return max(self._samples_h.warping, self._samples_v.warping)
+	def res(self):
+		return self._grid_res
 
-	def _initialize(self):
-		if self._warp_field_h is None:
-			size = (self._width, self._height)
+	@property
+	def std(self):
+		return max(self._samples_h.std, self._samples_v.std)
 
-			self._warp_field_h = WarpField(
-				self._samples_h, size)
-			self._warp_field_v = WarpField(
-				self._samples_v, size)
+	@cached_property
+	def field_h(self):
+		size = (self._width, self._height)
+		return Field(self._samples_h, size)
 
-			self._compute_grid_h()
-			self._compute_grid_hv()
+	@cached_property
+	def field_v(self):
+		size = (self._width, self._height)
+		return Field(self._samples_v, size)
 
-	def _estimate_grid_shape(self):
+	@cached_property
+	def grid_shape(self):
 		# sample the vector field here? how many more grid cells do we need
 		# to get from top to bottom, or left to right?
-		est_width = self._warp_field_h.estimate_extent(
+		est_width = self.field_h.estimate_extent(
 			0, self._width, step_size=self._grid_res)
-		est_height = self._warp_field_v.estimate_extent(
+		est_height = self.field_v.estimate_extent(
 			1, self._height, step_size=self._grid_res)
 		return est_height, est_width
 
-	def _compute_grid_h(self):
-		grid_shape = self._estimate_grid_shape()
+	@cached_property
+	def grid_h(self):
+		grid_shape = self.grid_shape
+
 		grid = np.zeros((grid_shape[0], grid_shape[1], 2), dtype=np.float32)
-		p = np.zeros((2,), dtype=np.float32)
 		grid_res = self._grid_res
 
-		warp_field_h = self._warp_field_h
-		for gy in range(grid.shape[0]):
-			p[:] = (0, gy * grid_res)
+		field_h = self.field_h.get
 
-			for gx in range(grid.shape[1]):
-				grid[gy, gx, :] = p
+		pts = np.array([
+			[0, gy * grid_res]
+			for gy in range(grid.shape[0])], dtype=np.float32)
+		for gx in range(grid.shape[1]):
+			grid[:, gx, :] = pts
+			pts += field_h(pts) * grid_res
 
-				p += warp_field_h(*p) * grid_res
+		return grid
 
-		self._grid_h = grid
-
-	def _compute_grid_hv(self):
-		grid_h = self._grid_h
+	@cached_property
+	def grid_hv(self):
+		grid_h = self.grid_h
 		grid_res = self._grid_res
-		warp_field_v = self._warp_field_v
+		field_v = self.field_v.get
 
 		rows = []
 		for gy in range(grid_h.shape[0]):
 			rows.append(shapely.geometry.LineString(grid_h[gy]))
 
-		grid_hv = np.empty(grid_h.shape, dtype=np.float32)
-		for gx in range(grid_h.shape[1]):
-			p = grid_h[0, gx][:]
+		grid_hv = np.zeros(grid_h.shape, dtype=np.float32)
 
-			for gy in range(grid_h.shape[0] - 1):
-				grid_hv[gy, gx, :] = p
+		pts0 = grid_h[0]
 
-				v = warp_field_v(*p) * grid_res * 2
+		for gy in range(grid_h.shape[0] - 1):
+			grid_hv[gy, :, :] = pts0
 
-				ray = shapely.geometry.LineString([p, p + v])
+			pts1 = pts0 + field_v(pts0) * grid_res * 2
+
+			for i, (p0, p1) in enumerate(zip(pts0, pts1)):
+				ray = shapely.geometry.LineString([p0, p1])
 				inter = ray.intersection(rows[gy + 1])
 				if inter:
-					p = np.array(list(inter.coords)[0])
-				else:
-					p = p + v
+					pts1[i] = list(inter.coords)[0]
 
-			grid_hv[-1, gx, :] = p
+			pts0 = pts1
 
-		self._grid_hv = grid_hv
+		grid_hv[-1, :, :] = pts0
+
+		return grid_hv
+
+
+class Grid:
+	def __init__(self, hv, res):
+		self._grid_hv = hv
+		self._grid_res = res
 
 	@cached_property
-	def annotate(self):
-		self._initialize()
+	def warping(self):
+		pts = self.points("sample")
+		dy = (pts[1:, :, 0] - pts[:-1, :, 1]).flatten()
+		dx = (pts[:, 1:, 1] - pts[:, :-1, 0]).flatten()
+		return max(np.std(dx), np.std(dy))
 
-		pixels = np.array(self._im)
+	@lru_cache(maxsize=8)
+	def points(self, resolution="full", interpolation=cv2.INTER_LINEAR):
+		if resolution == "sample":
+			return self._grid_hv
+		elif resolution == "full":
+			grid = self._grid_hv
+			s = self._grid_res
+			h, w = grid.shape[:2]
+			xs = cv2.resize(grid[:, :, 0], (w * s, h * s), interpolation=interpolation)
+			ys = cv2.resize(grid[:, :, 1], (w * s, h * s), interpolation=interpolation)
+			return np.dstack([xs, ys])
+		else:
+			raise ValueError(resolution)
 
-		grid_h = self._grid_h
-		grid_hv = self._grid_hv
+	@staticmethod
+	def create(*args, **kwargs):
+		factory = GridFactory(*args, **kwargs)
+		return Grid(factory.grid_hv, factory.res)
 
-		for gy in range(grid_h.shape[0]):
-			for gx in range(grid_h.shape[1] - 1):
-				ip = tuple(map(int, grid_h[gy, gx]))
-				iq = tuple(map(int, grid_h[gy, gx + 1]))
+	def save(self, path, compression=zipfile.ZIP_BZIP2):
+		data = io.BytesIO()
+		np.save(data, self._grid_hv)
+
+		info = dict(cell=self._grid_res, shape=self._grid_hv.shape)
+		with zipfile.ZipFile(path, "w", compression) as zf:
+			zf.writestr("data", data.getvalue())
+			zf.writestr("meta.json", json.dumps(info))
+
+	@cached_property
+	def transformer(self):
+		x_grid_hv = self.points("full")
+		r = self._grid_res
+		return Transformer(x_grid_hv[::r, ::r], r)
+
+
+class Dewarper:
+	def __init__(self, im, grid):
+		self._im = im
+		self._grid = grid
+
+	@property
+	def grid(self):
+		return self._grid
+
+	@cached_property
+	def annotated(self):
+		pixels = np.array(self._im.convert("RGB"))
+
+		grid_hv = self._grid.points("sample")
+
+		for gy in range(grid_hv.shape[0]):
+			for gx in range(grid_hv.shape[1] - 1):
+				ip = tuple(map(int, grid_hv[gy, gx]))
+				iq = tuple(map(int, grid_hv[gy, gx + 1]))
 				cv2.line(pixels, ip, iq, (255, 0, 0), 2)
 
 		for gy in range(grid_hv.shape[0] - 1):
@@ -403,25 +433,10 @@ class Dewarper:
 
 		return PIL.Image.fromarray(pixels)
 
-	def _full_res_grid(self, interpolation=cv2.INTER_LINEAR):
-		self._initialize()
-		grid = self._grid_hv
-		s = self._grid_res
-		h, w = grid.shape[:2]
-		xs = cv2.resize(grid[:, :, 0], (w * s, h * s), interpolation=interpolation)
-		ys = cv2.resize(grid[:, :, 1], (w * s, h * s), interpolation=interpolation)
-		return np.dstack([xs, ys])
-
 	@cached_property
 	def dewarped(self):
-		x_grid_hv = self._full_res_grid()
+		x_grid_hv = self._grid.points("full")
 
 		return PIL.Image.fromarray(cv2.remap(
 			np.array(self._im), x_grid_hv.astype(np.float32),
 			None, interpolation=cv2.INTER_LINEAR))
-
-	@cached_property
-	def transformer(self):
-		x_grid_hv = self._full_res_grid()
-		r = self._grid_res
-		return Transformer(x_grid_hv[::r, ::r], r)

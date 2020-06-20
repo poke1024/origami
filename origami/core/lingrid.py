@@ -6,9 +6,11 @@ on a grid using scattered and few data points.
 import numpy as np
 import scipy.interpolate
 import scipy.spatial
+import shapely.geometry
 import sympy
 
 from enum import Enum
+from cached_property import cached_property
 
 
 def lerp(a, b, x):
@@ -26,18 +28,19 @@ class Box:
 	def __init__(self, width, height):
 		margin = 1
 
-		box_pts = [sympy.geometry.Point(x, y) for x, y in [
+		box_pts = [
 			(-margin, -margin),
 			(width + margin, -margin),
 			(width + margin, height + margin),
-			(-margin, height + margin)]]
+			(-margin, height + margin)]
 
-		self._minx = box_pts[0].x
-		self._miny = box_pts[0].y
-		self._maxx = box_pts[2].x
-		self._maxy = box_pts[2].y
+		self._minx = box_pts[0][0]
+		self._miny = box_pts[0][1]
+		self._maxx = box_pts[2][0]
+		self._maxy = box_pts[2][1]
 
-		self._box = sympy.geometry.polygon.Polygon(*box_pts)
+		self._box = shapely.geometry.LinearRing(box_pts)
+		self._box_size = max(width, height) + 2 * margin + 1
 
 		self._points = []
 		self._borders = dict((b, []) for b in Border)
@@ -58,28 +61,31 @@ class Box:
 		for pt, val in self._corners.items():
 			yield np.hstack([pt, val])
 
-	def _intersect(self, a, b):
-		ray = sympy.geometry.Ray(
-			sympy.geometry.Point(*a),
-			sympy.geometry.Point(*b))
-		intersection = sympy.geometry.intersection(
-			ray, self._box)
-		if len(intersection) < 1:
+	def _intersect(self, p, dir):
+		ray = shapely.geometry.LineString([
+			p, p + dir * self._box_size])
+		int_pt = ray.intersection(self._box)
+		if int_pt is None:
 			raise ValueError("points outside given domain, ray %s does not hit %s" % (ray, self._box))
 
-		pt = intersection[0]
+		pt = tuple(list(int_pt.coords)[0])
 		borders = set()
-		if pt.x == self._minx:
+
+		is_minx = abs(pt[0] - self._minx) == 0
+		is_maxx = abs(pt[0] - self._maxx) == 0
+		is_miny = abs(pt[1] - self._miny) == 0
+		is_maxy = abs(pt[1] - self._maxy) == 0
+
+		if is_minx:
 			borders.add(Border.LEFT)
-		elif pt.x == self._maxx:
+		elif is_maxx:
 			borders.add(Border.RIGHT)
-		if pt.y == self._miny:
+		if is_miny:
 			borders.add(Border.TOP)
-		elif pt.y == self._maxy:
+		elif is_maxy:
 			borders.add(Border.BOTTOM)
 
-		fpt = pt.evalf()
-		return borders, fpt.x, fpt.y
+		return borders, pt[0], pt[1]
 
 	def add_projection(self, a, b):
 		a = a.astype(np.float64)
@@ -89,8 +95,8 @@ class Box:
 			return  # ignore
 		normal = np.array([-v[1], v[0]])
 		normal /= np.linalg.norm(normal)
-		self._add(*self._intersect(a[:2], a[:2] + normal), a[2:])
-		self._add(*self._intersect(b[:2], b[:2] + normal), b[2:])
+		self._add(*self._intersect(a[:2], normal), a[2:])
+		self._add(*self._intersect(b[:2], normal), b[2:])
 
 	def _add_corner(self, cx, cy, p1, p2):
 		if p1 is None and p2 is None:
@@ -127,105 +133,154 @@ class Box:
 	def add_corners(self):
 		# top left
 		self._add_corner(
-			self._minx.evalf(),
-			self._miny.evalf(),
+			self._minx,
+			self._miny,
 			self._nearest_to_corner(Border.LEFT, min, "y"),
 			self._nearest_to_corner(Border.TOP, min, "x"))
 
 		# top right
 		self._add_corner(
-			self._maxx.evalf(),
-			self._miny.evalf(),
+			self._maxx,
+			self._miny,
 			self._nearest_to_corner(Border.RIGHT, min, "y"),
 			self._nearest_to_corner(Border.TOP, max, "x"))
 
 		# bottom right
 		self._add_corner(
-			self._maxx.evalf(),
-			self._maxy.evalf(),
+			self._maxx,
+			self._maxy,
 			self._nearest_to_corner(Border.RIGHT, max, "y"),
 			self._nearest_to_corner(Border.BOTTOM, max, "x"))
 
 		# bottom left
 		self._add_corner(
-			self._minx.evalf(),
-			self._maxy.evalf(),
+			self._minx,
+			self._maxy,
 			self._nearest_to_corner(Border.LEFT, max, "y"),
 			self._nearest_to_corner(Border.BOTTOM, min, "x"))
 
 
-def lingrid(points, values, width, height):
-	box = Box(width, height)
+class Interpolator:
+	def __init__(self, inter, extra, w, h):
+		self._inter = inter
+		self._extra = extra
+		self._w = w
+		self._h = h
 
-	if not isinstance(values[0], np.ndarray):
-		squeeze = True
-	else:
-		squeeze = False
+	def __call__(self, pts):
+		pts = np.array(pts)
+		if len(pts.shape) == 1:
+			pts = pts[np.newaxis, :]
 
-	try:
-		hull = scipy.spatial.ConvexHull(points)
-		hull_pts = list(hull.points[hull.vertices])
-		is_collinear = False
-	except scipy.spatial.qhull.QhullError:
-		# most probably points are collinear.
-		is_collinear = True
+		pts[:, 0] = np.clip(pts[:, 0], 0, self._w - 1)
+		pts[:, 1] = np.clip(pts[:, 1], 0, self._h - 1)
 
-	if not is_collinear:
-		values_dict = dict(zip([tuple(p) for p in points], values))
-		hull_val = [values_dict[tuple(p)] for p in hull_pts]
-		hull_pts_val = list(zip(hull_pts, hull_val))
-
-		extra_pts = hull_pts[:]
-		extra_val = hull_val[:]
-
-		for (a, va), (b, vb) in zip(hull_pts_val, hull_pts_val[1:] + [hull_pts_val[0]]):
-			box.add_projection(
-				np.hstack([a, va]),
-				np.hstack([b, vb])
-			)
-	else:
-		pts_val = list(zip(points, values))
-		for (pa, va), (pb, vb) in zip(pts_val, pts_val[1:]):
-			a = np.hstack([pa, va])
-			b = np.hstack([pb, vb])
-			box.add_projection(a, b)
-			box.add_projection(b, a)
-
-		extra_pts = []
-		extra_val = []
-
-	box.add_corners()
-
-	for pt in box.points:
-		extra_pts.append(pt[:2])
-		extra_val.append(pt[2:])
-
-	extra_pts = np.array(extra_pts)
-	extra_val = np.array(extra_val)
-
-	grid = np.dstack(np.mgrid[0:width, 0:height])
-
-	extra_pixels = scipy.interpolate.griddata(
-		extra_pts, extra_val, grid,
-		method="linear",
-		fill_value=np.nan)
-
-	if not is_collinear:
-		inter_pixels = scipy.interpolate.griddata(
-			points, values, grid,
-			method="linear", fill_value=np.nan)
-
-		if len(extra_pixels.shape) > 2:
-			mask = np.isnan(inter_pixels[:, :, 0])
-			pixels = np.empty(extra_pixels.shape)
-			for i in range(extra_pixels.shape[-1]):
-				pixels[:, :, i] = np.where(
-					mask, extra_pixels[:, :, i], inter_pixels[:, :, i])
+		if self._inter is None:
+			return self._extra(pts)
 		else:
-			mask = np.isnan(inter_pixels)
-			pixels = np.where(mask, extra_pixels, inter_pixels)
+			ri = self._inter(pts)
+			rx = self._extra(pts)
+			return np.where(np.isnan(ri), rx, ri)
 
-	if squeeze and len(pixels.shape) > 2:
-		pixels = pixels.squeeze(axis=-1)
 
-	return pixels
+class InterpolatorFactory:
+	def __init__(self, points, values, width, height):
+		self._points = points
+		self._values = values
+		self._width = width
+		self._height = height
+
+		box = Box(width, height)
+
+		if not isinstance(values[0], np.ndarray):
+			self._squeeze = True
+		else:
+			self._squeeze = False
+
+		try:
+			hull = scipy.spatial.ConvexHull(points)
+			hull_pts = list(hull.points[hull.vertices])
+			self._is_collinear = False
+		except scipy.spatial.qhull.QhullError:
+			# most probably points are collinear.
+			self._is_collinear = True
+
+		if not self._is_collinear:
+			values_dict = dict(zip([tuple(p) for p in points], values))
+			hull_val = [values_dict[tuple(p)] for p in hull_pts]
+			hull_pts_val = list(zip(hull_pts, hull_val))
+
+			extra_pts = hull_pts[:]
+			extra_val = hull_val[:]
+
+			for (a, va), (b, vb) in zip(hull_pts_val, hull_pts_val[1:] + [hull_pts_val[0]]):
+				box.add_projection(
+					np.hstack([a, va]),
+					np.hstack([b, vb]))
+		else:
+			pts_val = list(zip(points, values))
+			for (pa, va), (pb, vb) in zip(pts_val, pts_val[1:]):
+				a = np.hstack([pa, va])
+				b = np.hstack([pb, vb])
+				box.add_projection(a, b)
+				box.add_projection(b, a)
+
+			extra_pts = []
+			extra_val = []
+
+		box.add_corners()
+
+		for pt in box.points:
+			extra_pts.append(pt[:2])
+			extra_val.append(pt[2:])
+
+		self._extra_pts = np.array(extra_pts)
+		self._extra_val = np.array(extra_val)
+
+	@cached_property
+	def grid(self):
+		grid = np.dstack(np.mgrid[0:self._width, 0:self._height])
+
+		extra_pixels = scipy.interpolate.griddata(
+			self._extra_pts, self._extra_val, grid,
+			method="linear",
+			fill_value=np.nan)
+
+		if not self._is_collinear:
+			inter_pixels = scipy.interpolate.griddata(
+				self._points, self._values, grid,
+				method="linear", fill_value=np.nan)
+
+			if len(extra_pixels.shape) > 2:
+				mask = np.isnan(inter_pixels[:, :, 0])
+				pixels = np.empty(extra_pixels.shape)
+				for i in range(extra_pixels.shape[-1]):
+					pixels[:, :, i] = np.where(
+						mask, extra_pixels[:, :, i], inter_pixels[:, :, i])
+			else:
+				mask = np.isnan(inter_pixels)
+				pixels = np.where(mask, extra_pixels, inter_pixels)
+
+		if self._squeeze and len(pixels.shape) > 2:
+			pixels = pixels.squeeze(axis=-1)
+
+		return pixels
+
+	@cached_property
+	def interpolator(self):
+		extra = scipy.interpolate.LinearNDInterpolator(
+			self._extra_pts, self._extra_val, fill_value=np.nan)
+		if not self._is_collinear:
+			inter = scipy.interpolate.LinearNDInterpolator(
+				self._points, self._values, fill_value=np.nan)
+		else:
+			inter = None
+		return Interpolator(inter, extra, self._width, self._height)
+
+
+def lingrid(points, values, width, height):
+	return InterpolatorFactory(points, values, width, height).grid
+
+
+def lininterp(points, values, width, height):
+	return InterpolatorFactory(points, values, width, height).interpolator
