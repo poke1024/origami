@@ -383,18 +383,31 @@ class Grid:
 		else:
 			raise ValueError(resolution)
 
+	@property
+	def resolution(self):
+		return self._grid_res
+
 	@staticmethod
 	def create(*args, **kwargs):
 		factory = GridFactory(*args, **kwargs)
 		return Grid(factory.grid_hv, factory.res)
 
-	def save(self, path, compression=zipfile.ZIP_BZIP2):
+	@staticmethod
+	def open(path):
+		with zipfile.ZipFile(path, "r") as zf:
+			info = json.loads(zf.read("meta.json").decode("utf8"))
+			data = io.BytesIO(zf.read("data.npy"))
+			grid = np.load(data, allow_pickle=False)
+		grid = grid.reshape(info["shape"])
+		return Grid(grid, info["cell"])
+
+	def save(self, path, compression=zipfile.ZIP_DEFLATED):
 		data = io.BytesIO()
-		np.save(data, self._grid_hv)
+		np.save(data, self._grid_hv.astype(np.float32), allow_pickle=False)
 
 		info = dict(cell=self._grid_res, shape=self._grid_hv.shape)
 		with zipfile.ZipFile(path, "w", compression) as zf:
-			zf.writestr("data", data.getvalue())
+			zf.writestr("data.npy", data.getvalue())
 			zf.writestr("meta.json", json.dumps(info))
 
 	@cached_property
