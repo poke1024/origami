@@ -34,6 +34,7 @@ class LineDetectionProcessor(BlockProcessor):
 			force_parallel_lines=True,
 			fringe_limit=self._options["fringe_limit"],
 			extra_height=self._options["extra_height"],
+			extra_descent=self._options["extra_descent"],
 			text_buffer=self._options["text_buffer"])
 
 		block_lines = detector(blocks)
@@ -63,10 +64,15 @@ class LineDetectionProcessor(BlockProcessor):
 	type=float,
 	help='ignore region fringes above this ratio')
 @click.option(
-	'-h', '--extra-height',
-	default=0.05,
+	'--extra-height',
+	default=0.3,
 	type=float,
 	help='compensate low Tesseract height estimation')
+@click.option(
+	'--extra-descent',
+	default=1,
+	type=float,
+	help='compensate low Tesseract descent estimation')
 @click.option(
 	'-b', '--text-buffer',
 	default=15,

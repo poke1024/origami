@@ -273,11 +273,13 @@ class LineDetector:
 		force_parallel_lines=False,
 		fringe_limit=0.1,
 		extra_height=0.05,
+		extra_descent=0,
 		text_buffer=10):
 
 		self._force_parallel_baselines = force_parallel_lines
 		self._fringe_limit = fringe_limit
 		self._extra_height = extra_height
+		self._extra_descent = extra_descent
 		self._text_buffer = text_buffer
 
 	def detect_baselines(self, block):
@@ -336,11 +338,11 @@ class LineDetector:
 		lines = []
 		for baseline in self.detect_baselines(block):
 			p1, p2 = baseline['baseline']
-			descent = baseline['descent']
 
 			# Tesseract tends to underestimate row height. work
 			# around by adding another few percent.
 			height = baseline['height'] * (1 + self._extra_height)
+			descent = baseline['descent'] * (1 + self._extra_descent)
 
 			right = (np.array(p2) - np.array(p1)).astype(np.float64)
 
