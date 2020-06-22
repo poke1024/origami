@@ -1,18 +1,26 @@
 import os
 import re
+import json
 import logging
 import zipfile
 import portalocker
 import contextlib
+import traceback
 
 from pathlib import Path
 from tqdm import tqdm
+
+from origami.core.time import elapsed_timer
 
 
 class Processor:
 	def __init__(self, options):
 		self._lock_files = not options["nolock"]
 		self._name = options.get("name", "")
+
+	@property
+	def processor_name(self):
+		return self.__name__
 
 	def traverse(self, path: Path):
 		if not Path(path).is_dir():
@@ -38,7 +46,16 @@ class Processor:
 		for p in tqdm(sorted(queued)):
 			try:
 				with self.page_lock(p) as _:
-					self.process(p)
+					with elapsed_timer() as elapsed:
+						runtime_info = self.process(p)
+
+					if runtime_info is None:
+						runtime_info = dict()
+					runtime_info["total_time"] = round(elapsed(), 2)
+
+					self._update_runtime_info(
+						p, {self.processor_name: runtime_info})
+
 			except KeyboardInterrupt:
 				logging.exception("Interrupted at %s." % p)
 				break
@@ -62,6 +79,30 @@ class Processor:
 			return portalocker.Lock(path, mode, flags=portalocker.LOCK_EX, timeout=1)
 		else:
 			return contextlib.nullcontext()
+
+	def _update_runtime_info(self, path, updates):
+		try:
+			json_path = path.with_suffix(".runtime.json")
+			if not json_path.exists():
+				mode = "w+"
+			else:
+				mode = "r+"
+
+			with open(json_path, mode) as f:
+				f.seek(0)
+				file_data = f.read()
+				if file_data:
+					data = json.loads(file_data)
+				else:
+					data = dict()
+				for k, v in updates.items():
+					data[k] = v
+
+				f.seek(0)
+				json.dump(data, f)
+				f.truncate()
+		except:
+			logging.error(traceback.format_exc())
 
 	@property
 	def compression(self):

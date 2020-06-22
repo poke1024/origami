@@ -14,6 +14,10 @@ class SegmentationProcessor(Processor):
 		super().__init__(options)
 		self._predictor = predictor
 
+	@property
+	def processor_name(self):
+		return __loader__.name
+
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
 			not p.with_suffix(".segment.zip").exists()

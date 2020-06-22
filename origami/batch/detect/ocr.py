@@ -31,6 +31,10 @@ class OCRProcessor(BlockProcessor):
 		self._voter = None
 		self._line_height = None
 
+	@property
+	def processor_name(self):
+		return __loader__.name
+
 	def _load_models(self):
 		if self._predictor is not None:
 			return

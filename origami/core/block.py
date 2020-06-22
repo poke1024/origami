@@ -6,6 +6,8 @@ import skimage
 import skimage.filters
 import PIL.Image
 import shapely.wkt
+import logging
+import multiprocessing.pool
 
 from cached_property import cached_property
 from functools import lru_cache
@@ -266,11 +268,19 @@ def padded(im, pad=32, background_color=255):
 
 
 class LineDetector:
-	def __init__(self, block, force_parallel_lines=False):
-		self._block = block
-		self._force_parallel_baselines = force_parallel_lines
+	def __init__(
+		self,
+		force_parallel_lines=False,
+		fringe_limit=0.1,
+		extra_height=0.05,
+		text_buffer=10):
 
-	def detect_baselines(self, text_buffer):
+		self._force_parallel_baselines = force_parallel_lines
+		self._fringe_limit = fringe_limit
+		self._extra_height = extra_height
+		self._text_buffer = text_buffer
+
+	def detect_baselines(self, block):
 		import tesserocr
 
 		with tesserocr.PyTessBaseAPI(psm=tesserocr.PSM.SINGLE_BLOCK) as api:
@@ -284,7 +294,7 @@ class LineDetector:
 			# for single line headers.
 
 			pad = 32
-			im, pos = self._block.extract_image(text_buffer)
+			im, pos = block.extract_image(self._text_buffer)
 			api.SetImage(padded(im, pad=pad))
 			pos = np.array(pos) - np.array([0, pad])
 
@@ -319,17 +329,18 @@ class LineDetector:
 
 		return baselines
 
-	def detect_lines(self, fringe_limit=0.1, extra_height=0.05, text_buffer=10):
-		text_area = self._block.text_area(
-			fringe_limit=fringe_limit, buffer=text_buffer)
+	def detect_lines(self, block):
+		text_area = block.text_area(
+			fringe_limit=self._fringe_limit,
+			buffer=self._text_buffer)
 		lines = []
-		for baseline in self.detect_baselines(text_buffer):
+		for baseline in self.detect_baselines(block):
 			p1, p2 = baseline['baseline']
 			descent = baseline['descent']
 
 			# Tesseract tends to underestimate row height. work
 			# around by adding another few percent.
-			height = baseline['height'] * (1 + extra_height)
+			height = baseline['height'] * (1 + self._extra_height)
 
 			right = (np.array(p2) - np.array(p1)).astype(np.float64)
 
@@ -339,7 +350,7 @@ class LineDetector:
 
 			lines.append(
 				Line(
-					self._block,
+					block,
 					**_extended_baseline(
 						text_area,
 						p=np.array(p1) + abs(descent) * down,
@@ -349,3 +360,21 @@ class LineDetector:
 					text_area=text_area))
 
 		return lines
+
+
+class ConcurrentLineDetector:
+	def __init__(self, processes=8, **kwargs):
+		self._detector = LineDetector(**kwargs)
+		self._pool = multiprocessing.pool.ThreadPool(processes=processes)
+
+	def _detect_lines(self, item):
+		block_path, block = item
+
+		try:
+			return block_path, self._detector.detect_lines(block)
+		except:
+			logging.error("failed to detect lines on block %s" % str(block_path))
+			raise
+
+	def __call__(self, blocks):
+		return dict(self._pool.map(self._detect_lines, blocks.items()))

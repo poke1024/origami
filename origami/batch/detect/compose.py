@@ -27,6 +27,10 @@ class ComposeProcessor(BlockProcessor):
 		self._block_separator = codecs.escape_decode(bytes(
 			self._options["block_separator"], "utf-8"))[0].decode("utf-8")
 
+	@property
+	def processor_name(self):
+		return __loader__.name
+
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
 			p.with_suffix(".dewarped.lines.zip").exists() and\

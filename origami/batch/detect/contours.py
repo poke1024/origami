@@ -38,6 +38,10 @@ class ContoursProcessor(Processor):
 		super().__init__(options)
 		self._options = options
 
+	@property
+	def processor_name(self):
+		return __loader__.name
+
 	def _process_region_contours(self, zf, annotations, prediction, binarized):
 		ink_erosion = _build_filter(
 			scipy.ndimage.morphology.binary_dilation,

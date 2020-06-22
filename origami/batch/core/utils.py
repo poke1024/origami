@@ -73,5 +73,3 @@ def read_lines(page_path: Path, blocks, dewarped=False, open=open):
 				line_info = json.loads(zf.read(name))
 				lines[parts] = Line(block, **line_info)
 	return lines
-
-
