@@ -29,30 +29,22 @@ from origami.core.lingrid import lininterp
 from origami.core.mask import Mask
 
 
-def make_ellipse(w, h):
-	structure = skimage.morphology.disk(max(w, h)).astype(np.float32)
-	structure = cv2.resize(structure, (w, h), interpolation=cv2.INTER_AREA)
-	return structure / np.sum(structure)
-
-
-class LineSkewEstimator:
-	def __init__(self, max_phi, min_length=50, kernel=(16, 8)):
-		self._max_phi = max_phi * (math.pi / 180)
-		self._min_length = min_length
-		self._kernel = kernel
-
-	def _binarize(self, im):
+class LineDetector:
+	def __init__(self):
+		pass
+	
+	def binarize(self, im, window=15):
 		im = im.convert("L")
 		pixels = np.array(im)
-		thresh = skimage.filters.threshold_sauvola(pixels, window_size=15)
+		thresh = skimage.filters.threshold_sauvola(pixels, window_size=window)
 		binarized = (pixels > thresh).astype(np.uint8) * 255
 		return binarized
 
-	def _detect_line_regions(self, im):
-		pix2 = self._binarize(im)
 
-		# old algorithm (more parameters).
-		"""
+class OpeningLineDetector(LineDetector):
+	def __call__(self, im):
+		pix2 = self.binarize(im)
+
 		pix2 = scipy.ndimage.morphology.binary_dilation(
 			pix2, np.ones((1, 2)), iterations=2)
 
@@ -64,7 +56,23 @@ class LineSkewEstimator:
 
 		pix2 = scipy.ndimage.morphology.binary_opening(
 			pix2, np.ones((5, 5)), iterations=1)
-		"""
+
+		return pix2
+
+
+class SobelLineDetector(LineDetector):
+	def __init__(self, kernel=(16, 8)):
+		self._kernel_size = kernel
+		self._ellipse = self._make_ellipse()
+
+	def _make_ellipse(self):
+		w, h = self._kernel_size
+		structure = skimage.morphology.disk(max(w, h)).astype(np.float32)
+		structure = cv2.resize(structure, (w, h), interpolation=cv2.INTER_AREA)
+		return structure / np.sum(structure)
+
+	def __call__(self, im):
+		pix2 = self.binarize(im)
 
 		pix2 = skimage.filters.sobel_h(pix2)
 		pix2 = (pix2 == 1).astype(np.uint8) * 255
@@ -73,7 +81,7 @@ class LineSkewEstimator:
 		pix2 = (pix2 == 1).astype(np.uint8) * 255
 
 		pix2 = scipy.ndimage.filters.convolve(
-			pix2.astype(np.float32) / 255, make_ellipse(*self._kernel))
+			pix2.astype(np.float32) / 255, self._ellipse)
 
 		thresh = skimage.filters.threshold_sauvola(pix2, 3)
 		pix2 = (pix2 > thresh).astype(np.uint8) * 255
@@ -82,8 +90,29 @@ class LineSkewEstimator:
 
 		return pix2
 
+
+class OcropyLineDetector(LineDetector):
+	def __init__(self, maxcolseps=3):
+		self._maxcolseps = maxcolseps
+
 	def __call__(self, im):
-		pix2 = self._detect_line_regions(im)
+		from ocrd_cis.ocropy.common import compute_hlines, compute_segmentation, binarize
+
+		im_bin, _ = binarize(np.array(im).astype(np.float32) / 255)
+		segm = compute_segmentation(im_bin, fullpage=True, maxcolseps=self._maxcolseps)
+		llabels, hlines, vlines, images, colseps, scale = segm
+		return hlines
+
+
+class LineSkewEstimator:
+	def __init__(self, line_det, max_phi, min_length=50, eccentricity=0.99):
+		self._line_detector = line_det
+		self._max_phi = max_phi * (math.pi / 180)
+		self._min_length = min_length
+		self._eccentricity = eccentricity
+
+	def __call__(self, im):
+		pix2 = self._line_detector(im)
 
 		pix3 = skimage.measure.label(np.logical_not(pix2), background=False)
 		props = skimage.measure.regionprops(pix3)
@@ -92,7 +121,7 @@ class LineSkewEstimator:
 			if prop.major_axis_length < self._min_length:
 				# not enough evidence
 				continue
-			if prop.eccentricity < 0.99:
+			if prop.eccentricity < self._eccentricity:
 				# not line-shaped enough
 				continue
 
@@ -181,7 +210,9 @@ class Samples:
 				self._values.append(line.angle)
 
 	def add_line_skew_lq(self, blocks, lines, max_phi):
-		estimator = LineSkewEstimator(max_phi=max_phi)
+		estimator = LineSkewEstimator(
+			line_det=SobelLineDetector(),
+			max_phi=max_phi)
 
 		def add(im, pos):
 			for pt, phi in estimator(im):
