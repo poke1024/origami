@@ -9,8 +9,15 @@ from origami.core.predict import PredictorType
 from origami.core.block import Block, Line
 
 
-def read_contours(page_path: Path, pred_type, open=open):
-	with open(page_path.with_suffix(".contours.zip"), "rb") as f:
+warp_name = {
+	False: "warped",
+	True: "dewarped"
+}
+
+
+def read_contours(page_path: Path, pred_type, dewarped=False, open=open):
+	name = ".%s.contours.zip" % warp_name[dewarped]
+	with open(page_path.with_suffix(name), "rb") as f:
 		with zipfile.ZipFile(f, "r") as zf:
 			meta = json.loads(zf.read("meta.json"))
 
@@ -29,12 +36,12 @@ def read_contours(page_path: Path, pred_type, open=open):
 				yield parts, shapely.wkt.loads(zf.read(name).decode("utf8"))
 
 
-def read_blocks(page_path: Path, open=open):
-	page = Page(page_path)
+def read_blocks(page_path: Path, dewarped=False, open=open):
+	page = Page(page_path, dewarped)
 	blocks = dict()
 
-	for parts, polygon in read_contours(page_path, PredictorType.REGION, open=open):
-		blocks[parts] = Block(page, polygon)
+	for parts, polygon in read_contours(page_path, PredictorType.REGION, dewarped=dewarped, open=open):
+		blocks[parts] = Block(page, polygon, dewarped)
 
 	return blocks
 
@@ -48,11 +55,15 @@ def read_separators(page_path: Path, open=open):
 	return separators
 
 
-def read_lines(page_path: Path, blocks, open=open):
+def read_lines(page_path: Path, blocks, dewarped=False, open=open):
+	assert all(block.dewarped == dewarped for block in blocks.values())
+	name = ".%s.lines.zip" % warp_name[dewarped]
 	lines = dict()
-	with open(page_path.with_suffix(".lines.zip"), "rb") as lf:
+	with open(page_path.with_suffix(name), "rb") as lf:
 		with zipfile.ZipFile(lf, "r") as zf:
 			for name in zf.namelist():
+				if name == "meta.json":
+					continue
 				if not name.endswith(".json"):
 					raise RuntimeError("illegal file %s in %s." % (
 						name, page_path.with_suffix(".lines.zip")))

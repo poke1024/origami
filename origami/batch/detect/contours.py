@@ -70,7 +70,7 @@ class ContoursProcessor(Processor):
 
 		for prediction_class, shapes in region_contours.items():
 			for region_id, polygon in enumerate(shapes):
-				block = Block(annotations.page, polygon)
+				block = Block(annotations.page, polygon, dewarped=False)
 
 				if self._options["export_images"]:
 					with io.BytesIO() as f:
@@ -114,7 +114,7 @@ class ContoursProcessor(Processor):
 		return (imghdr.what(p) is not None) and\
 			p.with_suffix(".segment.zip").exists() and\
 			p.with_suffix(".binarized.png").exists() and\
-			not p.with_suffix(".contours.zip").exists()
+			not p.with_suffix(".warped.contours.zip").exists()
 
 	def process(self, p: Path):
 		segmentation = Segmentation.open(p.with_suffix(".segment.zip"))
@@ -129,10 +129,10 @@ class ContoursProcessor(Processor):
 			(PredictorType.SEPARATOR, self._process_separator_contours)
 		))
 
-		zf_path = p.with_suffix(".contours.zip")
+		zf_path = p.with_suffix(".warped.contours.zip")
 		with atomic_write(zf_path, mode="wb", overwrite=False) as f:
 			with zipfile.ZipFile(f, "w", self.compression) as zf:
-				info = dict()
+				info = dict(version=1)
 				for prediction in segmentation.predictions:
 					handlers[prediction.type](zf, annotations, prediction, binarized)
 					info[prediction.name] = dict(type=prediction.type.name)

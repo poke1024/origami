@@ -30,7 +30,7 @@ class DebugLinesProcessor(BlockProcessor):
 		qt_im = ImageQt(PIL.Image.open(page_path))
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 		pixmap = render_lines(pixmap, lines, get_label)
-		pixmap.toImage().save(str(page_path.with_suffix(".annotate.lines.jpg")))
+		pixmap.toImage().save(str(page_path.with_suffix(".annotate.warp.jpg")))
 
 
 @click.command()

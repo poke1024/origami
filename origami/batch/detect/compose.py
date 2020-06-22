@@ -29,14 +29,14 @@ class ComposeProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".lines.zip").exists() and\
+			p.with_suffix(".dewarped.lines.zip").exists() and\
 			p.with_suffix(".ocr.zip").exists() and\
 			p.with_suffix(".xycut.json").exists() and\
 			not p.with_suffix(".compose.txt").exists()
 
 	def process(self, page_path: Path):
-		blocks = self.read_blocks(page_path)
-		lines = self.read_lines(page_path, blocks)
+		blocks = self.read_dewarped_blocks(page_path)
+		lines = self.read_dewarped_lines(page_path, blocks)
 		with open(page_path.with_suffix(".xycut.json"), "r") as f:
 			xycut_data = json.loads(f.read())
 

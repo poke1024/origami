@@ -17,6 +17,10 @@ Candidate = collections.namedtuple(
 	'Candidate', ['axis', 'x', 'score'])
 
 
+Gap = collections.namedtuple(
+	'Gap', ['minu', 'minv', 'maxu', 'maxv'])
+
+
 def _offset(x0, x1, amount):
 	mid = (x0 + x1) / 2
 	return min(x0 + amount, mid), max(x1 - amount, mid)
@@ -99,7 +103,7 @@ class Coordinates:
 	def items(self):
 		return zip(self._x, self._label)
 
-	def candidate_splits(self, eps):
+	def candidate_splits(self, score, eps):
 		active_set = collections.defaultdict(int)
 		items = list(self.items())
 
@@ -111,8 +115,13 @@ class Coordinates:
 			if x0 > self._x[0] + eps:
 				n = len(active_set)
 				if n == 0:  # classic xy cut on whitespace.
+					gap = Gap(
+						minu=x0,
+						minv=min(self._min[i0], self._min[i1]),
+						maxu=x1,
+						maxv=max(self._max[i0], self._max[i1]))
 					yield Candidate(
-						self, x0, x1 - x0)
+						self, x0, score(self._axis, gap))
 				elif n >= 1:
 					err = 0
 					for j in active_set.keys():
@@ -123,12 +132,32 @@ class Coordinates:
 						self, x0, -err)
 
 
+def score_area(axis, gap):
+	return (gap.maxu - gap.minu) * (gap.maxv - gap.minv)
+
+
+def score_u(axis, gap):
+	return gap.maxu - gap.minu
+
+
+def score_v(axis, gap):
+	return gap.maxv - gap.minv
+
+
+default_scores = dict(
+	area=score_area,
+	u=score_u,
+	v=score_v)
+
+
 class XYCut:
-	def __init__(self, objs, eps=5):
+	def __init__(self, objs, score="v", eps=5):
+		if isinstance(score, str):
+			score = default_scores[score]
 		if len(objs) >= 2:
 			coords = [np.array(o.coords, dtype=np.float64) for o in objs]
 			lcs = [Coordinates(coords, axis) for axis in (0, 1)]
-			splits = list(chain(*[lc.candidate_splits(eps=eps) for lc in lcs]))
+			splits = list(chain(*[lc.candidate_splits(score=score, eps=eps) for lc in lcs]))
 		else:
 			splits = None
 

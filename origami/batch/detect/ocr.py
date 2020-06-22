@@ -2,6 +2,8 @@ import imghdr
 import click
 import zipfile
 import numpy as np
+import time
+import multiprocessing.pool
 
 from pathlib import Path
 
@@ -45,29 +47,41 @@ class OCRProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".lines.zip").exists() and\
-			not p.with_suffix(".ocr.zip").exists() and\
-			not p.with_suffix(".dewarp.json").exists()
+			p.with_suffix(".dewarped.lines.zip").exists() and\
+			p.with_suffix(".dewarped.transform.zip").exists() and\
+			not p.with_suffix(".ocr.zip").exists()
 
+	def _extract_line_image(self, item):
+		stem, line = item
+		return stem, line.image(
+			target_height=self._line_height,
+			dewarped=not self._options["do_not_dewarp"],
+			deskewed=not self._options["do_not_deskew"],
+			binarized=self._options["binarize"],
+			window_size=self._options["binarize_window_size"])
+
+	def _extract_line_images(self, page_path):
+		assert self._line_height is not None
+
+		blocks = self.read_dewarped_blocks(page_path)
+		lines = self.read_dewarped_lines(page_path, blocks)
+
+		pool = multiprocessing.pool.ThreadPool(processes=8)
+		return pool.map(self._extract_line_image, lines.items())
+		
 	def process(self, page_path: Path):
 		self._load_models()
 
-		blocks = self.read_blocks(page_path)
-		lines = self.read_lines(page_path, blocks)
-
 		names = []
 		images = []
-		for stem, line in lines.items():
+		for stem, im in self._extract_line_images(page_path):
 			names.append("/".join(stem))
-
-			images.append(np.array(line.normalized_image(
-				target_height=self._line_height,
-				deskewed=not self._options["do_not_deskew"],
-				binarized=self._options["binarize"],
-				window_size=self._options["binarize_window_size"])))
+			images.append(np.array(im))
 
 		texts = []
-		for prediction in self._predictor.predict_raw(images, progress_bar=False):
+		for prediction in self._predictor.predict_raw(
+			images, progress_bar=False, batch_size=self._options["batch_size"]):
+
 			if self._voter is not None:
 				prediction = self._voter.vote_prediction_result(prediction)
 			texts.append(prediction.sentence)
@@ -90,15 +104,25 @@ class OCRProcessor(BlockProcessor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-b', '--binarize',
+	'-b', '--batch-size',
+	type=int,
+	default=-1,
+	required=False)
+@click.option(
+	'--binarize',
 	is_flag=True,
 	default=False,
 	help="binarize line images (important if your model expects this).")
 @click.option(
-	'-w', '--binarize-window-size',
+	'--binarize-window-size',
 	type=int,
 	default=0,
 	help="binarization window size for Sauvola or 0 for Otsu.")
+@click.option(
+	'-w', '--do-not-dewarp',
+	default=False,
+	is_flag=True,
+	help='do not dewarp line images')
 @click.option(
 	'-s', '--do-not-deskew',
 	default=False,

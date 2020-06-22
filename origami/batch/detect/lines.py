@@ -18,16 +18,20 @@ class LineDetectionProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return (imghdr.what(p) is not None) and\
-			p.with_suffix(".contours.zip").exists() and\
-			not p.with_suffix(".lines.zip").exists()
+			p.with_suffix(".dewarped.contours.zip").exists() and\
+			p.with_suffix(".dewarped.transform.zip").exists() and\
+			not p.with_suffix(".dewarped.lines.zip").exists()
 
 	def process(self, page_path: Path):
-		blocks = self.read_blocks(page_path)
+		blocks = self.read_dewarped_blocks(page_path)
 
-		lines_path = page_path.with_suffix(".lines.zip")
+		lines_path = page_path.with_suffix(".dewarped.lines.zip")
 		with atomic_write(lines_path, mode="wb", overwrite=False) as f:
 
 			with zipfile.ZipFile(f, "w", compression=self.compression) as zf:
+				info = dict(version=1)
+				zf.writestr("meta.json", json.dumps(info))
+
 				for parts, block in blocks.items():
 					prediction_name = parts[0]
 					class_name = parts[1]
@@ -36,7 +40,7 @@ class LineDetectionProcessor(BlockProcessor):
 					try:
 						detector = LineDetector(
 							block,
-							force_parallel_lines=self._options["force_parallel_lines"])
+							force_parallel_lines=True)
 
 						lines = detector.detect_lines(
 							fringe_limit=self._options["fringe_limit"],
@@ -53,11 +57,6 @@ class LineDetectionProcessor(BlockProcessor):
 
 
 @click.command()
-@click.option(
-	'-p', '--force-parallel-lines',
-	default=False,
-	is_flag=True,
-	help='force parallel baselines inside a region')
 @click.option(
 	'-f', '--fringe-limit',
 	default=0.1,

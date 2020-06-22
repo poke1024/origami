@@ -23,29 +23,36 @@ class XYCutProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".lines.zip").exists() and\
+			p.with_suffix(".dewarped.contours.zip").exists() and\
 			not p.with_suffix(".xycut.json").exists()
 
 	def process(self, page_path: Path):
-		blocks = self.read_blocks(page_path)
+		blocks = self.read_dewarped_blocks(page_path)
+
+		'''
 		lines = self.read_lines(page_path, blocks)
 
 		if len(lines) < 1:
 			return
 
 		deskewer = Deskewer(lines)
+		'''
 
 		names = []
 		bounds = []
 
+		lines_by_block = None
+		'''
 		lines_by_block = collections.defaultdict(list)
 		for line_path, line in lines.items():
 			lines_by_block[line_path[:3]].append((line_path, line))
 		for k in list(lines_by_block.keys()):
 			lines_by_block[k] = sorted(lines_by_block[k], key=lambda x: x[0])
+		'''
 
 		def add(polygon, path):
-			minx, miny, maxx, maxy = deskewer.shapely(polygon).bounds
+			minx, miny, maxx, maxy = polygon.bounds
+			# was: deskewer.shapely(polygon).bounds
 
 			minx = min(minx + self._buffer, maxx)
 			maxx = max(maxx - self._buffer, minx)
@@ -56,17 +63,20 @@ class XYCutProcessor(BlockProcessor):
 			names.append("/".join(path))
 
 		for block_path, block in blocks.items():
-			block_lines = lines_by_block[block_path]
-			if len(block_lines) < 1:
-				continue
-			elif 1 < len(block_lines) <= self._block_split_limit:
-				for line_path, line in block_lines:
-					add(line.image_space_polygon, line_path)
-			else:
+			if lines_by_block is None:
 				add(block.image_space_polygon, block_path)
+			else:
+				block_lines = lines_by_block[block_path]
+				if len(block_lines) < 1:
+					continue
+				elif 1 < len(block_lines) <= self._block_split_limit:
+					for line_path, line in block_lines:
+						add(line.image_space_polygon, line_path)
+				else:
+					add(block.image_space_polygon, block_path)
 
 		data = dict(
-			skew=deskewer.skew,
+			version=1,
 			order=[names[i] for i in reading_order(bounds)])
 
 		zf_path = page_path.with_suffix(".xycut.json")

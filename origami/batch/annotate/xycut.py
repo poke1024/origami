@@ -11,7 +11,7 @@ from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.batch.core.deskew import Deskewer
+from origami.core.page import Page
 from origami.batch.annotate.utils import render_blocks
 
 
@@ -22,11 +22,14 @@ class DebugXYCutProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".contours.zip").exists() and\
-			p.with_suffix(".xycut.json").exists()
+			p.with_suffix(".dewarped.contours.zip").exists() and\
+			p.with_suffix(".dewarped.transform.zip").exists() and\
+			p.with_suffix(".xycut.json").exists() and\
+			not p.with_suffix(".annotate.xycut.jpg").exists()
 
 	def process(self, p: Path):
-		blocks = self.read_blocks(p)
+		blocks = self.read_dewarped_blocks(p)
+
 		with open(p.with_suffix(".xycut.json"), "r") as f:
 			xycut_data = json.loads(f.read())
 
@@ -36,14 +39,11 @@ class DebugXYCutProcessor(BlockProcessor):
 		def get_label(block_path):
 			return str(1 + order[block_path])
 
-		deskewer = Deskewer(skew=xycut_data["skew"])
+		page = Page(p, dewarp=True)
 
-		im = PIL.Image.open(p)
-		im = deskewer.image(im)
-
-		qt_im = ImageQt(im)
+		qt_im = ImageQt(page.dewarped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
-		pixmap = render_blocks(pixmap, blocks, get_label, matrix=deskewer.matrix)
+		pixmap = render_blocks(pixmap, blocks, get_label)
 		pixmap.toImage().save(str(p.with_suffix(".annotate.xycut.jpg")))
 
 

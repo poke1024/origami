@@ -10,14 +10,14 @@ from origami.batch.core.block_processor import BlockProcessor
 from origami.batch.annotate.utils import render_blocks, render_separators
 
 
-class DebugVectorsProcessor(BlockProcessor):
+class DebugContoursProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".contours.zip").exists()
+			p.with_suffix(".warped.contours.zip").exists()
 
 	def process(self, p: Path):
 		blocks = self.read_blocks(p)
@@ -33,7 +33,7 @@ class DebugVectorsProcessor(BlockProcessor):
 		pixmap = render_blocks(pixmap, blocks, get_label)
 		pixmap = render_separators(pixmap, separators)
 
-		pixmap.toImage().save(str(p.with_suffix(".annotate.vectors.jpg")))
+		pixmap.toImage().save(str(p.with_suffix(".annotate.warped.contours.jpg")))
 
 
 @click.command()
@@ -47,12 +47,12 @@ class DebugVectorsProcessor(BlockProcessor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
-def debug_vectors(data_path, **kwargs):
+def debug_contours(data_path, **kwargs):
 	""" Export annotate information on vectors for all document images in DATA_PATH. """
-	processor = DebugVectorsProcessor(kwargs)
+	processor = DebugContoursProcessor(kwargs)
 	processor.traverse(data_path)
 
 
 if __name__ == "__main__":
 	app = QtGui.QGuiApplication()
-	debug_vectors()
+	debug_contours()

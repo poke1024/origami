@@ -10,6 +10,7 @@ from cached_property import cached_property
 from pathlib import Path
 
 from origami.core.math import resize_transform, to_shapely_matrix
+from origami.core.dewarp import Dewarper, Grid
 
 
 class Annotations:
@@ -42,7 +43,7 @@ class Annotations:
 
 	@cached_property
 	def label_to_image_matrix(self):
-		m = resize_transform(self.size, self._page.size)
+		m = resize_transform(self.size, self._page.size(False))
 		return to_shapely_matrix(m)
 
 	def create_multi_class_contours(self, labels, c):
@@ -78,21 +79,32 @@ def _find_image_path(path):
 
 
 class Page:
-	def __init__(self, path):
-		self._im = PIL.Image.open(str(_find_image_path(path))).convert("L")
+	def __init__(self, path, dewarp=False):
+		path = _find_image_path(path)
+		self._warped = PIL.Image.open(str(path)).convert("L")
+
+		if dewarp:
+			grid = Grid.open(path.with_suffix(".dewarped.transform.zip"))
+			self._dewarper = Dewarper(self._warped, grid)
+			self._dewarped = self._dewarper.dewarped
+		else:
+			self._dewarper = None
+			self._dewarped = None
 
 	@property
-	def size(self):
-		return tuple(reversed(list(self.pixels.shape)[:2]))
+	def warped(self):
+		return self._warped
 
 	@property
-	def image(self):
-		return self._im
+	def dewarped(self):
+		return self._dewarped
+
+	def size(self, dewarped):
+		return (self._dewarped if dewarped else self._warped).size
+
+	def pixels(self, dewarped):
+		return np.array(self._dewarped if dewarped else self._warped)
 
 	@property
-	def pixels(self):
-		return np.array(self._im)
-
-	@cached_property
-	def grayscale(self):
-		return skimage.color.rgb2gray(self.pixels)
+	def dewarper(self):
+		return self._dewarper

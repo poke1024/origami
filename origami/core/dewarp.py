@@ -15,6 +15,7 @@ import numpy as np
 import PIL.Image
 import cv2
 import scipy
+import scipy.interpolate
 import math
 import shapely.geometry
 import shapely.ops
@@ -436,7 +437,7 @@ class Grid:
 		data = io.BytesIO()
 		np.save(data, self._grid_hv.astype(np.float32), allow_pickle=False)
 
-		info = dict(cell=self._grid_res, shape=self._grid_hv.shape)
+		info = dict(version=1, cell=self._grid_res, shape=self._grid_hv.shape)
 		with zipfile.ZipFile(path, "w", compression) as zf:
 			zf.writestr("data.npy", data.getvalue())
 			zf.writestr("meta.json", json.dumps(info))
@@ -446,6 +447,14 @@ class Grid:
 		x_grid_hv = self.points("full")
 		r = self._grid_res
 		return Transformer(x_grid_hv[::r, ::r], r)
+
+	@cached_property
+	def inverse(self):
+		grid = self.points("full")
+
+		return scipy.interpolate.RegularGridInterpolator(
+			(np.arange(grid.shape[0]), np.arange(grid.shape[1])),
+			grid, method="linear")
 
 
 class Dewarper:

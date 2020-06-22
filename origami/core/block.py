@@ -16,6 +16,22 @@ from origami.core.math import to_shapely_matrix
 BACKGROUND = 0.8
 
 
+def binarize(im, window_size=15):
+	cutout = np.array(im)
+
+	if window_size is None:
+		window_size = target_height // 2 - 1
+	if window_size <= 0:
+		try:
+			thresh = skimage.filters.threshold_otsu(cutout)
+		except ValueError:
+			thresh = 128
+	else:
+		thresh = skimage.filters.threshold_sauvola(cutout, window_size=window_size)
+	cutout = (cutout > thresh).astype(np.uint8) * 255
+	return PIL.Image.fromarray(cutout)
+
+
 class Line:
 	def __init__(self, block, p, right, up, tesseract_data, wkt=None, text_area=None):
 		self._tesseract_data = tesseract_data
@@ -52,51 +68,78 @@ class Line:
 	def set_text(self, text):
 		self._text = text
 
-	def normalized_image(self, target_height=48, binarized=False, deskewed=True, window_size=None):
-		if deskewed:
-			p, right, up = self._p, self._right, self._up
-			width = int(math.ceil(np.linalg.norm(right)))
-
-			matrix = cv2.getAffineTransform(
-				np.array([p, p + right, p + up]).astype(np.float32),
-				np.array([(0, target_height - 1), (width, target_height - 1), (0, 0)]).astype(np.float32))
-
-			pixels = self._block.page.pixels
-
-			warped = cv2.warpAffine(
-				pixels, matrix, (width, target_height), cv2.INTER_AREA,
-				borderMode=cv2.BORDER_CONSTANT,
-				borderValue=self._block.background)
-
-			try:
-				mask = Mask(
-					shapely.affinity.affine_transform(
-						self._polygon, to_shapely_matrix(matrix)),
-					bounds=(0, 0, width, target_height))
-	
-				background = np.quantile(warped, BACKGROUND)
-				cutout = mask.cutout(warped, background=background)
-
-			except ValueError:
-				# might happen on unsupported mask geometry types.
-				cutout = warped
+	def image(self, target_height=48, dewarped=True, deskewed=True, binarized=False, window_size=15):
+		if dewarped:
+			im = self.dewarped_image(target_height)
+		elif deskewed:
+			im = self.deskewed_image(target_height)
 		else:
-			mask = Mask(self.image_space_polygon)
-			cutout, _ = mask.extract(self._block.layout.page.pixels, background=self._block.background)
-
+			im = self.warped_image
 		if binarized:
-			if window_size is None:
-				window_size = target_height // 2 - 1
-			if window_size <= 0:
-				try:
-					thresh = skimage.filters.threshold_otsu(cutout)
-				except ValueError:
-					thresh = 128
-			else:
-				thresh = skimage.filters.threshold_sauvola(cutout, window_size=window_size)
-			cutout = (cutout > thresh).astype(np.uint8) * 255
+			im = binarize(im, window_size)
+		return im
+
+	@property
+	def warped_image(self):
+		mask = Mask(self.image_space_polygon)
+		image, pos = mask.extract_image(
+			self._block.page_pixels,
+			background=self._block.background)
+		return image
+
+	def deskewed_image(self, target_height=48, interpolation=cv2.INTER_AREA):
+		p, right, up = self._p, self._right, self._up
+		width = int(math.ceil(np.linalg.norm(right)))
+
+		matrix = cv2.getAffineTransform(
+			np.array([p, p + right, p + up]).astype(np.float32),
+			np.array([
+				(0, target_height - 1),
+				(width, target_height - 1),
+				(0, 0)]).astype(np.float32))
+
+		pixels = self._block.page_pixels
+
+		warped = cv2.warpAffine(
+			pixels, matrix, (width, target_height), interpolation,
+			borderMode=cv2.BORDER_CONSTANT,
+			borderValue=self._block.background)
+
+		try:
+			mask = Mask(
+				shapely.affinity.affine_transform(
+					self._polygon, to_shapely_matrix(matrix)),
+				bounds=(0, 0, width, target_height))
+
+			background = np.quantile(warped, BACKGROUND)
+			cutout = mask.cutout(warped, background=background)
+
+		except ValueError:
+			# might happen on unsupported mask geometry types.
+			cutout = warped
 
 		return PIL.Image.fromarray(cutout)
+
+	def dewarped_image(self, target_height=48, interpolation=cv2.INTER_LINEAR):
+		assert self.block.dewarped
+		p0 = self._p
+		right = self._right
+		up = self._up
+
+		ys = np.linspace([0, 0], up, target_height)
+		xs = np.linspace([0, 0], right, int(np.ceil(np.linalg.norm(right))))
+
+		dewarped_grid = (ys + p0)[:, np.newaxis] + xs[np.newaxis, :]
+		dewarped_grid = np.flip(dewarped_grid, axis=-1)
+		inv = self.block.page.dewarper.grid.inverse
+		warped_grid = inv(dewarped_grid.reshape((len(ys) * len(xs), 2)))
+		warped_grid = warped_grid.reshape((len(ys), len(xs), 2)).astype(np.float32)
+
+		pixels = np.array(self.block.page.warped)
+		pixels = cv2.remap(pixels, warped_grid, None, interpolation)
+		pixels = pixels[::-1, :]
+
+		return PIL.Image.fromarray(pixels)
 
 	@property
 	def coords(self):
@@ -108,13 +151,6 @@ class Line:
 	@property
 	def image_space_polygon(self):
 		return self._polygon
-
-	@property
-	def image(self):
-		mask = Mask(self.image_space_polygon)
-		image, pos = mask.extract_image(
-			self._block.page.pixels, background=self._block.background)
-		return image
 
 	@property
 	def info(self):
@@ -164,14 +200,22 @@ def _extended_baseline(text_area, p, right, up, max_ext=3):
 
 
 class Block:
-	def __init__(self, page, polygon):
+	def __init__(self, page, polygon, dewarped):
 		self._image_space_polygon = polygon
 		self._page = page
-		self._fringe_limit = 0.1
+		self._dewarped = dewarped
 
 	@property
 	def page(self):
 		return self._page
+	
+	@property
+	def page_pixels(self):
+		return self.page.pixels(self._dewarped)
+		
+	@property
+	def dewarped(self):
+		return self._dewarped
 
 	@cached_property
 	def image(self):
@@ -180,14 +224,15 @@ class Block:
 
 	@lru_cache(maxsize=3)
 	def extract_image(self, buffer=10):
-		mask = Mask(self.image_space_polygon.buffer(buffer))
-		return mask.extract_image(self.page.pixels, background=self.background)
+		mask = Mask(self.text_area(buffer=buffer))
+		return mask.extract_image(
+			self.page_pixels, background=self.background)
 
 	@property
 	def image_space_polygon(self):
 		return self._image_space_polygon
 
-	def text_area(self, fringe_limit=0.1, buffer=10):
+	def text_area(self, buffer=10, fringe_limit=0.1):
 		# fringe_limit is currently ignored. this used to have a bbox fallback,
 		# which was a very bad idea, since it was not aware of skew.
 		return self.image_space_polygon.buffer(buffer).convex_hull
@@ -203,7 +248,7 @@ class Block:
 	@cached_property
 	def background(self):
 		mask = Mask(self.image_space_polygon)
-		im, _ = mask.extract_image(self.page.pixels, background=None)
+		im, _ = mask.extract_image(self.page_pixels, background=None)
 		pixels = np.array(im)
 		return np.quantile(pixels, BACKGROUND)
 

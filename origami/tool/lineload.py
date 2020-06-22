@@ -30,4 +30,4 @@ class LineLoader:
 		return Line(block, **line_info)
 
 	def load_line_image(self, page_path, line_path, **kwargs):
-		return self.load_line(page_path, line_path).normalized_image(**kwargs)
+		return self.load_line(page_path, line_path).image(**kwargs)
