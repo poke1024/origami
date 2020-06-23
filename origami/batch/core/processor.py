@@ -20,7 +20,7 @@ class Processor:
 
 	@property
 	def processor_name(self):
-		return self.__name__
+		return self.__class__.__name__
 
 	def traverse(self, path: Path):
 		if not Path(path).is_dir():

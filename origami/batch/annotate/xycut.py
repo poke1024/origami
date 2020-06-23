@@ -20,6 +20,10 @@ class DebugXYCutProcessor(BlockProcessor):
 		super().__init__(options)
 		self._options = options
 
+	@property
+	def processor_name(self):
+		return __loader__.name
+
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
 			p.with_suffix(".dewarped.contours.zip").exists() and\
