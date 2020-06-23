@@ -30,33 +30,12 @@ class XYCutProcessor(BlockProcessor):
 			p.with_suffix(".dewarped.contours.zip").exists() and\
 			not p.with_suffix(".xycut.json").exists()
 
-	def process(self, page_path: Path):
-		blocks = self.read_dewarped_blocks(page_path)
-
-		'''
-		lines = self.read_lines(page_path, blocks)
-
-		if len(lines) < 1:
-			return
-
-		deskewer = Deskewer(lines)
-		'''
-
+	def _compute_order(self, blocks, lines_by_block):
 		names = []
 		bounds = []
 
-		lines_by_block = None
-		'''
-		lines_by_block = collections.defaultdict(list)
-		for line_path, line in lines.items():
-			lines_by_block[line_path[:3]].append((line_path, line))
-		for k in list(lines_by_block.keys()):
-			lines_by_block[k] = sorted(lines_by_block[k], key=lambda x: x[0])
-		'''
-
 		def add(polygon, path):
 			minx, miny, maxx, maxy = polygon.bounds
-			# was: deskewer.shapely(polygon).bounds
 
 			minx = min(minx + self._buffer, maxx)
 			maxx = max(maxx - self._buffer, minx)
@@ -66,22 +45,43 @@ class XYCutProcessor(BlockProcessor):
 			bounds.append((minx, miny, maxx, maxy))
 			names.append("/".join(path))
 
-		for block_path, block in blocks.items():
-			if lines_by_block is None:
-				add(block.image_space_polygon, block_path)
+		for block_path, block in blocks:
+			block_lines = lines_by_block[block_path]
+			if len(block_lines) < 1:
+				continue
+			elif 1 < len(block_lines) <= self._block_split_limit:
+				for line_path, line in block_lines:
+					add(line.image_space_polygon, line_path)
 			else:
-				block_lines = lines_by_block[block_path]
-				if len(block_lines) < 1:
-					continue
-				elif 1 < len(block_lines) <= self._block_split_limit:
-					for line_path, line in block_lines:
-						add(line.image_space_polygon, line_path)
-				else:
-					add(block.image_space_polygon, block_path)
+				add(block.image_space_polygon, block_path)
+
+		return [names[i] for i in reading_order(bounds)]
+
+	def process(self, page_path: Path):
+		blocks = self.read_dewarped_blocks(page_path)
+		lines = self.read_dewarped_lines(page_path, blocks)
+
+		if len(lines) < 1:
+			return
+
+		lines_by_block = collections.defaultdict(list)
+		for line_path, line in lines.items():
+			lines_by_block[line_path[:3]].append((line_path, line))
+		for k in list(lines_by_block.keys()):
+			lines_by_block[k] = sorted(lines_by_block[k], key=lambda x: x[0])
+
+		blocks_by_class = collections.defaultdict(list)
+		for block_path, block in blocks.items():
+			blocks_by_class[tuple(block_path[:2])].append((block_path, block))
+		blocks_by_class[("*", )] = list(blocks.items())
+
+		order = dict(
+			("/".join(block_class), self._compute_order(v, lines_by_block))
+			for block_class, v in blocks_by_class.items())
 
 		data = dict(
 			version=1,
-			order=[names[i] for i in reading_order(bounds)])
+			order=order)
 
 		zf_path = page_path.with_suffix(".xycut.json")
 		with atomic_write(zf_path, mode="w", overwrite=False) as f:

@@ -18,7 +18,7 @@ class ComposeProcessor(BlockProcessor):
 		self._options = options
 
 		if options["filter"]:
-			self._block_filter = [tuple(options["filter"].split("."))]
+			self._block_filter = tuple(options["filter"].split("."))
 		else:
 			self._block_filter = None
 
@@ -55,11 +55,20 @@ class ComposeProcessor(BlockProcessor):
 		line_separator = "\n"
 		block_separator = self._block_separator
 
+		orders = xycut_data["order"]
+		if self._block_filter is None:
+			order = orders["*"]
+		else:
+			order = orders.get("/".join(self._block_filter))
+			if order is None:
+				logging.info("no xycut order for %s" % self._block_filter)
+				order = orders["*"]
+
 		page_texts = []
 		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
-			for block_name in xycut_data["order"]:
+			for block_name in order:
 				block_path = tuple(block_name.split("/"))
-				if self._block_filter and block_path[:2] not in self._block_filter:
+				if self._block_filter and block_path[:2] != self._block_filter:
 					continue
 
 				block = blocks[block_path]
