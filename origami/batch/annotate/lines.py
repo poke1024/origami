@@ -34,9 +34,11 @@ class DebugLinesProcessor(BlockProcessor):
 			return
 
 		page = list(blocks.values())[0].page
+		predictors = self.read_predictors(page_path)
+
 		qt_im = ImageQt(page.warped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
-		pixmap = render_warped_line_paths(pixmap, lines)
+		pixmap = render_warped_line_paths(pixmap, lines, predictors)
 
 		buffer = QtCore.QBuffer()
 		buffer.open(QtCore.QBuffer.ReadWrite)

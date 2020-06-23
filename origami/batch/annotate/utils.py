@@ -18,6 +18,16 @@ class Pens:
 		return self._pens[key]
 
 
+def get_region_classes(predictors):
+	classes = []
+	for p in predictors:
+		if p.type == "REGION":
+			for c in p.classes:
+				if c != "BACKGROUND":
+					classes.append((p.name, c))
+	return sorted(classes)
+
+
 def render_separators(pixmap, separators):
 	pens = Pens(sorted(p[:2] for p in separators.keys()))
 
@@ -45,9 +55,8 @@ def block_hsv(classes):
 
 
 class LabelBrushes:
-	def __init__(self, blocks):
-		classes = sorted(list(
-			set(x[:2] for x in blocks.keys())))
+	def __init__(self, predictors):
+		classes = get_region_classes(predictors)
 		brushes = dict()
 		for c, hsv in block_hsv(classes):
 			brushes[c] = QtGui.QBrush(
@@ -67,9 +76,9 @@ def default_pen(color="black", width=5):
 	return pen
 
 
-def render_blocks(pixmap, blocks, get_label, brushes=None, matrix=None):
+def render_blocks(pixmap, blocks, get_label, predictors=None, brushes=None, matrix=None):
 	if brushes is None:
-		brushes = LabelBrushes(blocks)
+		brushes = LabelBrushes(predictors)
 
 	def point(x, y):
 		if matrix is not None:
@@ -158,8 +167,8 @@ def render_lines(pixmap, lines, get_label):
 	return pixmap
 
 
-def render_warped_line_paths(pixmap, lines):
-	classes = sorted(list(set(x[:2] for x in lines.keys())))
+def render_warped_line_paths(pixmap, lines, predictors, resolution=0.2):
+	classes = get_region_classes(predictors)
 	pens = Pens(classes)
 
 	qp = QtGui.QPainter()
@@ -171,7 +180,7 @@ def render_warped_line_paths(pixmap, lines):
 		for i, (line_path, line) in enumerate(lines.items()):
 			classifier, label, block_id, line_id = line_path
 
-			path, height = line.warped_path
+			path, height = line.warped_path(resolution)
 			pen = pens.get((classifier, label))
 			pen.setWidth(int(height / 3))
 			qp.setPen(pen)

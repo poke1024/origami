@@ -3,10 +3,15 @@ import numpy as np
 import pickle
 import json
 import zipfile
+import collections
 import PIL.Image
 
 # export some names
 from origami.core.page import Page, Annotations
+
+
+Predictor = collections.namedtuple(
+	"Predictor", ["type", "name", "classes"])
 
 
 class Segmentation:
@@ -73,6 +78,16 @@ class Segmentation:
 					name=p.name,
 					classes=dict([(m.name, m.value) for m in p.classes]))
 				zf.writestr("%s.json" % p.name, json.dumps(meta))
+
+	@staticmethod
+	def read_predictors(path):
+		predictors = []
+		with zipfile.ZipFile(path, "r") as zf:
+			for name in zf.namelist():
+				if name.endswith(".json"):
+					data = json.loads(zf.read(name))
+					predictors.append(Predictor(**data))
+		return predictors
 
 
 class SegmentationPredictor:

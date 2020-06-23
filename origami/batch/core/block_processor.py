@@ -1,5 +1,6 @@
 from origami.batch.core.processor import Processor
 from origami.batch.core.utils import *
+from origami.api import Segmentation
 
 
 class BlockProcessor(Processor):
@@ -20,3 +21,6 @@ class BlockProcessor(Processor):
 
 	def read_dewarped_lines(self, page_path: Path, blocks):
 		return self.read_lines(page_path, blocks, dewarped=True)
+
+	def read_predictors(self, page_path: Path):
+		return Segmentation.read_predictors(page_path.with_suffix(".segment.zip"))

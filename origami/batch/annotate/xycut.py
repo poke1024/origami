@@ -31,10 +31,10 @@ class DebugXYCutProcessor(BlockProcessor):
 			p.with_suffix(".xycut.json").exists() and\
 			not p.with_suffix(".annotate.xycut.jpg").exists()
 
-	def process(self, p: Path):
-		blocks = self.read_dewarped_blocks(p)
+	def process(self, page_path: Path):
+		blocks = self.read_dewarped_blocks(page_path)
 
-		with open(p.with_suffix(".xycut.json"), "r") as f:
+		with open(page_path.with_suffix(".xycut.json"), "r") as f:
 			xycut_data = json.loads(f.read())
 
 		order = dict(
@@ -47,12 +47,14 @@ class DebugXYCutProcessor(BlockProcessor):
 		def get_label(block_path):
 			return str(1 + order[block_path])
 
-		page = Page(p, dewarp=True)
+		page = Page(page_path, dewarp=True)
+		predictors = self.read_predictors(page_path)
 
 		qt_im = ImageQt(page.dewarped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
-		pixmap = render_blocks(pixmap, blocks, get_label)
-		pixmap.toImage().save(str(p.with_suffix(".annotate.xycut.jpg")))
+		pixmap = render_blocks(pixmap, blocks, get_label, predictors)
+		pixmap.toImage().save(str(
+			page_path.with_suffix(".annotate.xycut.jpg")))
 
 
 @click.command()

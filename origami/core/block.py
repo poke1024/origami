@@ -168,8 +168,7 @@ class Line:
 
 		return PIL.Image.fromarray(pixels)
 
-	@property
-	def warped_path(self):
+	def warped_path(self, resolution=1):
 		assert self.block.dewarped
 
 		p0 = self._p
@@ -177,7 +176,8 @@ class Line:
 		up = self._up
 
 		ys = [[0, 0], up]
-		xs = np.linspace([0, 0], right, int(np.ceil(np.linalg.norm(right))))
+		xs = np.linspace([0, 0], right, int(
+			np.ceil(resolution * np.linalg.norm(right))))
 
 		dewarped_grid = (ys + p0)[:, np.newaxis] + xs[np.newaxis, :]
 		dewarped_grid = np.flip(dewarped_grid, axis=-1)

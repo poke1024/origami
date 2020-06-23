@@ -23,21 +23,28 @@ class DebugContoursProcessor(BlockProcessor):
 		return imghdr.what(p) is not None and\
 			p.with_suffix(".warped.contours.zip").exists()
 
-	def process(self, p: Path):
-		blocks = self.read_blocks(p)
-		separators = self.read_separators(p)
+	def process(self, page_path: Path):
+		blocks = self.read_blocks(page_path)
+		separators = self.read_separators(page_path)
+
+		if not blocks:
+			return
+
+		page = list(blocks.values())[0].page
+		predictors = self.read_predictors(page_path)
+
+		qt_im = ImageQt(page.warped)
+		pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 		def get_label(block_path):
 			classifier, segmentation_label, block_id = block_path
 			return str(block_id)
 
-		qt_im = ImageQt(PIL.Image.open(p))
-		pixmap = QtGui.QPixmap.fromImage(qt_im)
-
-		pixmap = render_blocks(pixmap, blocks, get_label)
+		pixmap = render_blocks(pixmap, blocks, get_label, predictors)
 		pixmap = render_separators(pixmap, separators)
 
-		pixmap.toImage().save(str(p.with_suffix(".annotate.warped.contours.jpg")))
+		pixmap.toImage().save(str(
+			page_path.with_suffix(".annotate.warped.contours.jpg")))
 
 
 @click.command()
