@@ -1,4 +1,7 @@
 __pycache__
 .DS_Store
 .idea
+*.so
+.rendered.*.cpp
+*.cppimporthash
 

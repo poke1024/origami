@@ -3,13 +3,13 @@ import numpy as np
 
 
 class Pens:
-	def __init__(self, keys):
+	def __init__(self, keys, width=10):
 		self._pens = dict()
 
 		for i, k in enumerate(keys):
 			color = QtGui.QColor.fromHsv(20 + 230 * (i / (1 + len(keys))), 200, 250)
 			pen = QtGui.QPen()
-			pen.setWidth(10)
+			pen.setWidth(width)
 			pen.setColor(color)
 			pen.setCapStyle(QtCore.Qt.RoundCap)
 			self._pens[k] = pen
@@ -151,6 +151,35 @@ def render_lines(pixmap, lines, get_label):
 
 			qp.drawPolyline([QtCore.QPointF(*p), QtCore.QPointF(*(p + right))])
 			qp.drawPolyline([QtCore.QPointF(*p), QtCore.QPointF(*(p + up))])
+
+	finally:
+		qp.end()
+
+	return pixmap
+
+
+def render_warped_line_paths(pixmap, lines):
+	classes = sorted(list(set(x[:2] for x in lines.keys())))
+	pens = Pens(classes)
+
+	qp = QtGui.QPainter()
+	qp.begin(pixmap)
+
+	try:
+		qp.setOpacity(0.9)
+
+		for i, (line_path, line) in enumerate(lines.items()):
+			classifier, label, block_id, line_id = line_path
+
+			path, height = line.warped_path
+			pen = pens.get((classifier, label))
+			pen.setWidth(int(height / 3))
+			qp.setPen(pen)
+
+			poly = QtGui.QPolygonF()
+			for x, y in path:
+				poly.append(QtCore.QPointF(x, y))
+			qp.drawPolyline(poly)
 
 	finally:
 		qp.end()

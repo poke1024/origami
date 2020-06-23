@@ -31,11 +31,12 @@ class LineDetectionProcessor(BlockProcessor):
 		blocks = self.read_dewarped_blocks(page_path)
 
 		detector = ConcurrentLineDetector(
-			force_parallel_lines=True,
-			fringe_limit=self._options["fringe_limit"],
+			force_parallel_lines=False,
 			extra_height=self._options["extra_height"],
 			extra_descent=self._options["extra_descent"],
-			text_buffer=self._options["text_buffer"])
+			contours_buffer=self._options["contours_buffer"],
+			contours_concavity=self._options["contours_concavity"],
+			contours_detail=self._options["contours_detail"])
 
 		block_lines = detector(blocks)
 
@@ -59,25 +60,30 @@ class LineDetectionProcessor(BlockProcessor):
 
 @click.command()
 @click.option(
-	'-f', '--fringe-limit',
-	default=0.1,
-	type=float,
-	help='ignore region fringes above this ratio')
-@click.option(
 	'--extra-height',
-	default=0.3,
+	default=0.075,
 	type=float,
 	help='compensate low Tesseract height estimation')
 @click.option(
 	'--extra-descent',
-	default=1,
+	default=0.025,
 	type=float,
 	help='compensate low Tesseract descent estimation')
 @click.option(
-	'-b', '--text-buffer',
-	default=15,
-	type=int,
-	help='text area boundary expansion in pixels')
+	'--contours-buffer',
+	default=0.0015,
+	type=float,
+	help='contour boundary expansion')
+@click.option(
+	'--contours-concavity',
+	default=8,
+	type=float,
+	help='contour concavity')
+@click.option(
+	'--contours-detail',
+	default=0.01,
+	type=float,
+	help='contour detail in terms of segment length')
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),

@@ -4,9 +4,11 @@ import math
 import cv2
 import skimage
 import skimage.filters
+import scipy.spatial
 import PIL.Image
 import shapely.wkt
 import logging
+import traceback
 import multiprocessing.pool
 
 from cached_property import cached_property
@@ -14,8 +16,11 @@ from functools import lru_cache
 
 from origami.core.mask import Mask
 from origami.core.math import to_shapely_matrix
+from origami.concaveman import concaveman2d
+
 
 BACKGROUND = 0.8
+DEFAULT_BUFFER = 0.0015
 
 
 def binarize(im, window_size=15):
@@ -35,7 +40,8 @@ def binarize(im, window_size=15):
 
 
 class Line:
-	def __init__(self, block, p, right, up, tesseract_data, wkt=None, text_area=None):
+	def __init__(self, block, p, right, up, contour_data, tesseract_data, wkt=None, text_area=None):
+		self._contour_data = contour_data
 		self._tesseract_data = tesseract_data
 		self._block = block
 
@@ -47,9 +53,8 @@ class Line:
 			self._polygon = shapely.wkt.loads(wkt)
 		else:
 			self._polygon = text_area.intersection(shapely.geometry.Polygon([
-				self._p, self._p + self._right, self._p + self._right + self._up, self._p + self._up])).convex_hull
-
-		self._text = ""
+				self._p, self._p + self._right,
+				self._p + self._right + self._up, self._p + self._up])).convex_hull
 
 	@property
 	def block(self):
@@ -63,12 +68,29 @@ class Line:
 	def angle(self):
 		return math.atan2(self._right[1], self._right[0])
 
-	@property
-	def text(self):
-		return self._text
+	def annotate(self, buffer=DEFAULT_BUFFER):
+		im, pos = self.block.extract_image(buffer)
+		pixels = np.array(im.convert("RGB"))
 
-	def set_text(self, text):
-		self._text = text
+		text_area = self.block.text_area(**self._contour_data)
+
+		pts = np.array(list(text_area.exterior.coords)) - pos
+		for p, q in zip(pts, pts[1:]):
+			cv2.line(pixels, tuple(map(int, p)), tuple(map(int, q)), (0, 255, 0), 2)
+
+		ex = _extended_baseline(text_area, self._p, self._right, self._up)
+		ex_p1 = np.array(ex["p"]) - pos
+		ex_p2 = ex_p1 + np.array(ex["right"])
+		ex_p1 = tuple(map(int, np.array(ex_p1)))
+		ex_p2 = tuple(map(int, np.array(ex_p2)))
+		cv2.line(pixels, ex_p1, ex_p2, (0, 0, 255), 3)
+
+		p1, p2 = self._tesseract_data['baseline']
+		p1 = tuple(map(int, np.array(p1) - pos))
+		p2 = tuple(map(int, np.array(p2) - pos))
+		cv2.line(pixels, p1, p2, (255, 0, 0), 2)
+
+		return PIL.Image.fromarray(pixels)
 
 	def image(self, target_height=48, dewarped=True, deskewed=True, binarized=False, window_size=15):
 		if dewarped:
@@ -81,12 +103,14 @@ class Line:
 			im = binarize(im, window_size)
 		return im
 
-	@property
-	def warped_image(self):
+	def masked_image(self, mode="polygon"):
+		if mode not in ("polygon", "bbox"):
+			raise ValueError(mode)
 		mask = Mask(self.image_space_polygon)
+		bg = self._block.background if mode == "polygon" else None
 		image, pos = mask.extract_image(
 			self._block.page_pixels,
-			background=self._block.background)
+			background=bg)
 		return image
 
 	def deskewed_image(self, target_height=48, interpolation=cv2.INTER_AREA):
@@ -124,6 +148,7 @@ class Line:
 
 	def dewarped_image(self, target_height=48, interpolation=cv2.INTER_LINEAR):
 		assert self.block.dewarped
+
 		p0 = self._p
 		right = self._right
 		up = self._up
@@ -144,6 +169,26 @@ class Line:
 		return PIL.Image.fromarray(pixels)
 
 	@property
+	def warped_path(self):
+		assert self.block.dewarped
+
+		p0 = self._p
+		right = self._right
+		up = self._up
+
+		ys = [[0, 0], up]
+		xs = np.linspace([0, 0], right, int(np.ceil(np.linalg.norm(right))))
+
+		dewarped_grid = (ys + p0)[:, np.newaxis] + xs[np.newaxis, :]
+		dewarped_grid = np.flip(dewarped_grid, axis=-1)
+		inv = self.block.page.dewarper.grid.inverse
+		warped_grid = inv(dewarped_grid.reshape((len(ys) * len(xs), 2)))
+		warped_grid = warped_grid.reshape((len(ys), len(xs), 2)).astype(np.float32)
+
+		height = np.median(np.linalg.norm(warped_grid[1] - warped_grid[0], axis=-1))
+		return np.mean(warped_grid, axis=0), abs(height)
+
+	@property
 	def coords(self):
 		try:
 			return list(self.image_space_polygon.exterior.coords)
@@ -161,6 +206,11 @@ class Line:
 			right=self._right.tolist(),
 			up=self._up.tolist(),
 			wkt=self._polygon.wkt,
+			contour_data=dict(
+				buffer=self._contour_data["buffer"],
+				concavity=self._contour_data["concavity"],
+				detail=self._contour_data["detail"]
+			),
 			tesseract_data=dict(
 				baseline=self._tesseract_data['baseline'],
 				descent=self._tesseract_data['descent'],
@@ -173,30 +223,38 @@ class Line:
 
 
 def _extended_baseline(text_area, p, right, up, max_ext=3):
-	minx, miny, maxx, maxy = text_area.bounds
-	magnitude = max(maxx - minx, maxy - miny)
-	u = (right / np.linalg.norm(right)) * 2 * magnitude
-	line = shapely.geometry.LineString(
-		[p - u, p + u]).intersection(text_area)
-	if line.geom_type != "LineString":
-		print("failed to find extended baseline")
+	coords = []
+
+	for retry in range(2):
+		minx, miny, maxx, maxy = text_area.bounds
+		magnitude = max(maxx - minx, maxy - miny)
+		u = (right / np.linalg.norm(right)) * 2 * magnitude
+		line = shapely.geometry.LineString(
+			[p - u, p + u]).intersection(text_area)
+		if line.geom_type == "LineString":
+			coords = list(line.coords)
+			break
+		if retry == 0:
+			text_area = text_area.convex_hull
+
+	if len(coords) >= 2:
+		xp = np.array(min(coords, key=lambda xy: xy[0]))
+		xq = np.array(max(coords, key=lambda xy: xy[0]))
+
+		extra = 0
+		if (xp - p).dot(right) < 0:
+			extra = np.linalg.norm(xp - p)
+			right = (p + right) - xp
+			p = xp
+
+		old_length = np.linalg.norm(right)
+		new_length = min(np.linalg.norm(xq - p), extra + old_length * max_ext)
+
+		if new_length > old_length:
+			right = right * (new_length / old_length)
 	else:
-		coords = list(line.coords)
-		if len(coords) >= 2:
-			xp = np.array(min(coords, key=lambda xy: xy[0]))
-			xq = np.array(max(coords, key=lambda xy: xy[0]))
-
-			extra = 0
-			if (xp - p).dot(right) < 0:
-				extra = np.linalg.norm(xp - p)
-				right = (p + right) - xp
-				p = xp
-
-			old_length = np.linalg.norm(right)
-			new_length = min(np.linalg.norm(xq - p), extra + old_length * max_ext)
-
-			if new_length > old_length:
-				right = right * (new_length / old_length)
+		logging.error("no extended baseline for (%s, %s, %s) in area %s" % (
+			p, right, up, text_area.bounds))
 
 	return dict(p=p, right=right, up=up)
 
@@ -219,14 +277,9 @@ class Block:
 	def dewarped(self):
 		return self._dewarped
 
-	@cached_property
-	def image(self):
-		im, _ = self.extract_image()
-		return im
-
 	@lru_cache(maxsize=3)
-	def extract_image(self, buffer=10):
-		mask = Mask(self.text_area(buffer=buffer))
+	def image(self, **kwargs):
+		mask = Mask(self.text_area(**kwargs))
 		return mask.extract_image(
 			self.page_pixels, background=self.background)
 
@@ -234,10 +287,23 @@ class Block:
 	def image_space_polygon(self):
 		return self._image_space_polygon
 
-	def text_area(self, buffer=10, fringe_limit=0.1):
-		# fringe_limit is currently ignored. this used to have a bbox fallback,
-		# which was a very bad idea, since it was not aware of skew.
-		return self.image_space_polygon.buffer(buffer).convex_hull
+	@lru_cache(maxsize=3)
+	def text_area(self, buffer=DEFAULT_BUFFER, concavity=2, detail=0.01):
+		mag = self.page.magnitude(self._dewarped)
+
+		poly = self.image_space_polygon.buffer(mag * buffer)
+
+		if concavity > 0:
+			ext = np.array(poly.exterior.coords)
+			pts = concaveman2d(
+				ext,
+				scipy.spatial.ConvexHull(ext).vertices,
+				concavity=concavity,
+				lengthThreshold=mag * detail)
+		else:  # disable concaveman
+			pts = list(poly.convex_hull.exterior.coords)
+
+		return shapely.geometry.Polygon(pts)
 
 	@property
 	def coords(self):
@@ -261,8 +327,12 @@ class Block:
 
 
 def padded(im, pad=32, background_color=255):
+	im = im.convert("L")
 	width, height = im.size
-	result = PIL.Image.new(im.mode, (width, height + 2 * pad), background_color)
+	result = PIL.Image.new(
+		im.mode,
+		(width, height + 2 * pad),
+		int(background_color))
 	result.paste(im, (0, pad))
 	return result
 
@@ -271,16 +341,24 @@ class LineDetector:
 	def __init__(
 		self,
 		force_parallel_lines=False,
-		fringe_limit=0.1,
 		extra_height=0.05,
 		extra_descent=0,
-		text_buffer=10):
+		contours_buffer=DEFAULT_BUFFER,
+		contours_concavity=2,
+		contours_detail=0.001,
+		binarize=binarize):
 
 		self._force_parallel_baselines = force_parallel_lines
-		self._fringe_limit = fringe_limit
+
 		self._extra_height = extra_height
 		self._extra_descent = extra_descent
-		self._text_buffer = text_buffer
+
+		self._contour_data = dict(
+			buffer=contours_buffer,
+			concavity=contours_concavity,
+			detail=contours_detail)
+
+		self._binarize = binarize
 
 	def detect_baselines(self, block):
 		import tesserocr
@@ -293,11 +371,23 @@ class LineDetector:
 			api.SetVariable("textord_straight_baselines", "1")
 
 			# without padding, Tesseract sometimes underestimates row heights
-			# for single line headers.
+			# for single line headers or does not recoginize header lines at all.
+
+			if self._binarize is not None:
+				bg = 255
+			else:
+				bg = block.background
 
 			pad = 32
-			im, pos = block.extract_image(self._text_buffer)
-			api.SetImage(padded(im, pad=pad))
+			im, pos = block.image(**self._contour_data)
+			im = padded(im, pad=pad, background_color=bg)
+
+			if self._binarize is not None:
+				# binarizing Tesseract's input detects some correct baselines
+				# that are omitted on grayscale input.
+				im = self._binarize(im)
+
+			api.SetImage(im)
 			pos = np.array(pos) - np.array([0, pad])
 
 			api.AnalyseLayout()
@@ -305,7 +395,8 @@ class LineDetector:
 
 			baselines = []
 			if ri:
-				# if no lines are available, api.AnalyseLayout() will produce None as iterator.
+				# if no lines are available, api.AnalyseLayout() will produce
+				# None as iterator.
 
 				level = tesserocr.RIL.TEXTLINE
 				for r in tesserocr.iterate_level(ri, level):
@@ -332,17 +423,15 @@ class LineDetector:
 		return baselines
 
 	def detect_lines(self, block):
-		text_area = block.text_area(
-			fringe_limit=self._fringe_limit,
-			buffer=self._text_buffer)
+		text_area = block.text_area(**self._contour_data)
 		lines = []
 		for baseline in self.detect_baselines(block):
 			p1, p2 = baseline['baseline']
+			descent = baseline['descent']
 
 			# Tesseract tends to underestimate row height. work
 			# around by adding another few percent.
 			height = baseline['height'] * (1 + self._extra_height)
-			descent = baseline['descent'] * (1 + self._extra_descent)
 
 			right = (np.array(p2) - np.array(p1)).astype(np.float64)
 
@@ -350,14 +439,20 @@ class LineDetector:
 			up /= np.linalg.norm(up)
 			down = -up
 
+			spec = _extended_baseline(
+				text_area,
+				p=np.array(p1, dtype=np.float64),
+				right=right,
+				up=up * height)
+
+			x_descent = abs(descent * (1 + self._extra_descent))
+			spec["p"] += x_descent * down.astype(np.float64)
+
 			lines.append(
 				Line(
 					block,
-					**_extended_baseline(
-						text_area,
-						p=np.array(p1) + abs(descent) * down,
-						right=right,
-						up=up * height),
+					**spec,
+					contour_data=self._contour_data,
 					tesseract_data=baseline,
 					text_area=text_area))
 
@@ -376,6 +471,7 @@ class ConcurrentLineDetector:
 			return block_path, self._detector.detect_lines(block)
 		except:
 			logging.error("failed to detect lines on block %s" % str(block_path))
+			logging.error(traceback.format_exc())
 			raise
 
 	def __call__(self, blocks):

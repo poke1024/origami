@@ -13,3 +13,4 @@ pyside2>=5.14
 xlrd>=1.2.0
 calamari_ocr>=1.0.5
 wquantiles>=0.5
+cppimport>=18.11

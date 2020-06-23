@@ -30,9 +30,7 @@ class WarpDetectionProcessor(BlockProcessor):
 		blocks = self.read_blocks(page_path)
 
 		detector = ConcurrentLineDetector(
-			force_parallel_lines=False,
-			fringe_limit=self._options["fringe_limit"],
-			text_buffer=self._options["text_buffer"])
+			force_parallel_lines=False)
 
 		block_lines = detector(blocks)
 
@@ -55,16 +53,6 @@ class WarpDetectionProcessor(BlockProcessor):
 
 
 @click.command()
-@click.option(
-	'-f', '--fringe-limit',
-	default=0.1,
-	type=float,
-	help='ignore region fringes above this ratio')
-@click.option(
-	'-b', '--text-buffer',
-	default=15,
-	type=int,
-	help='text area boundary expansion in pixels')
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),

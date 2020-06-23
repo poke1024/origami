@@ -102,6 +102,10 @@ class Page:
 	def size(self, dewarped):
 		return (self._dewarped if dewarped else self._warped).size
 
+	def magnitude(self, dewarped):
+		w, h = self.size(dewarped)
+		return np.sqrt(w * w + h * h)
+
 	def pixels(self, dewarped):
 		return np.array(self._dewarped if dewarped else self._warped)
 

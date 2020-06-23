@@ -10,7 +10,7 @@ from origami.batch.core.block_processor import BlockProcessor
 from origami.batch.annotate.utils import render_lines
 
 
-class DebugLinesProcessor(BlockProcessor):
+class DebugWarpProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -48,12 +48,12 @@ class DebugLinesProcessor(BlockProcessor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
-def debug_lines(data_path, **kwargs):
+def debug_warp(data_path, **kwargs):
 	""" Export annotate information on lines for all document images in DATA_PATH. """
-	processor = DebugLinesProcessor(kwargs)
+	processor = DebugWarpProcessor(kwargs)
 	processor.traverse(data_path)
 
 
 if __name__ == "__main__":
 	app = QtGui.QGuiApplication()
-	debug_lines()
+	debug_warp()
