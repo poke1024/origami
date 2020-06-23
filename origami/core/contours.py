@@ -17,6 +17,9 @@ import skimage
 import skimage.morphology
 import skimage.measure
 import semantic_version
+import scipy.optimize
+import PIL.Image
+import PIL.ImageDraw
 
 from cached_property import cached_property
 
@@ -48,8 +51,71 @@ def _as_wl(x):
 		return str(x)
 
 
+def blowup(shape, area):
+	def f(x):
+		return abs(shape.buffer(x).area - area)
+
+	opt = scipy.optimize.minimize_scalar(
+		f, (0, 1), tol=0.01, options=dict(maxiter=100))
+
+	if opt.success:
+		return shape.buffer(opt.x)
+	else:
+		return shape
+
+
+def fix_contour_pts(pts):
+	pts = pts.reshape((len(pts), 2))
+
+	pts = _without_closing_point(pts)
+
+	if len(pts) < 3:
+		return None
+
+	return pts
+
+
+def find_contours(mask):
+	result = cv2.findContours(
+		mask.astype(np.uint8),
+		cv2.RETR_EXTERNAL,
+		cv2.CHAIN_APPROX_SIMPLE)
+
+	v = semantic_version.Version(cv2.__version__)
+	if v.major == 3:
+		image, contours, hierarchy = result
+	else:
+		contours, hierarchy = result
+
+	contours = [fix_contour_pts(pts) for pts in contours]
+
+	return [c for c in contours if c is not None]
+
+
+def selective_blowup(mask, min_area):
+	contours = find_contours(mask)
+
+	im = PIL.Image.new(
+		"L", tuple(reversed(mask.shape)), color=0)
+
+	draw = PIL.ImageDraw.Draw(im)
+
+	try:
+		for contour in contours:
+			shape = shapely.geometry.Polygon(contour)
+			if shape.area < min_area:
+				shape = blowup(shape, min_area)
+				draw.polygon(
+					list(shape.exterior.coords),
+					fill=255, outline=255)
+	finally:
+		del draw
+
+	return np.logical_or(mask, np.array(im) > 0)
+
+
 class Contours:
-	def __init__(self, ink=None, opening=None, dilator=None):
+	def __init__(self, ink=None, opening=None, dilator=None, standalone=0.01):
 		# "ink" allows the caller to define areas that are considered
 		# not connected, independent of the mask provided later.
 		self._ink = ink
@@ -57,6 +123,7 @@ class Contours:
 
 		# "dilator" will expand the contour boundaries by some amount.
 		self._dilator = dilator
+		self._standalone = standalone
 
 	def __call__(self, mask):
 		if self._dilator is not None:
@@ -71,40 +138,11 @@ class Contours:
 			mask = np.logical_and(mask, ink)
 			mask = self._opening(mask)
 
-			isolated_fragments_mask = np.zeros(mask.shape)
-			min_block_area = mask.size * 0.01
-			for p in skimage.measure.regionprops(skimage.measure.label(mask, background=0)):
-				if p.label == 0:
-					continue
-				if p.area < min_block_area:
-					miny, minx, maxy, maxx = p.bbox
-					isolated_fragments_mask[miny:maxy, minx:maxx] = np.logical_or(
-						isolated_fragments_mask[miny:maxy, minx:maxx], p.image)
-			isolated_fragments_mask = scipy.ndimage.morphology.binary_dilation(
-					isolated_fragments_mask, iterations=3)
-			mask = np.logical_or(
-				mask, isolated_fragments_mask)
+		mask = selective_blowup(
+			mask, mask.size * (self._standalone ** 2))
 
-		result = cv2.findContours(
-			mask.astype(np.uint8),
-			cv2.RETR_EXTERNAL,
-			cv2.CHAIN_APPROX_SIMPLE)
-
-		v = semantic_version.Version(cv2.__version__)
-		if v.major == 3:
-			image, contours, hierarchy = result
-		else:
-			contours, hierarchy = result
-
-		for pts in contours:
-			pts = _without_closing_point(pts.reshape((len(pts), 2)))
-
-			if len(pts) < 3:
-				continue
-
-			polygon = shapely.geometry.Polygon(pts)
-
-			yield polygon
+		for pts in find_contours(mask):
+			yield shapely.geometry.Polygon(pts)
 
 
 class Decompose:

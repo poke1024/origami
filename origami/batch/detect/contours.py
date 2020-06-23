@@ -57,7 +57,11 @@ class ContoursProcessor(Processor):
 			self._options["ink_opening"])
 
 		pipeline = [
-			contours.Contours(ink, opening=opening_filter, dilator=region_dilator),
+			contours.Contours(
+				ink,
+				opening=opening_filter,
+				dilator=region_dilator,
+				standalone=self._options["standalone_region"]),
 			contours.Decompose(),
 			contours.FilterByArea(annotations.magnitude * self._options["region_minsize"])
 		]
@@ -183,6 +187,11 @@ class ContoursProcessor(Processor):
 	type=str,
 	default="(5, 5)",
 	help="Opening amount to remove ink overflow between columns.")
+@click.option(
+	'--standalone-region',
+	type=float,
+	default=0.02,
+	help="Threshold for smallest standalone region.")
 @click.option(
 	'--name',
 	type=str,
