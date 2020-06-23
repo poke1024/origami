@@ -42,14 +42,20 @@ class DewarpProcessor(BlockProcessor):
 			not p.with_suffix(".dewarped.transform.zip").exists()
 
 	def process(self, page_path: Path):
-		im = PIL.Image.open(page_path)
-
 		separators = self.read_separators(page_path)
 		blocks = self.read_blocks(page_path)
 		lines = self.read_lines(page_path, blocks)
 
+		if not blocks:
+			return
+
+		page = list(blocks.values())[0].page
+		mag = page.magnitude(dewarped=False)
+		min_length = mag * self._options["min_line_length"]
+		lines = dict((k, l) for k, l in lines.items() if l.length > min_length)
+
 		grid = Grid.create(
-			im.size,
+			page.warped.size,
 			blocks, lines, separators,
 			grid_res=self._options["grid_cell_size"])
 
@@ -74,6 +80,11 @@ class DewarpProcessor(BlockProcessor):
 	type=int,
 	default=25,
 	help="grid cell size used for dewarping (smaller is better, but takes longer).")
+@click.option(
+	'--min-line-length',
+	type=float,
+	default=0.05,
+	help="detect warp using baselines that are above this relative length.")
 @click.option(
 	'--name',
 	type=str,
