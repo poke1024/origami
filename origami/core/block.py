@@ -221,6 +221,11 @@ class Line:
 	def length(self):
 		return np.linalg.norm(self._right)
 
+	@property
+	def unextended_length(self):
+		p1, p2 = self._tesseract_data['baseline']
+		return np.linalg.norm(np.array(p1) - np.array(p2))
+
 
 def _extended_baseline(text_area, p, right, up, max_ext=3):
 	coords = []

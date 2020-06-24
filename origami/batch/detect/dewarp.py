@@ -39,7 +39,8 @@ class DewarpProcessor(BlockProcessor):
 			p.with_suffix(".segment.zip").exists() and\
 			p.with_suffix(".warped.contours.zip").exists() and\
 			p.with_suffix(".warped.lines.zip").exists() and\
-			not p.with_suffix(".dewarped.transform.zip").exists()
+			not p.with_suffix(".dewarped.transform.zip").exists() and\
+			not p.with_suffix(".dewarped.contours.zip").exists()
 
 	def process(self, page_path: Path):
 		separators = self.read_separators(page_path)
@@ -50,9 +51,14 @@ class DewarpProcessor(BlockProcessor):
 			return
 
 		page = list(blocks.values())[0].page
+
 		mag = page.magnitude(dewarped=False)
 		min_length = mag * self._options["min_line_length"]
-		lines = dict((k, l) for k, l in lines.items() if l.length > min_length)
+
+		def is_good_line(line):
+			return line.unextended_length > min_length
+
+		lines = dict((k, l) for k, l in lines.items() if is_good_line(l))
 
 		grid = Grid.create(
 			page.warped.size,
