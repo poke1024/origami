@@ -51,7 +51,7 @@ class OCRProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".dewarped.lines.zip").exists() and\
+			p.with_suffix(".aggregate.lines.zip").exists() and\
 			p.with_suffix(".dewarped.transform.zip").exists() and\
 			not p.with_suffix(".ocr.zip").exists()
 
@@ -67,8 +67,8 @@ class OCRProcessor(BlockProcessor):
 	def _extract_line_images(self, page_path):
 		assert self._line_height is not None
 
-		blocks = self.read_dewarped_blocks(page_path)
-		lines = self.read_dewarped_lines(page_path, blocks)
+		blocks = self.read_aggregate_blocks(page_path)
+		lines = self.read_aggregate_lines(page_path, blocks)
 
 		pool = multiprocessing.pool.ThreadPool(processes=8)
 		return pool.map(self._extract_line_image, lines.items())

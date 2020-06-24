@@ -27,8 +27,8 @@ class DebugLinesProcessor(BlockProcessor):
 			p.with_suffix(".dewarped.lines.zip").exists()
 
 	def process(self, page_path: Path):
-		blocks = self.read_dewarped_blocks(page_path)
-		lines = self.read_dewarped_lines(page_path, blocks)
+		blocks = self.read_aggregate_blocks(page_path)
+		lines = self.read_aggregate_lines(page_path, blocks)
 
 		if not blocks:
 			return

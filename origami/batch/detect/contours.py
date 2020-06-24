@@ -16,7 +16,7 @@ from origami.batch.core.processor import Processor
 from origami.api import Segmentation
 from origami.core.page import Page, Annotations
 import origami.core.contours as contours
-from origami.core.block import Block
+from origami.core.block import Block, Stage
 from origami.core.predict import PredictorType
 
 
@@ -78,7 +78,7 @@ class ContoursProcessor(Processor):
 
 		for prediction_class, shapes in region_contours.items():
 			for region_id, polygon in enumerate(shapes):
-				block = Block(annotations.page, polygon, dewarped=False)
+				block = Block(annotations.page, polygon, stage=Stage.WARPED)
 
 				if self._options["export_images"]:
 					with io.BytesIO() as f:

@@ -34,16 +34,16 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 
 ## Batches
 
-The usual order of batches is:
+The necessary order of batches is:
 
-* binarize
 * segment
+* binarize
 * contours
 * warp
 * dewarp
+* layout
 * lines
 * ocr
-* xycut
 * compose
 
 <dl>

@@ -23,12 +23,11 @@ class LineDetectionProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return (imghdr.what(p) is not None) and\
-			p.with_suffix(".dewarped.contours.zip").exists() and\
-			p.with_suffix(".dewarped.transform.zip").exists() and\
-			not p.with_suffix(".dewarped.lines.zip").exists()
+			p.with_suffix(".aggregate.contours.zip").exists() and\
+			not p.with_suffix(".aggregate.lines.zip").exists()
 
 	def process(self, page_path: Path):
-		blocks = self.read_dewarped_blocks(page_path)
+		blocks = self.read_aggregate_blocks(page_path)
 
 		detector = ConcurrentLineDetector(
 			force_parallel_lines=False,
@@ -40,7 +39,7 @@ class LineDetectionProcessor(BlockProcessor):
 
 		block_lines = detector(blocks)
 
-		lines_path = page_path.with_suffix(".dewarped.lines.zip")
+		lines_path = page_path.with_suffix(".aggregate.lines.zip")
 		with atomic_write(lines_path, mode="wb", overwrite=False) as f:
 
 			with zipfile.ZipFile(f, "w", compression=self.compression) as zf:

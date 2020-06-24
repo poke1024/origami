@@ -10,17 +10,27 @@ import shapely.wkt
 import logging
 import traceback
 import multiprocessing.pool
+import enum
 
 from cached_property import cached_property
 from functools import lru_cache
 
 from origami.core.mask import Mask
 from origami.core.math import to_shapely_matrix
-from origami.concaveman import concaveman2d
 
 
 BACKGROUND = 0.8
 DEFAULT_BUFFER = 0.0015
+
+
+class Stage(enum.Enum):
+	WARPED = 0
+	DEWARPED = 1
+	AGGREGATE = 2
+
+	@property
+	def is_dewarped(self):
+		return self.value >= Stage.DEWARPED.value
 
 
 def binarize(im, window_size=15):
@@ -147,7 +157,7 @@ class Line:
 		return PIL.Image.fromarray(cutout)
 
 	def dewarped_image(self, target_height=48, interpolation=cv2.INTER_LINEAR):
-		assert self.block.dewarped
+		assert self.block.stage.is_dewarped
 
 		p0 = self._p
 		right = self._right
@@ -169,7 +179,7 @@ class Line:
 		return PIL.Image.fromarray(pixels)
 
 	def warped_path(self, resolution=1):
-		assert self.block.dewarped
+		assert self.block.stage.is_dewarped
 
 		p0 = self._p
 		right = self._right
@@ -265,10 +275,10 @@ def _extended_baseline(text_area, p, right, up, max_ext=3):
 
 
 class Block:
-	def __init__(self, page, polygon, dewarped):
+	def __init__(self, page, polygon, stage):
 		self._image_space_polygon = polygon
 		self._page = page
-		self._dewarped = dewarped
+		self._stage = stage
 
 	@property
 	def page(self):
@@ -276,11 +286,11 @@ class Block:
 	
 	@property
 	def page_pixels(self):
-		return self.page.pixels(self._dewarped)
+		return self.page.pixels(self._stage.is_dewarped)
 		
 	@property
-	def dewarped(self):
-		return self._dewarped
+	def stage(self):
+		return self._stage
 
 	@lru_cache(maxsize=3)
 	def image(self, **kwargs):
@@ -294,21 +304,22 @@ class Block:
 
 	@lru_cache(maxsize=3)
 	def text_area(self, buffer=DEFAULT_BUFFER, concavity=2, detail=0.01):
-		mag = self.page.magnitude(self._dewarped)
+		mag = self.page.magnitude(self._stage.is_dewarped)
 
 		poly = self.image_space_polygon.buffer(mag * buffer)
 
-		if concavity > 0:
+		if concavity > 1:
+			from origami.concaveman import concaveman2d
+
 			ext = np.array(poly.exterior.coords)
 			pts = concaveman2d(
 				ext,
 				scipy.spatial.ConvexHull(ext).vertices,
 				concavity=concavity,
 				lengthThreshold=mag * detail)
+			return shapely.geometry.Polygon(pts)
 		else:  # disable concaveman
-			pts = list(poly.convex_hull.exterior.coords)
-
-		return shapely.geometry.Polygon(pts)
+			return poly
 
 	@property
 	def coords(self):
