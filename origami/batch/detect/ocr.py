@@ -40,12 +40,17 @@ class OCRProcessor(BlockProcessor):
 			return
 
 		if len(self._models) == 1:
-			self._predictor = Predictor(str(self._models[0]))
+			self._predictor = Predictor(
+				str(self._models[0]), batch_size=self._options["batch_size"])
+			self._predict_kwargs = dict(batch_size=self._options["batch_size"])
 			self._voter = None
 			self._line_height = int(self._predictor.model_params.line_height)
 		else:
 			print("using Calamari voting with %d models." % len(self._models))
-			self._predictor = MultiPredictor(checkpoints=[str(p) for p in self._models])
+			self._predictor = MultiPredictor(
+				checkpoints=[str(p) for p in self._models],
+				batch_size=self._options["batch_size"])
+			self._predict_kwargs = dict()
 			self._voter = ConfidenceVoter()
 			self._line_height = int(self._predictor.predictors[0].model_params.line_height)
 
@@ -84,7 +89,7 @@ class OCRProcessor(BlockProcessor):
 
 		texts = []
 		for prediction in self._predictor.predict_raw(
-			images, progress_bar=False, batch_size=self._options["batch_size"]):
+			images, progress_bar=False, **self._predict_kwargs):
 
 			if self._voter is not None:
 				prediction = self._voter.vote_prediction_result(prediction)
