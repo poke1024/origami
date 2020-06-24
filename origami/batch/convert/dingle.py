@@ -29,7 +29,7 @@ class DinglehopperProcessor(BlockProcessor):
 		self._use_xy_cut = True
 
 		if options["filter"]:
-			self._block_filter = [tuple(options["filter"].split("."))]
+			self._block_filter = tuple(options["filter"].split("."))
 		else:
 			self._block_filter = None
 
@@ -60,8 +60,14 @@ class DinglehopperProcessor(BlockProcessor):
 			with open(page_path.with_suffix(".xycut.json"), "r") as f:
 				xycut_data = json.loads(f.read())
 
+			orders = xycut_data["order"]
+			if self._block_filter:
+				order = orders["/".join(self._block_filter)]
+			else:
+				order = orders["*"]
+
 			ordered_blocks = []
-			for block_name in xycut_data["order"]:
+			for block_name in order:
 				region, kind, block_id = block_name.split("/")
 				ordered_blocks.append((region, kind, int(block_id)))
 		else:
@@ -71,7 +77,7 @@ class DinglehopperProcessor(BlockProcessor):
 			if block_path not in lines:
 				continue
 
-			if self._block_filter and block_path[:2] not in self._block_filter:
+			if self._block_filter and block_path[:2] != self._block_filter:
 				continue
 
 			region = pagexml.TextRegion("-".join(map(str, block_path)))
@@ -95,7 +101,7 @@ class DinglehopperProcessor(BlockProcessor):
 @click.option(
 	'-f', '--filter',
 	type=str,
-	default=None,
+	default="regions.TEXT",
 	help="Only export text from given block path, e.g. -f \"regions.TEXT\".")
 @click.option(
 	'--nolock',
