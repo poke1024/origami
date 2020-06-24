@@ -15,7 +15,7 @@ from origami.core.page import Page
 from origami.batch.annotate.utils import render_blocks
 
 
-class DebugXYCutProcessor(BlockProcessor):
+class DebugLayoutProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -26,13 +26,13 @@ class DebugXYCutProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".dewarped.contours.zip").exists() and\
+			p.with_suffix(".aggregate.contours.zip").exists() and\
 			p.with_suffix(".dewarped.transform.zip").exists() and\
 			p.with_suffix(".xycut.json").exists() and\
-			not p.with_suffix(".annotate.xycut.jpg").exists()
+			not p.with_suffix(".annotate.layout.jpg").exists()
 
 	def process(self, page_path: Path):
-		blocks = self.read_dewarped_blocks(page_path)
+		blocks = self.read_aggregate_blocks(page_path)
 
 		with open(page_path.with_suffix(".xycut.json"), "r") as f:
 			xycut_data = json.loads(f.read())
@@ -45,7 +45,7 @@ class DebugXYCutProcessor(BlockProcessor):
 			for path in blocks.keys() if path in order)
 
 		def get_label(block_path):
-			return str(1 + order[block_path])
+			return block_path[:2], str(1 + order[block_path])
 
 		page = Page(page_path, dewarp=True)
 		predictors = self.read_predictors(page_path)
@@ -54,7 +54,7 @@ class DebugXYCutProcessor(BlockProcessor):
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 		pixmap = render_blocks(pixmap, blocks, get_label, predictors)
 		pixmap.toImage().save(str(
-			page_path.with_suffix(".annotate.xycut.jpg")))
+			page_path.with_suffix(".annotate.layout.jpg")))
 
 
 @click.command()
@@ -68,12 +68,12 @@ class DebugXYCutProcessor(BlockProcessor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
-def debug_xycut(data_path, **kwargs):
+def debug_layout(data_path, **kwargs):
 	""" Export annotate information on xycuts for all document images in DATA_PATH. """
-	processor = DebugXYCutProcessor(kwargs)
+	processor = DebugLayoutProcessor(kwargs)
 	processor.traverse(data_path)
 
 
 if __name__ == "__main__":
 	app = QtGui.QGuiApplication()
-	debug_xycut()
+	debug_layout()

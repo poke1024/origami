@@ -1,5 +1,9 @@
 from PySide2 import QtGui, QtCore
+
 import numpy as np
+from functools import lru_cache
+
+from origami.core.predict import PredictorType
 
 
 class Pens:
@@ -21,7 +25,7 @@ class Pens:
 def get_region_classes(predictors):
 	classes = []
 	for p in predictors:
-		if p.type == "REGION":
+		if p.type == PredictorType.REGION.name:
 			for c in p.classes:
 				if c != "BACKGROUND":
 					classes.append((p.name, c))
@@ -56,16 +60,19 @@ def block_hsv(classes):
 
 class LabelBrushes:
 	def __init__(self, predictors):
-		classes = get_region_classes(predictors)
-		brushes = dict()
-		for c, hsv in block_hsv(classes):
-			brushes[c] = QtGui.QBrush(
-				QtGui.QColor.fromHsv(*hsv))
-		self._brushes = brushes
+		self._classes = get_region_classes(predictors)
 
-	def get_brush(self, block_path):
+	@lru_cache(maxsize=8)
+	def brushes(self, lighter=0):
+		brushes = dict()
+		for c, hsv in block_hsv(self._classes):
+			brushes[c] = QtGui.QBrush(
+				QtGui.QColor.fromHsv(*hsv).lighter(lighter))
+		return brushes
+
+	def get_brush(self, block_path, lighter=0):
 		classifier, label, block_id = block_path
-		return self._brushes[(classifier, label)]
+		return self.brushes(lighter)[(classifier, label)]
 
 
 def default_pen(color="black", width=5):
@@ -112,13 +119,15 @@ def render_blocks(pixmap, blocks, get_label, predictors=None, brushes=None, matr
 			x, y = block.image_space_polygon.centroid.coords[0]
 			p = point(x, y)
 
+			path, label = get_label(block_path)
+			qp.setBrush(brushes.get_brush(block_path, lighter=150))
+
 			qp.setOpacity(0.8)
 			qp.drawEllipse(p, 50, 50)
 
 			qp.setOpacity(1)
 			# flags=QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter does
 			# not work. fix it manually.
-			label = get_label(block_path)
 			w = fm.horizontalAdvance(label)
 			qp.drawText(p.x() - w / 2, p.y() + fm.descent(), label)
 
