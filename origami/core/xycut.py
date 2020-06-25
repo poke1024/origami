@@ -154,12 +154,15 @@ class XYCut:
 	def __init__(self, objs, score="v", eps=5):
 		if isinstance(score, str):
 			score = default_scores[score]
+
 		if len(objs) >= 2:
 			coords = [np.array(o.coords, dtype=np.float64) for o in objs]
 			lcs = [Coordinates(coords, axis) for axis in (0, 1)]
 			splits = list(chain(*[lc.candidate_splits(score=score, eps=eps) for lc in lcs]))
+			self._coords = np.array(coords)
 		else:
 			splits = None
+			self._coords = None
 
 		if not splits:
 			self._split = None
@@ -191,6 +194,12 @@ class XYCut:
 	@property
 	def x(self):
 		return self._x
+
+	@property
+	def extent(self):
+		a = 1 - self.axis
+		coords = self._coords[:, :, a]
+		return np.min(coords), np.max(coords)
 
 
 def _rxy_cut(boxes):
@@ -227,3 +236,21 @@ def sort_blocks(blocks):
 	order = reading_order([
 		block.polygon.bounds for block in blocks])
 	return [blocks[i] for i in order]
+
+
+def polygon_order(polygons, fringe):
+	names = []
+	bounds = []
+
+	for name, polygon in polygons:
+		minx, miny, maxx, maxy = polygon.bounds
+
+		minx = min(minx + fringe, maxx)
+		maxx = max(maxx - fringe, minx)
+		miny = min(miny + fringe, maxy)
+		maxy = max(maxy - fringe, miny)
+
+		bounds.append((minx, miny, maxx, maxy))
+		names.append(name)
+
+	return [names[i] for i in reading_order(bounds)]

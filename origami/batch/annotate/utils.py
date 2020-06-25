@@ -241,3 +241,23 @@ def render_warped_line_confidence(pixmap, lines):
 		qp.end()
 
 	return pixmap
+
+
+def render_paths(pixmap, columns):
+	qp = QtGui.QPainter()
+	qp.begin(pixmap)
+
+	try:
+		qp.setOpacity(0.5)
+		qp.setPen(default_pen("blue", 10))
+
+		for path in columns:
+			poly = QtGui.QPolygonF()
+			for x, y in path:
+				poly.append(QtCore.QPointF(x, y))
+			qp.drawPolyline(poly)
+
+	finally:
+		qp.end()
+
+	return pixmap

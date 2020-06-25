@@ -9,7 +9,7 @@ from atomicwrites import atomic_write
 
 from origami.batch.core.block_processor import BlockProcessor
 from origami.pagexml.transcriptions import TranscriptionReader
-from origami.core.block import binarize
+from origami.batch.core.lines import LineExtractor
 
 
 class LineExtractionProcessor(BlockProcessor):
@@ -41,27 +41,18 @@ class LineExtractionProcessor(BlockProcessor):
 				return False
 
 		return (imghdr.what(p) is not None) and\
-			p.with_suffix(".dewarped.lines.zip").exists()
-
-	def _extract_line_image(self, item):
-		stem, line = item
-		return stem, line.image(
-			target_height=self._options["line_height"],
-			dewarped=not self._options["do_not_dewarp"],
-			deskewed=not self._options["do_not_deskew"],
-			binarized=self._options["binarize"],
-			window_size=self._options["binarize_window_size"])
+			p.with_suffix(".aggregate.lines.zip").exists()
 
 	def process(self, page_path: Path):
 		if self._options["do_not_dewarp"]:
 			blocks = self.read_blocks(page_path)
 			lines = self.read_lines(page_path, blocks)
 		else:
-			blocks = self.read_dewarped_blocks(page_path)
-			lines = self.read_dewarped_lines(page_path, blocks)
+			blocks = self.read_aggregate_blocks(page_path)
+			lines = self.read_aggregate_lines(page_path, blocks)
 
-		pool = multiprocessing.pool.ThreadPool(processes=8)
-		images = pool.map(self._extract_line_image, lines.items())
+		extractor = LineExtractor(self._options["line_height"], self._options)
+		images = extractor(page_path, lines)
 
 		zip_sep = "-" if self._options["flat"] else "/"
 

@@ -6,12 +6,15 @@ import time
 import multiprocessing.pool
 
 from pathlib import Path
-
-from origami.batch.core.block_processor import BlockProcessor
+from functools import partial
 from atomicwrites import atomic_write
 
 from calamari_ocr.ocr import Predictor, MultiPredictor
 from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
+
+from origami.batch.core.block_processor import BlockProcessor
+from origami.core.block import Binarizer
+from origami.batch.core.lines import LineExtractor
 
 
 class OCRProcessor(BlockProcessor):
@@ -30,6 +33,9 @@ class OCRProcessor(BlockProcessor):
 		self._predictor = None
 		self._voter = None
 		self._line_height = None
+
+		# bbz specific.
+		self._ignored = set([("regions", "ILLUSTRATION")])
 
 	@property
 	def processor_name(self):
@@ -66,30 +72,17 @@ class OCRProcessor(BlockProcessor):
 			p.with_suffix(".dewarped.transform.zip").exists() and\
 			not p.with_suffix(".ocr.zip").exists()
 
-	def _extract_line_image(self, item):
-		stem, line = item
-		return stem, line.image(
-			target_height=self._line_height,
-			dewarped=not self._options["do_not_dewarp"],
-			deskewed=not self._options["do_not_deskew"],
-			binarized=self._options["binarize"],
-			window_size=self._options["binarize_window_size"])
-
-	def _extract_line_images(self, page_path):
-		assert self._line_height is not None
+	def process(self, page_path: Path):
+		self._load_models()
 
 		blocks = self.read_aggregate_blocks(page_path)
 		lines = self.read_aggregate_lines(page_path, blocks)
 
-		pool = multiprocessing.pool.ThreadPool(processes=8)
-		return pool.map(self._extract_line_image, lines.items())
-		
-	def process(self, page_path: Path):
-		self._load_models()
+		extractor = LineExtractor(self._line_height, self._options)
 
 		names = []
 		images = []
-		for stem, im in self._extract_line_images(page_path):
+		for stem, im in extractor(page_path, lines, ignored=self._ignored):
 			names.append("/".join(stem))
 			images.append(np.array(im))
 

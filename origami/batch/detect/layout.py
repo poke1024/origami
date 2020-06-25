@@ -9,6 +9,7 @@ import PIL.Image
 import shapely.strtree
 import shapely.geometry
 import shapely.ops
+import sklearn.cluster
 import networkx
 import collections
 
@@ -19,7 +20,8 @@ from functools import partial
 from origami.batch.core.block_processor import BlockProcessor
 from origami.core.dewarp import Dewarper, Grid
 from origami.core.predict import PredictorType
-from origami.core.xycut import reading_order
+from origami.core.xycut import polygon_order
+from origami.core.segment import Segmentation
 
 
 def overlap_ratio(a, b):
@@ -127,10 +129,85 @@ class LineCounts:
 		return self._num_lines[block_path]
 
 
+class Separators:
+	def __init__(self, page_path, seps):
+		segmentation = Segmentation.open(
+			page_path.with_suffix(".segment.zip"))
+
+		self._predictions = dict()
+		for p in segmentation.predictions:
+			if p.type == PredictorType.SEPARATOR:
+				self._predictions[p.name] = p
+
+		parsed_seps = collections.defaultdict(list)
+		for k, geom in seps.items():
+			prediction_name, prediction_type = k[:2]
+			prediction = self._predictions[prediction_name]
+			parsed_seps[prediction.classes[prediction_type]].append(geom)
+
+		self._seps = parsed_seps
+
+		# bbz specific.
+		self._table_columns = self._seps[
+			self._predictions["separators"].classes["T"]]
+
+		self._min_column_distance = 50
+
+	def sample(self, bounds):  # dewarped image space
+		pass
+
+	def detect_table_data(self, contours):
+		contours = dict([
+			(k, v) for k, v in contours.items()
+			if tuple(k[:2]) == ("regions", "TABULAR")])
+
+		for k, contour in contours.items():
+			contour.name = "/".join(k)
+
+		tree = shapely.strtree.STRtree(
+			list(contours.values()))
+		seps = collections.defaultdict(list)
+
+		for sep in self._table_columns:
+			for contour in tree.query(sep):
+				if contour.intersects(sep):
+					path = tuple(contour.name.split("/"))
+					mx = np.median(np.array(sep.coords)[:, 0])
+					seps[path].append(mx)
+
+		agg = sklearn.cluster.AgglomerativeClustering(
+			n_clusters=None,
+			distance_threshold=self._min_column_distance,
+			affinity="l1",
+			linkage="average",
+			compute_full_tree=True)
+
+		columns = dict()
+
+		for path, xs in seps.items():
+			if len(xs) > 1:
+				clustering = agg.fit([(x, 0) for x in xs])
+				labels = clustering.labels_
+				xs = np.array(xs)
+				cx = []
+				for i in range(np.max(labels) + 1):
+					cx.append(np.median(xs[labels == i]))
+				columns[path] = sorted(cx)
+			else:
+				columns[path] = [xs[0]]
+
+		return dict(
+			version=1,
+			columns=dict(
+				("/".join(path), [round(x, 1) for x in xs])
+				for path, xs in columns.items()))
+
+
 class LayoutDetectionProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._overwrite = self._options["overwrite"]
 
 		concavity = self._options["region_concavity"]
 		if concavity != "bounds":
@@ -154,32 +231,14 @@ class LayoutDetectionProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".dewarped.contours.zip").exists() and\
-			not p.with_suffix(".aggregate.contours.zip").exists() and\
-			not p.with_suffix(".xycut.json").exists()
+			p.with_suffix(".dewarped.contours.zip").exists() and (
+				self._overwrite or (
+					not p.with_suffix(".aggregate.contours.zip").exists())
 
 	def _compute_order(self, page, polygons):
-		names = []
-		bounds = []
-
 		mag = page.magnitude(dewarped=True)
 		fringe = self._options["fringe"] * mag
-
-		def add(polygon, path):
-			minx, miny, maxx, maxy = polygon.bounds
-
-			minx = min(minx + fringe, maxx)
-			maxx = max(maxx - fringe, minx)
-			miny = min(miny + fringe, maxy)
-			maxy = max(maxy - fringe, miny)
-
-			bounds.append((minx, miny, maxx, maxy))
-			names.append(path)
-
-		for block_path, polygon in polygons:
-			add(polygon, block_path)
-
-		return [names[i] for i in reading_order(bounds)]
+		return polygon_order(polygons, fringe=fringe)
 
 	def concavity(self, page, polygon):
 		concavity = self._concavity
@@ -274,6 +333,10 @@ class LayoutDetectionProcessor(BlockProcessor):
 	def process(self, page_path: Path):
 		blocks = self.read_dewarped_blocks(page_path)
 
+		separators = Separators(
+			page_path,
+			self.read_dewarped_separators(page_path))
+
 		if not blocks:
 			return
 
@@ -294,25 +357,33 @@ class LayoutDetectionProcessor(BlockProcessor):
 
 		aggregate = self.sequential_merge(
 			page, orders, noaggregate, aggregate, line_counts)
-		orders = self.xycut_orders(page, aggregate)
+
+		table_data = separators.detect_table_data(dict(aggregate))
+		with atomic_write(
+			page_path.with_suffix(".tables.json"),
+			mode="wb", overwrite=self._overwrite) as f:
+			f.write(json.dumps(table_data).encode("utf8"))
 
 		zf_path = page_path.with_suffix(".aggregate.contours.zip")
-		with atomic_write(zf_path, mode="wb", overwrite=False) as f:
+		with atomic_write(zf_path, mode="wb", overwrite=self._overwrite) as f:
 			with zipfile.ZipFile(f, "w", self.compression) as zf:
 				zf.writestr("meta.json", meta)
 				for path, shape in aggregate:
 					zf.writestr("/".join(path) + ".wkt", shape.wkt.encode("utf8"))
 
-		orders = dict(("/".join(k), [
-			"/".join(p) for p in ps]) for k, ps in orders.items())
+		if True:
+			orders = self.xycut_orders(page, aggregate)
 
-		data = dict(
-			version=1,
-			order=orders)
+			orders = dict(("/".join(k), [
+				"/".join(p) for p in ps]) for k, ps in orders.items())
 
-		zf_path = page_path.with_suffix(".xycut.json")
-		with atomic_write(zf_path, mode="w", overwrite=False) as f:
-			f.write(json.dumps(data))
+			data = dict(
+				version=1,
+				order=orders)
+
+			zf_path = page_path.with_suffix(".xycut.json")
+			with atomic_write(zf_path, mode="w", overwrite=self._overwrite) as f:
+				f.write(json.dumps(data))
 
 
 @click.command()
@@ -347,6 +418,11 @@ class LayoutDetectionProcessor(BlockProcessor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 		 "but is necessary on some network file systems.")
+@click.option(
+	'--overwrite',
+	is_flag=True,
+	default=False,
+	help="Recompute and overwrite existing result files.")
 def detect_layout(data_path, **kwargs):
 	""" Detect layout and reading order for documents in DATA_PATH. """
 	processor = LayoutDetectionProcessor(kwargs)

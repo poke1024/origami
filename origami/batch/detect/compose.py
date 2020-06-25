@@ -8,8 +8,15 @@ import shapely.strtree
 
 from pathlib import Path
 from atomicwrites import atomic_write
+from tabulate import tabulate
 
 from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.lines import reliable_contours
+from origami.core.xycut import polygon_order
+
+
+def sorted_by_keys(x):
+	return [x[k] for k in sorted(list(x.keys()))]
 
 
 class ComposeProcessor(BlockProcessor):
@@ -18,7 +25,7 @@ class ComposeProcessor(BlockProcessor):
 		self._options = options
 
 		if options["filter"]:
-			self._block_filter = tuple(options["filter"].split("."))
+			self._block_filter = [tuple(options["filter"].split("."))]
 		else:
 			self._block_filter = None
 
@@ -40,55 +47,56 @@ class ComposeProcessor(BlockProcessor):
 
 	def process(self, page_path: Path):
 		blocks = self.read_aggregate_blocks(page_path)
+		if not blocks:
+			return
+
 		lines = self.read_aggregate_lines(page_path, blocks)
-		with open(page_path.with_suffix(".xycut.json"), "r") as f:
-			xycut_data = json.loads(f.read())
 
-		lines_by_block = collections.defaultdict(list)
-		for line_path in lines.keys():
-			block_path = line_path[:3]
-			lines_by_block[block_path].append(line_path)
+		reliable = reliable_contours(blocks, lines)
+		if self._block_filter is not None:
+			reliable = dict(
+				(k, v) for k, v in reliable.items()
+				if k[:2] in self._block_filter)
 
-		block_polys = [block.image_space_polygon for block in blocks.values()]
-		tree = shapely.strtree.STRtree(block_polys)
+		page = list(blocks.values())[0].page
+		mag = page.magnitude(dewarped=True)
+		fringe = self._options["fringe"] * mag
+		order = polygon_order(list(reliable.items()), fringe=fringe)
 
 		line_separator = "\n"
 		block_separator = self._block_separator
 
-		orders = xycut_data["order"]
-		if self._block_filter is None:
-			order = orders["*"]
-		else:
-			order = orders.get("/".join(self._block_filter))
-			if order is None:
-				logging.info("no xycut order for %s" % self._block_filter)
-				order = orders["*"]
-
 		page_texts = []
 		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
-			for block_name in order:
-				block_path = tuple(block_name.split("/"))
-				if self._block_filter and block_path[:2] != self._block_filter:
-					continue
+			def read_text(path):
+				return zf.read("/".join(path) + ".txt").decode("utf8")
 
-				block = blocks[block_path]
+			lines_by_block = collections.defaultdict(list)
+			for line_name in zf.namelist():
+				line_path = tuple(line_name.rsplit(".", 1)[0].split("/"))
+				block_path = line_path[:3]
+				line = lines[line_path[:4]]
+				if line.confidence > 0.5:
+					lines_by_block[block_path].append(line_path)
 
-				ignore = False
-				for p in tree.query(block.image_space_polygon):
-					if p is block.image_space_polygon:
-						continue
-					if p.contains(block.image_space_polygon):
-						ignore = True
-						break
+			for block_path in order:
+				block_lines = lines_by_block.get(block_path, [])
+				if block_lines:
+					block_texts = []
 
-				if ignore:
-					continue
+					if len(block_lines[0]) > 4:  # table with columns?
+						rows = collections.defaultdict(dict)
+						for line_path in block_lines:
+							rows[line_path[:4]][line_path[-1]] = read_text(line_path)
 
-				block_texts = []
-				for line_path in sorted(lines_by_block[block_path]):
-					line_text = zf.read("/".join(line_path) + ".txt").decode("utf8")
-					block_texts.append(line_text)
-				page_texts.append(line_separator.join(block_texts).strip())
+						rows = [sorted_by_keys(row) for row in sorted_by_keys(rows)]
+						page_texts.append(tabulate(rows, tablefmt="psql"))
+					else:	
+						for line_path in sorted(block_lines):
+							line_text = read_text(line_path)
+							block_texts.append(line_text)
+
+						page_texts.append(line_separator.join(block_texts).strip())
 
 		with atomic_write(page_path.with_suffix(".compose.txt"), mode="w", overwrite=False) as f:
 			f.write(block_separator.join(page_texts))
@@ -109,6 +117,10 @@ class ComposeProcessor(BlockProcessor):
 	type=str,
 	default=None,
 	help="Only export text from given block path, e.g. -f \"regions.TEXT\".")
+@click.option(
+	'--fringe',
+	type=float,
+	default=0.001)
 @click.option(
 	'--name',
 	type=str,

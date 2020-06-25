@@ -6,6 +6,7 @@ import math
 import cv2
 import collections
 import shapely.ops
+import shapely.geometry
 import numpy as np
 
 from pathlib import Path
@@ -14,23 +15,26 @@ from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
 from origami.core.page import Page
-from origami.batch.annotate.utils import render_contours
+from origami.batch.annotate.utils import render_contours, render_paths
+from origami.batch.core.lines import reliable_contours
 
 
-def reliable_contours(all_blocks, all_lines, min_confidence=0.5):
-	block_lines = collections.defaultdict(list)
-	for path, line in all_lines.items():
-		if line.confidence > min_confidence:
-			block_lines[path[:3]].append(line)
+def linestrings(geom):
+	if geom is None:
+		return
+	if geom.geom_type == 'LineString':
+		yield geom
+	elif geom.geom_type in ('MultiLineString', 'GeometryCollection'):
+		for g in geom.geoms:
+			for ls in linestrings(g):
+				yield ls
 
-	result = dict()
-	for path, lines in block_lines.items():
-		hull = shapely.ops.cascaded_union([
-			line.image_space_polygon for line in lines]).convex_hull
-		result[path] = hull.intersection(
-			all_blocks[path].image_space_polygon)
 
-	return result
+def column_paths(shape, x):
+	_, miny, _, maxy = shape.bounds
+	line = shapely.geometry.LineString([[x, miny - 1], [x, maxy + 1]])
+	for geom in linestrings(line.intersection(shape)):
+		yield list(geom.coords)
 
 
 class DebugLayoutProcessor(BlockProcessor):
@@ -45,6 +49,7 @@ class DebugLayoutProcessor(BlockProcessor):
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
 			p.with_suffix(".aggregate.contours.zip").exists() and\
+			p.with_suffix(".aggregate.lines.zip").exists() and\
 			p.with_suffix(".dewarped.transform.zip").exists() and\
 			p.with_suffix(".xycut.json").exists() and\
 			not p.with_suffix(".annotate.layout.jpg").exists()
@@ -55,6 +60,9 @@ class DebugLayoutProcessor(BlockProcessor):
 
 		with open(page_path.with_suffix(".xycut.json"), "r") as f:
 			xycut_data = json.loads(f.read())
+
+		with open(page_path.with_suffix(".tables.json"), "r") as f:
+			table_data = json.loads(f.read())
 
 		order = dict(
 			(tuple(path.split("/")), i)
@@ -74,6 +82,14 @@ class DebugLayoutProcessor(BlockProcessor):
 
 		contours = reliable_contours(blocks, lines)
 		pixmap = render_contours(pixmap, contours, get_label, predictors)
+
+		columns = []
+		for path, xs in table_data["columns"].items():
+			path = tuple(path.split("/"))
+			for x in xs:
+				for coords in column_paths(contours[path], x):
+					columns.append(coords)
+		pixmap = render_paths(pixmap, columns)
 
 		pixmap.toImage().save(str(
 			page_path.with_suffix(".annotate.layout.jpg")))

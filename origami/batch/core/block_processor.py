@@ -17,7 +17,10 @@ class BlockProcessor(Processor):
 		return self.read_blocks(page_path, stage=Stage.AGGREGATE)
 
 	def read_separators(self, page_path: Path):
-		return read_separators(page_path, open=self.lock)
+		return read_separators(page_path, stage=Stage.WARPED, open=self.lock)
+
+	def read_dewarped_separators(self, page_path: Path):
+		return read_separators(page_path, stage=Stage.DEWARPED, open=self.lock)
 
 	def read_lines(self, page_path: Path, blocks, stage=Stage.WARPED):
 		return read_lines(page_path, blocks, stage=stage, open=self.lock)

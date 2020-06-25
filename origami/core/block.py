@@ -33,20 +33,35 @@ class Stage(enum.Enum):
 		return self.value >= Stage.DEWARPED.value
 
 
-def binarize(im, window_size=15):
-	cutout = np.array(im)
+class Binarizer:
+	def __init__(self, window_size=15):
+		self._window_size = window_size
 
-	if window_size is None:
-		window_size = target_height // 2 - 1
-	if window_size <= 0:
-		try:
-			thresh = skimage.filters.threshold_otsu(cutout)
-		except ValueError:
-			thresh = 128
+	def __call__(self, im):
+		cutout = np.array(im)
+		window_size = self._window_size
+
+		if window_size is None:
+			window_size = target_height // 2 - 1
+		if window_size <= 0:
+			try:
+				thresh = skimage.filters.threshold_otsu(cutout)
+			except ValueError:
+				thresh = 128
+		else:
+			thresh = skimage.filters.threshold_sauvola(
+				cutout, window_size=window_size)
+
+		cutout = (cutout > thresh).astype(np.uint8) * 255
+		return PIL.Image.fromarray(cutout)
+
+
+def intersect_segments(a, b, default=None):
+	c = a.intersection(b)
+	if c.geom_type == "Point":
+		return np.array(list(c.coords)[0])
 	else:
-		thresh = skimage.filters.threshold_sauvola(cutout, window_size=window_size)
-	cutout = (cutout > thresh).astype(np.uint8) * 255
-	return PIL.Image.fromarray(cutout)
+		return default
 
 
 class Line:
@@ -115,15 +130,20 @@ class Line:
 
 		return PIL.Image.fromarray(pixels)
 
-	def image(self, target_height=48, dewarped=True, deskewed=True, binarized=False, window_size=15):
+	def image(
+		self, target_height=48, column=None,
+		dewarped=True, deskewed=True, binarizer=None):
+
 		if dewarped:
-			im = self.dewarped_image(target_height)
+			im = self.dewarped_image(target_height, column=column)
 		elif deskewed:
 			im = self.deskewed_image(target_height)
 		else:
 			im = self.warped_image
-		if binarized:
-			im = binarize(im, window_size)
+
+		if binarizer:
+			im = binarizer(im)
+
 		return im
 
 	def masked_image(self, mode="polygon"):
@@ -169,7 +189,37 @@ class Line:
 
 		return PIL.Image.fromarray(cutout)
 
-	def dewarped_grid(self, xsteps=None, ysteps=None, xres=1, yres=1):
+	def _position(self, xres, column):
+		p0 = self._p
+		right = self._right
+		up = self._up
+
+		if column is not None:
+			p1 = p0 + right
+			px0, py0, px1, py1 = shapely.geometry.LineString([p0, p1]).bounds
+
+			x0, x1 = column
+			if x0 is None:
+				x0 = px0
+			if x1 is None:
+				x1 = px1
+
+			s0 = shapely.geometry.LineString([[x0, py0 - 1], [x0, py1 + 1]])
+			s1 = shapely.geometry.LineString([[x1, py0 - 1], [x1, py1 + 1]])
+
+			bottom = shapely.geometry.LineString([p0, p1])
+
+			p0 = intersect_segments(bottom, s0, default=p0)
+			p1 = intersect_segments(bottom, s1, default=p1)
+
+			right = p1 - p0
+			xres *= (x1 - x0) / (px1 - px0)
+
+		return p0, right, up, xres
+
+	def dewarped_grid(self, xsteps=None, ysteps=None, xres=1, yres=1, column=None):
+		p0, right, up, xres = self._position(xres, column)
+
 		if xsteps is None or ysteps is None:
 			rough_grid = self.dewarped_grid(xsteps=2, ysteps=2)
 			assert tuple(rough_grid.shape[:2]) == (2, 2)
@@ -181,10 +231,6 @@ class Line:
 		if ysteps is None:
 			ysteps = np.max(np.abs(rough_grid[0, :, 1] - rough_grid[1, :, 1]))
 			ysteps = max(2, int(np.ceil(ysteps * yres)))
-
-		p0 = self._p
-		right = self._right
-		up = self._up
 
 		ys = np.linspace([0, 0], up, ysteps)
 		xs = np.linspace([0, 0], right, xsteps)
@@ -198,10 +244,10 @@ class Line:
 		# grid is [y, x, p] and p is [x, y].
 		return warped_grid
 
-	def dewarped_image(self, target_height=48, interpolation=cv2.INTER_LINEAR):
+	def dewarped_image(self, target_height=48, column=None, interpolation=cv2.INTER_LINEAR):
 		assert self.block.stage.is_dewarped
 
-		warped_grid = self.dewarped_grid(ysteps=target_height)
+		warped_grid = self.dewarped_grid(ysteps=target_height, column=column)
 
 		pixels = np.array(self.block.page.warped)
 		pixels = cv2.remap(pixels, warped_grid, None, interpolation)
@@ -382,7 +428,7 @@ class LineDetector:
 		contours_buffer=DEFAULT_BUFFER,
 		contours_concavity=2,
 		contours_detail=0.001,
-		binarize=binarize):
+		binarizer=Binarizer()):
 
 		self._force_parallel_baselines = force_parallel_lines
 
@@ -394,7 +440,7 @@ class LineDetector:
 			concavity=contours_concavity,
 			detail=contours_detail)
 
-		self._binarize = binarize
+		self._binarizer = binarizer
 
 	def detect_baselines(self, block):
 		import tesserocr
@@ -409,7 +455,7 @@ class LineDetector:
 			# without padding, Tesseract sometimes underestimates row heights
 			# for single line headers or does not recoginize header lines at all.
 
-			if self._binarize is not None:
+			if self._binarizer is not None:
 				bg = 255
 			else:
 				bg = block.background
@@ -418,10 +464,10 @@ class LineDetector:
 			im, pos = block.image(**self._contour_data)
 			im = padded(im, pad=pad, background_color=bg)
 
-			if self._binarize is not None:
+			if self._binarizer is not None:
 				# binarizing Tesseract's input detects some correct baselines
 				# that are omitted on grayscale input.
-				im = self._binarize(im)
+				im = self._binarizer(im)
 
 			api.SetImage(im)
 			pos = np.array(pos) - np.array([0, pad])

@@ -1,6 +1,7 @@
 import sys
 import click
 import cv2
+import imghdr
 import PIL.Image
 from PIL.ImageQt import ImageQt
 
@@ -12,11 +13,12 @@ from origami.batch.core.utils import *
 from origami.batch.core.deskew import Deskewer
 from origami.batch.annotate.utils import render_blocks, default_pen
 
+from origami.core.page import Page
 import origami.core.xycut as xycut
 
 
 class Canvas(QtWidgets.QScrollArea):
-	def __init__(self, page_path):
+	def __init__(self, page_path, mode="dewarped"):
 		super().__init__()
 
 		self.setSizePolicy(
@@ -29,20 +31,36 @@ class Canvas(QtWidgets.QScrollArea):
 		self.setWidgetResizable(True)
 		self.setWidget(self.label)
 
-		blocks = read_blocks(page_path)
-		lines = read_lines(page_path, blocks)
+		if mode == "deskewed":
+			blocks = read_blocks(page_path)
+			lines = read_lines(page_path, blocks)
 
-		deskewer = Deskewer(lines)
+			deskewer = Deskewer(lines)
 
-		im = PIL.Image.open(page_path)
-		qt_im = ImageQt(deskewer.image(im))
-		self._pixmap = QtGui.QPixmap.fromImage(qt_im)
+			boxes = []
+			for block_path, block in blocks.items():
+				minx, miny, maxx, maxy = deskewer.shapely(block.image_space_polygon).bounds
+				boxes.append(xycut.Box(block_path, minx, miny, maxx, maxy))
+			self._boxes = boxes
 
-		boxes = []
-		for block_path, block in blocks.items():
-			minx, miny, maxx, maxy = deskewer.shapely(block.image_space_polygon).bounds
-			boxes.append(xycut.Box(block_path, minx, miny, maxx, maxy))
-		self._boxes = boxes
+			im = PIL.Image.open(page_path)
+			qt_im = ImageQt(deskewer.image(im))
+			self._pixmap = QtGui.QPixmap.fromImage(qt_im)
+		elif mode == "dewarped":
+			page = Page(page_path, True)
+			blocks = read_blocks(page_path, stage=Stage.AGGREGATE)
+			#lines = read_lines(page_path, blocks, stage=Stage.AGGREGATE)
+
+			boxes = []
+			for block_path, block in blocks.items():
+				minx, miny, maxx, maxy = block.image_space_polygon.bounds
+				boxes.append(xycut.Box(block_path, minx, miny, maxx, maxy))
+			self._boxes = boxes
+
+			qt_im = ImageQt(page.dewarped)
+			self._pixmap = QtGui.QPixmap.fromImage(qt_im)
+		else:
+			raise ValueError(mode)
 
 		self._zoom = 2
 		self._split_path = None
@@ -90,11 +108,13 @@ class Canvas(QtWidgets.QScrollArea):
 						qp.setPen(default_pen("red", width=20))
 
 					if cut.valid:
+						y0, y1 = cut.extent
+
 						if cut.axis == 0:
-							coords = [(cut.x, 0), (cut.x, self._pixmap.height())]
+							coords = [(cut.x, y0), (cut.x, y1)]
 							#print("(%d) x split at %.2f" % (i + 1, cut.x))
 						else:
-							coords = [(0, cut.x), (self._pixmap.width(), cut.x)]
+							coords = [(y0, cut.x), (y1, cut.x)]
 							#print("(%d) y split at %.2f" % (i + 1, cut.x))
 
 						qp.drawPolyline([QtCore.QPointF(*p) for p in coords])
@@ -178,7 +198,11 @@ def app(page_path, **kwargs):
 	""" Debug xycut for page at PAGE_PATH. """
 	app = QtWidgets.QApplication(sys.argv)
 
-	form = Form(Path(page_path))
+	path = Path(page_path)
+	if path.is_dir() or imghdr.what(path) is None:
+		raise click.UsageError("given path needs to point to a page.")
+
+	form = Form(path)
 	form.show()
 
 	sys.exit(app.exec_())
