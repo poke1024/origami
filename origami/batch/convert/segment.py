@@ -5,7 +5,7 @@ from pathlib import Path
 
 from origami.batch.core.processor import Processor
 
-from origami.api import Segmentation
+from origami.core.segment import Segmentation
 
 
 class SegmentationConverter(Processor):

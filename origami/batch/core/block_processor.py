@@ -1,6 +1,6 @@
 from origami.batch.core.processor import Processor
 from origami.batch.core.utils import *
-from origami.api import Segmentation
+from origami.core.segment import Segmentation
 
 
 class BlockProcessor(Processor):

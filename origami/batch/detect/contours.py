@@ -13,7 +13,7 @@ from ast import literal_eval as make_tuple
 
 from origami.batch.core.processor import Processor
 
-from origami.api import Segmentation
+from origami.core.segment import Segmentation
 from origami.core.page import Page, Annotations
 import origami.core.contours as contours
 from origami.core.block import Block, Stage
