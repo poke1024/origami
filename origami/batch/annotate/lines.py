@@ -9,7 +9,7 @@ from PySide2 import QtGui, QtCore
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.batch.annotate.utils import render_warped_line_paths
+from origami.batch.annotate.utils import render_warped_line_paths, render_warped_line_confidence
 
 
 class DebugLinesProcessor(BlockProcessor):
@@ -49,7 +49,12 @@ class DebugLinesProcessor(BlockProcessor):
 		alpha = np.array(bin.convert("L")) // 2
 		im = PIL.Image.composite(im, bin.convert("RGB"), PIL.Image.fromarray(alpha))
 
-		im.save(page_path.with_suffix(".annotate.lines.jpg"))
+		qt_im = ImageQt(im)
+		pixmap = QtGui.QPixmap.fromImage(qt_im)
+		pixmap = render_warped_line_confidence(pixmap, lines)
+
+		pixmap.toImage().save(str(
+			page_path.with_suffix(".annotate.lines.jpg")))
 
 
 

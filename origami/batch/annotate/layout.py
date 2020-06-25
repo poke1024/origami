@@ -4,6 +4,8 @@ import PIL.Image
 import json
 import math
 import cv2
+import collections
+import shapely.ops
 import numpy as np
 
 from pathlib import Path
@@ -12,7 +14,23 @@ from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import BlockProcessor
 from origami.core.page import Page
-from origami.batch.annotate.utils import render_blocks
+from origami.batch.annotate.utils import render_contours
+
+
+def reliable_contours(all_blocks, all_lines, min_confidence=0.5):
+	block_lines = collections.defaultdict(list)
+	for path, line in all_lines.items():
+		if line.confidence > min_confidence:
+			block_lines[path[:3]].append(line)
+
+	result = dict()
+	for path, lines in block_lines.items():
+		hull = shapely.ops.cascaded_union([
+			line.image_space_polygon for line in lines]).convex_hull
+		result[path] = hull.intersection(
+			all_blocks[path].image_space_polygon)
+
+	return result
 
 
 class DebugLayoutProcessor(BlockProcessor):
@@ -33,6 +51,7 @@ class DebugLayoutProcessor(BlockProcessor):
 
 	def process(self, page_path: Path):
 		blocks = self.read_aggregate_blocks(page_path)
+		lines = self.read_aggregate_lines(page_path, blocks)
 
 		with open(page_path.with_suffix(".xycut.json"), "r") as f:
 			xycut_data = json.loads(f.read())
@@ -52,7 +71,10 @@ class DebugLayoutProcessor(BlockProcessor):
 
 		qt_im = ImageQt(page.dewarped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
-		pixmap = render_blocks(pixmap, blocks, get_label, predictors)
+
+		contours = reliable_contours(blocks, lines)
+		pixmap = render_contours(pixmap, contours, get_label, predictors)
+
 		pixmap.toImage().save(str(
 			page_path.with_suffix(".annotate.layout.jpg")))
 

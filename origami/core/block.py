@@ -50,7 +50,11 @@ def binarize(im, window_size=15):
 
 
 class Line:
-	def __init__(self, block, p, right, up, contour_data, tesseract_data, wkt=None, text_area=None):
+	def __init__(
+		self, block, p, right, up,
+		contour_data, tesseract_data,
+		wkt=None, text_area=None, confidence=1):
+
 		self._contour_data = contour_data
 		self._tesseract_data = tesseract_data
 		self._block = block
@@ -66,6 +70,8 @@ class Line:
 				self._p, self._p + self._right,
 				self._p + self._right + self._up, self._p + self._up])).convex_hull
 
+		self._confidence = confidence
+
 	@property
 	def block(self):
 		return self._block
@@ -77,6 +83,13 @@ class Line:
 	@property
 	def angle(self):
 		return math.atan2(self._right[1], self._right[0])
+
+	@property
+	def confidence(self):
+		return self._confidence
+
+	def update_confidence(self, confidence):
+		self._confidence = confidence
 
 	def annotate(self, buffer=DEFAULT_BUFFER):
 		im, pos = self.block.extract_image(buffer)
@@ -156,21 +169,39 @@ class Line:
 
 		return PIL.Image.fromarray(cutout)
 
-	def dewarped_image(self, target_height=48, interpolation=cv2.INTER_LINEAR):
-		assert self.block.stage.is_dewarped
+	def dewarped_grid(self, xsteps=None, ysteps=None, xres=1, yres=1):
+		if xsteps is None or ysteps is None:
+			rough_grid = self.dewarped_grid(xsteps=2, ysteps=2)
+			assert tuple(rough_grid.shape[:2]) == (2, 2)
+
+		if xsteps is None:
+			xsteps = np.max(np.abs(rough_grid[:, 0, 0] - rough_grid[:, 1, 0]))
+			xsteps = max(2, int(np.ceil(xsteps * xres)))
+
+		if ysteps is None:
+			ysteps = np.max(np.abs(rough_grid[0, :, 1] - rough_grid[1, :, 1]))
+			ysteps = max(2, int(np.ceil(ysteps * yres)))
 
 		p0 = self._p
 		right = self._right
 		up = self._up
 
-		ys = np.linspace([0, 0], up, target_height)
-		xs = np.linspace([0, 0], right, int(np.ceil(np.linalg.norm(right))))
+		ys = np.linspace([0, 0], up, ysteps)
+		xs = np.linspace([0, 0], right, xsteps)
 
 		dewarped_grid = (ys + p0)[:, np.newaxis] + xs[np.newaxis, :]
 		dewarped_grid = np.flip(dewarped_grid, axis=-1)
 		inv = self.block.page.dewarper.grid.inverse
 		warped_grid = inv(dewarped_grid.reshape((len(ys) * len(xs), 2)))
 		warped_grid = warped_grid.reshape((len(ys), len(xs), 2)).astype(np.float32)
+
+		# grid is [y, x, p] and p is [x, y].
+		return warped_grid
+
+	def dewarped_image(self, target_height=48, interpolation=cv2.INTER_LINEAR):
+		assert self.block.stage.is_dewarped
+
+		warped_grid = self.dewarped_grid(ysteps=target_height)
 
 		pixels = np.array(self.block.page.warped)
 		pixels = cv2.remap(pixels, warped_grid, None, interpolation)
@@ -181,19 +212,7 @@ class Line:
 	def warped_path(self, resolution=1):
 		assert self.block.stage.is_dewarped
 
-		p0 = self._p
-		right = self._right
-		up = self._up
-
-		ys = [[0, 0], up]
-		xs = np.linspace([0, 0], right, int(
-			np.ceil(resolution * np.linalg.norm(right))))
-
-		dewarped_grid = (ys + p0)[:, np.newaxis] + xs[np.newaxis, :]
-		dewarped_grid = np.flip(dewarped_grid, axis=-1)
-		inv = self.block.page.dewarper.grid.inverse
-		warped_grid = inv(dewarped_grid.reshape((len(ys) * len(xs), 2)))
-		warped_grid = warped_grid.reshape((len(ys), len(xs), 2)).astype(np.float32)
+		warped_grid = self.dewarped_grid(ysteps=2, xres=resolution)
 
 		height = np.median(np.linalg.norm(warped_grid[1] - warped_grid[0], axis=-1))
 		return np.mean(warped_grid, axis=0), abs(height)
@@ -216,6 +235,7 @@ class Line:
 			right=self._right.tolist(),
 			up=self._up.tolist(),
 			wkt=self._polygon.wkt,
+			confidence=self._confidence,
 			contour_data=dict(
 				buffer=self._contour_data["buffer"],
 				concavity=self._contour_data["concavity"],

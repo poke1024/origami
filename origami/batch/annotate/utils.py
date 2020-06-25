@@ -83,7 +83,12 @@ def default_pen(color="black", width=5):
 	return pen
 
 
-def render_blocks(pixmap, blocks, get_label, predictors=None, brushes=None, matrix=None):
+def render_blocks(pixmap, blocks, *args, **kwargs):
+	contours = [(k, b.image_space_polygon) for (k, b) in blocks.items()]
+	render_contours(pixmap, contours, *args, **kwargs)
+
+
+def render_contours(pixmap, contours, get_label, predictors=None, brushes=None, matrix=None):
 	if brushes is None:
 		brushes = LabelBrushes(predictors)
 
@@ -98,11 +103,11 @@ def render_blocks(pixmap, blocks, get_label, predictors=None, brushes=None, matr
 	try:
 		qp.setOpacity(0.5)
 
-		for block_path, block in blocks.items():
+		for block_path, contour in contours.items():
 			qp.setBrush(brushes.get_brush(block_path))
 
 			poly = QtGui.QPolygonF()
-			for x, y in block.image_space_polygon.exterior.coords:
+			for x, y in contour.exterior.coords:
 				poly.append(point(x, y))
 			qp.drawPolygon(poly)
 
@@ -115,8 +120,8 @@ def render_blocks(pixmap, blocks, get_label, predictors=None, brushes=None, matr
 
 		qp.setPen(default_pen())
 
-		for block_path, block in blocks.items():
-			x, y = block.image_space_polygon.centroid.coords[0]
+		for block_path, contour in contours.items():
+			x, y = contour.centroid.coords[0]
 			p = point(x, y)
 
 			path, label = get_label(block_path)
@@ -176,7 +181,7 @@ def render_lines(pixmap, lines, get_label):
 	return pixmap
 
 
-def render_warped_line_paths(pixmap, lines, predictors, resolution=0.2):
+def render_warped_line_paths(pixmap, lines, predictors, resolution=0.1):
 	classes = get_region_classes(predictors)
 	pens = Pens(classes)
 
@@ -187,6 +192,9 @@ def render_warped_line_paths(pixmap, lines, predictors, resolution=0.2):
 		qp.setOpacity(0.9)
 
 		for i, (line_path, line) in enumerate(lines.items()):
+			if line.confidence < 0.5:
+				continue  # ignore
+
 			classifier, label, block_id, line_id = line_path
 
 			path, height = line.warped_path(resolution)
@@ -198,6 +206,36 @@ def render_warped_line_paths(pixmap, lines, predictors, resolution=0.2):
 			for x, y in path:
 				poly.append(QtCore.QPointF(x, y))
 			qp.drawPolyline(poly)
+
+	finally:
+		qp.end()
+
+	return pixmap
+
+
+def render_warped_line_confidence(pixmap, lines):
+	qp = QtGui.QPainter()
+	qp.begin(pixmap)
+
+	try:
+		font = QtGui.QFont("Arial Narrow", 48, QtGui.QFont.Bold)
+		qp.setFont(font)
+		fm = QtGui.QFontMetrics(font)
+
+		for i, (line_path, line) in enumerate(lines.items()):
+			if line.confidence < 0.5:
+				continue  # ignore
+
+			path, height = line.warped_path(0.1)
+
+			qp.setOpacity(1)
+			if line.confidence < 0.75:
+				qp.setPen(default_pen("red"))
+				label = "%.2f" % line.confidence
+				w = fm.horizontalAdvance(label)
+				qp.drawText(
+					np.mean(path[:, 0]) - w / 2,
+					np.mean(path[:, 1]) + fm.descent(), label)
 
 	finally:
 		qp.end()
