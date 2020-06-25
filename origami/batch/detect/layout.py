@@ -203,9 +203,7 @@ class LayoutDetectionProcessor(BlockProcessor):
 	def union(self, page, shapes):
 		return self.concavity(page, shapely.ops.cascaded_union(shapes))
 
-	def aggregate_by_predictor(self, page, blocks, line_counts):
-		contours = [(k, block.image_space_polygon) for k, block in blocks.items()]
-
+	def aggregate_by_predictor(self, page, contours, line_counts):
 		# modify convexity.
 		contours = [(k, self.concavity(page, polygon)) for k, polygon in contours]
 
@@ -244,7 +242,7 @@ class LayoutDetectionProcessor(BlockProcessor):
 			(block_class, self._compute_order(page, v))
 			for block_class, v in blocks_by_class.items())
 
-	def sequential_merge(self, page, orders, aggregate, line_counts):
+	def sequential_merge(self, page, orders, noaggregate, aggregate, line_counts):
 		aggregate = dict(aggregate)
 		new_aggregate = dict()
 
@@ -259,7 +257,7 @@ class LayoutDetectionProcessor(BlockProcessor):
 				continue
 
 			error_overlap = Overlap(
-				aggregate,
+				dict(noaggregate),
 				set(aggregate.keys()) - set([path[:2]]))
 
 			for name, shape in merge(
@@ -289,10 +287,13 @@ class LayoutDetectionProcessor(BlockProcessor):
 		with zipfile.ZipFile(zf_path, "r") as zf:
 			meta = zf.read("meta.json")
 
-		aggregate = list(self.aggregate_by_predictor(page, blocks, line_counts))
+		noaggregate = [(k, block.image_space_polygon) for k, block in blocks.items()]
+
+		aggregate = list(self.aggregate_by_predictor(page, noaggregate, line_counts))
 		orders = self.xycut_orders(page, aggregate)
 
-		aggregate = self.sequential_merge(page, orders, aggregate, line_counts)
+		aggregate = self.sequential_merge(
+			page, orders, noaggregate, aggregate, line_counts)
 		orders = self.xycut_orders(page, aggregate)
 
 		zf_path = page_path.with_suffix(".aggregate.contours.zip")
