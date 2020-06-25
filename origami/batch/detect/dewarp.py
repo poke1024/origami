@@ -55,10 +55,13 @@ class DewarpProcessor(BlockProcessor):
 		mag = page.magnitude(dewarped=False)
 		min_length = mag * self._options["min_line_length"]
 
-		def is_good_line(line):
-			return line.unextended_length > min_length
+		def filter_geoms(geoms, length):
+			return dict(
+				(k, g) for k, g in geoms.items()
+				if length(g) > min_length)
 
-		lines = dict((k, l) for k, l in lines.items() if is_good_line(l))
+		lines = filter_geoms(lines, lambda l: l.unextended_length)
+		separators = filter_geoms(separators, lambda g: g.length)
 
 		grid = Grid.create(
 			page.warped.size,
