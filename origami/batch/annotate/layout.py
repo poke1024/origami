@@ -41,6 +41,7 @@ class DebugLayoutProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._overwrite = self._options["overwrite"]
 
 	@property
 	def processor_name(self):
@@ -51,8 +52,9 @@ class DebugLayoutProcessor(BlockProcessor):
 			p.with_suffix(".aggregate.contours.zip").exists() and\
 			p.with_suffix(".aggregate.lines.zip").exists() and\
 			p.with_suffix(".dewarped.transform.zip").exists() and\
-			p.with_suffix(".xycut.json").exists() and\
-			not p.with_suffix(".annotate.layout.jpg").exists()
+			p.with_suffix(".xycut.json").exists() and (
+				   self._overwrite or
+				not p.with_suffix(".annotate.layout.jpg").exists())
 
 	def process(self, page_path: Path):
 		blocks = self.read_aggregate_blocks(page_path)
@@ -106,6 +108,11 @@ class DebugLayoutProcessor(BlockProcessor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
+@click.option(
+	'--overwrite',
+	is_flag=True,
+	default=False,
+	help="Recompute and overwrite existing annotation files.")
 def debug_layout(data_path, **kwargs):
 	""" Export annotate information on xycuts for all document images in DATA_PATH. """
 	processor = DebugLayoutProcessor(kwargs)

@@ -57,6 +57,7 @@ class LineDetectionProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._overwrite = self._options["overwrite"]
 
 	@property
 	def processor_name(self):
@@ -65,8 +66,9 @@ class LineDetectionProcessor(BlockProcessor):
 	def should_process(self, p: Path) -> bool:
 		return (imghdr.what(p) is not None) and\
 			p.with_suffix(".segment.zip").exists() and\
-			p.with_suffix(".aggregate.contours.zip").exists() and\
-			not p.with_suffix(".aggregate.lines.zip").exists()
+			p.with_suffix(".aggregate.contours.zip").exists() and(
+				self._overwrite or
+				not p.with_suffix(".aggregate.lines.zip").exists())
 
 	def process(self, page_path: Path):
 		blocks = self.read_aggregate_blocks(page_path)
@@ -90,7 +92,7 @@ class LineDetectionProcessor(BlockProcessor):
 				line.update_confidence(sampler(block_path, line))
 
 		lines_path = page_path.with_suffix(".aggregate.lines.zip")
-		with atomic_write(lines_path, mode="wb", overwrite=False) as f:
+		with atomic_write(lines_path, mode="wb", overwrite=self._overwrite) as f:
 
 			with zipfile.ZipFile(f, "w", compression=self.compression) as zf:
 				info = dict(version=1)
@@ -149,6 +151,11 @@ class LineDetectionProcessor(BlockProcessor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
+@click.option(
+	'--overwrite',
+	is_flag=True,
+	default=False,
+	help="Recompute and overwrite existing result files.")
 def detect_lines(data_path, **kwargs):
 	""" Perform line detection on all document images in DATA_PATH. Needs
 	information from contours batch. """
