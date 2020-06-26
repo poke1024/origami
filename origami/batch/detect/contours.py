@@ -43,25 +43,20 @@ class ContoursProcessor(Processor):
 		return __loader__.name
 
 	def _process_region_contours(self, zf, annotations, prediction, binarized):
-		ink_erosion = _build_filter(
+		ink_dilation = _build_filter(
 			scipy.ndimage.morphology.binary_dilation,
 			self._options["ink_spread"])
-		ink = ink_erosion(binarized)
+		ink = ink_dilation(binarized)
 
-		region_dilator = _build_filter(
-			scipy.ndimage.morphology.binary_dilation,
-			self._options["region_spread"])
-
-		opening_filter = _build_filter(
+		ink_opening = _build_filter(
 			scipy.ndimage.morphology.binary_opening,
 			self._options["ink_opening"])
 
 		pipeline = [
 			contours.Contours(
 				ink,
-				opening=opening_filter,
-				dilator=region_dilator,
-				standalone=self._options["standalone_region"]),
+				opening=ink_opening,
+				glue=self._options["region_glue"]),
 			contours.Decompose(),
 			contours.FilterByArea(annotations.magnitude * self._options["region_minsize"])
 		]
@@ -173,11 +168,6 @@ class ContoursProcessor(Processor):
 	default=4 / 1000,
 	help="Simplification of separator polylines.")
 @click.option(
-	'--region-spread',
-	type=str,
-	default="(0, 0)",
-	help="Spread regions with this amount of pixels, e.g. (3, 3).")
-@click.option(
 	'--ink-spread',
 	type=str,
 	default="(20, 20)",
@@ -188,10 +178,10 @@ class ContoursProcessor(Processor):
 	default="(5, 5)",
 	help="Opening amount to remove ink overflow between columns.")
 @click.option(
-	'--standalone-region',
+	'--region-glue',
 	type=float,
 	default=0.02,
-	help="Threshold for smallest standalone region.")
+	help="Threshold for considering region as glue blob.")
 @click.option(
 	'--name',
 	type=str,

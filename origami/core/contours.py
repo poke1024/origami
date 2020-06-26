@@ -92,43 +92,63 @@ def find_contours(mask):
 	return [c for c in contours if c is not None]
 
 
-def selective_blowup(mask, min_area):
-	contours = find_contours(mask)
+def selective_glue(polygons, glue_area):
+	blobs = []
+	regions = []
 
-	im = PIL.Image.new(
-		"L", tuple(reversed(mask.shape)), color=0)
+	blobs_q = set()
+	small_blobs = []
 
-	draw = PIL.ImageDraw.Draw(im)
+	for i, polygon in enumerate(polygons):
+		if polygon.area < glue_area:
+			blob = blowup(polygon, glue_area)
+			blob.name = str(i)
+			blobs.append(blob)
+			blobs_q.add(i)
+			small_blobs.append(polygon)
+		else:
+			polygon.name = str(i)
+			regions.append(polygon)
 
-	try:
-		for contour in contours:
-			shape = shapely.geometry.Polygon(contour)
-			if shape.area < min_area:
-				shape = blowup(shape, min_area)
-				draw.polygon(
-					list(shape.exterior.coords),
-					fill=255, outline=255)
-	finally:
-		del draw
+	graph = nx.Graph()
+	graph.add_nodes_from(list(range(len(polygons))))
 
-	return np.logical_or(mask, np.array(im) > 0)
+	tree = shapely.strtree.STRtree(regions + blobs)
+
+	for blob in blobs:
+		for region in tree.query(blob):
+			if blob.name != region.name and region.intersects(blob):
+				graph.add_edge(int(blob.name), int(region.name))
+
+	results = []
+	for names in nx.connected_components(graph):
+		names = set(names) - blobs_q
+		if len(names) == 1:
+			results.append(polygons[list(names)[0]])
+		elif len(names) > 1:
+			results.append(shapely.ops.cascaded_union([
+				polygons[i] for i in names
+			]).convex_hull)
+
+	tree = shapely.strtree.STRtree(results)
+	for blob in small_blobs:
+		if not any(x.contains(blob) for x in tree.query(blob)):
+			results.append(blob)
+
+	return results
 
 
 class Contours:
-	def __init__(self, ink=None, opening=None, dilator=None, standalone=0.01):
+	def __init__(self, ink=None, opening=None, glue=0):
 		# "ink" allows the caller to define areas that are considered
-		# not connected, independent of the mask provided later.
+		# not connected, partially overriding the mask provided later.
+		# ink shall contain connected components as they should be.
 		self._ink = ink
 		self._opening = opening
 
-		# "dilator" will expand the contour boundaries by some amount.
-		self._dilator = dilator
-		self._standalone = standalone
+		self._glue = glue
 
 	def __call__(self, mask):
-		if self._dilator is not None:
-			mask = self._dilator(mask)
-
 		if self._ink is not None:
 			ink = cv2.resize(
 				self._ink.astype(np.uint8),
@@ -138,11 +158,16 @@ class Contours:
 			mask = np.logical_and(mask, ink)
 			mask = self._opening(mask)
 
-		mask = selective_blowup(
-			mask, mask.size * (self._standalone ** 2))
-
+		polygons = []
 		for pts in find_contours(mask):
-			yield shapely.geometry.Polygon(pts)
+			polygons.append(shapely.geometry.Polygon(pts))
+
+		if self._glue > 0:
+			glue_area = mask.size * (self._glue ** 2)
+			polygons = selective_glue(polygons, glue_area)
+
+		for polygon in polygons:
+			yield polygon
 
 
 class Decompose:
