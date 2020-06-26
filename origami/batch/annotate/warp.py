@@ -21,7 +21,7 @@ class DebugWarpProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".lines.zip").exists()
+			p.with_suffix(".warped.lines.zip").exists()
 
 	def process(self, page_path: Path):
 		blocks = self.read_blocks(page_path)

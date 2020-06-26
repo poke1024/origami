@@ -1,6 +1,7 @@
-from PySide2 import QtGui, QtCore
-
 import numpy as np
+import logging
+
+from PySide2 import QtGui, QtCore
 from functools import lru_cache
 
 from origami.core.predict import PredictorType
@@ -104,6 +105,10 @@ def render_contours(pixmap, contours, get_label, predictors=None, brushes=None, 
 		qp.setOpacity(0.5)
 
 		for block_path, contour in contours.items():
+			if contour.geom_type != "Polygon":
+				logging.error("encountered %s" % contour.geom_type)
+				continue
+
 			qp.setBrush(brushes.get_brush(block_path))
 
 			poly = QtGui.QPolygonF()

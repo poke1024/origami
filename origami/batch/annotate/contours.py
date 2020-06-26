@@ -1,6 +1,7 @@
 import imghdr
 import click
 import PIL.Image
+import logging
 
 from pathlib import Path
 from PySide2 import QtGui
@@ -28,6 +29,7 @@ class DebugContoursProcessor(BlockProcessor):
 		separators = self.read_separators(page_path)
 
 		if not blocks:
+			logging.info("no blocks for %s" % page_path)
 			return
 
 		page = list(blocks.values())[0].page
