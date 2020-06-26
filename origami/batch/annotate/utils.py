@@ -84,8 +84,8 @@ def default_pen(color="black", width=5):
 
 
 def render_blocks(pixmap, blocks, *args, **kwargs):
-	contours = [(k, b.image_space_polygon) for (k, b) in blocks.items()]
-	render_contours(pixmap, contours, *args, **kwargs)
+	contours = dict((k, b.image_space_polygon) for (k, b) in blocks.items())
+	return render_contours(pixmap, contours, *args, **kwargs)
 
 
 def render_contours(pixmap, contours, get_label, predictors=None, brushes=None, matrix=None):
