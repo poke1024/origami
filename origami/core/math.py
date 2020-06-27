@@ -49,3 +49,12 @@ def to_shapely_matrix(m):
 	matrix[10] = m[1, 2]
 
 	return matrix
+
+
+def inset_bounds(bounds, fringe):
+	minx, miny, maxx, maxy = bounds
+	minx = min(minx + fringe, maxx)
+	maxx = max(maxx - fringe, minx)
+	miny = min(miny + fringe, maxy)
+	maxy = max(maxy - fringe, miny)
+	return minx, miny, maxx, maxy

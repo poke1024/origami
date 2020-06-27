@@ -29,7 +29,7 @@ class DebugWarpProcessor(BlockProcessor):
 
 		def get_label(lines_path):
 			classifier, segmentation_label, block_id, line_id = lines_path
-			return (classifier, segmentation_label), str(line_id)
+			return (classifier, segmentation_label), line_id
 
 		qt_im = ImageQt(PIL.Image.open(page_path))
 		pixmap = QtGui.QPixmap.fromImage(qt_im)

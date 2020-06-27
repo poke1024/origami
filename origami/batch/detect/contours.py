@@ -6,10 +6,12 @@ import json
 import numpy as np
 import PIL.Image
 import scipy.ndimage
+import skimage.morphology
 
 from pathlib import Path
 from atomicwrites import atomic_write
 from ast import literal_eval as make_tuple
+from functools import partial
 
 from origami.batch.core.processor import Processor
 
@@ -18,19 +20,6 @@ from origami.core.page import Page, Annotations
 import origami.core.contours as contours
 from origami.core.block import Block, Stage
 from origami.core.predict import PredictorType
-
-
-def _build_filter(f, spread_spec):
-	spread = (make_tuple(spread_spec) + (1, 1, 1))[:3]
-	w, h, i = spread
-
-	if w < 1 or h < 1 or i < 1:
-		return lambda pixels: pixels
-
-	structure = np.ones((w, h))
-
-	return lambda pixels: f(
-		pixels, structure=structure, iterations=i)
 
 
 class ContoursProcessor(Processor):
@@ -42,21 +31,9 @@ class ContoursProcessor(Processor):
 	def processor_name(self):
 		return __loader__.name
 
-	def _process_region_contours(self, zf, annotations, prediction, binarized):
-		ink_dilation = _build_filter(
-			scipy.ndimage.morphology.binary_dilation,
-			self._options["ink_spread"])
-		ink = ink_dilation(binarized)
-
-		ink_opening = _build_filter(
-			scipy.ndimage.morphology.binary_opening,
-			self._options["ink_opening"])
-
+	def _process_region_contours(self, zf, annotations, prediction):
 		pipeline = [
-			contours.Contours(
-				ink,
-				opening=ink_opening,
-				glue=self._options["region_glue"]),
+			contours.Contours(),
 			contours.Decompose(),
 			contours.FilterByArea(annotations.magnitude * self._options["region_minsize"])
 		]
@@ -87,7 +64,7 @@ class ContoursProcessor(Processor):
 				zf.writestr("%s/%s/%03d.wkt" % (
 					prediction.name, prediction_class.name, region_id), polygon.wkt)
 
-	def _process_separator_contours(self, zf, annotations, prediction, binarized):
+	def _process_separator_contours(self, zf, annotations, prediction):
 
 		def build_pipeline(label_class):
 			return [
@@ -116,13 +93,10 @@ class ContoursProcessor(Processor):
 	def should_process(self, p: Path) -> bool:
 		return (imghdr.what(p) is not None) and\
 			p.with_suffix(".segment.zip").exists() and\
-			p.with_suffix(".binarized.png").exists() and\
 			not p.with_suffix(".warped.contours.zip").exists()
 
 	def process(self, p: Path):
 		segmentation = Segmentation.open(p.with_suffix(".segment.zip"))
-
-		binarized = np.array(PIL.Image.open(p.with_suffix(".binarized.png"))) == 0
 
 		page = Page(p)
 		annotations = Annotations(page, segmentation)
@@ -137,7 +111,7 @@ class ContoursProcessor(Processor):
 			with zipfile.ZipFile(f, "w", self.compression) as zf:
 				info = dict(version=1)
 				for prediction in segmentation.predictions:
-					handlers[prediction.type](zf, annotations, prediction, binarized)
+					handlers[prediction.type](zf, annotations, prediction)
 					info[prediction.name] = dict(type=prediction.type.name)
 				zf.writestr("meta.json", json.dumps(info))
 

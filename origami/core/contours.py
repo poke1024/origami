@@ -139,14 +139,14 @@ def selective_glue(polygons, glue_area):
 
 
 class Contours:
-	def __init__(self, ink=None, opening=None, glue=0):
+	def __init__(self, ink=None, glue=0, buffer=0):
 		# "ink" allows the caller to define areas that are considered
 		# not connected, partially overriding the mask provided later.
 		# ink shall contain connected components as they should be.
 		self._ink = ink
-		self._opening = opening
 
 		self._glue = glue
+		self._buffer = buffer
 
 	def __call__(self, mask):
 		if self._ink is not None:
@@ -156,7 +156,6 @@ class Contours:
 				interpolation=cv2.INTER_NEAREST) > 0
 
 			mask = np.logical_and(mask, ink)
-			mask = self._opening(mask)
 
 		polygons = []
 		for pts in find_contours(mask):
@@ -167,6 +166,10 @@ class Contours:
 			polygons = selective_glue(polygons, glue_area)
 
 		for polygon in polygons:
+			if self._buffer > 0:
+				polygon = polygon.buffer(self._buffer)
+				if polygon.geom_type != "Polygon":
+					polygon = polygon.convex_hull
 			yield polygon
 
 

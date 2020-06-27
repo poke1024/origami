@@ -74,7 +74,7 @@ class DebugLayoutProcessor(BlockProcessor):
 			for path in blocks.keys() if path in order)
 
 		def get_label(block_path):
-			return block_path[:2], str(1 + order[block_path])
+			return block_path[:2], order[block_path]
 
 		page = Page(page_path, dewarp=True)
 		predictors = self.read_predictors(page_path)
@@ -83,7 +83,9 @@ class DebugLayoutProcessor(BlockProcessor):
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 		contours = reliable_contours(blocks, lines)
-		pixmap = render_contours(pixmap, contours, get_label, predictors)
+		pixmap = render_contours(
+			pixmap, contours,
+			get_label, predictors, alternate=True)
 
 		columns = []
 		for path, xs in table_data["columns"].items():

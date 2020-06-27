@@ -23,7 +23,6 @@ class DebugLinesProcessor(BlockProcessor):
 
 	def should_process(self, p: Path) -> bool:
 		return imghdr.what(p) is not None and\
-			p.with_suffix(".binarized.png").exists() and\
 			p.with_suffix(".dewarped.lines.zip").exists()
 
 	def process(self, page_path: Path):
@@ -45,9 +44,15 @@ class DebugLinesProcessor(BlockProcessor):
 		pixmap.toImage().save(buffer, "PNG")
 		im = PIL.Image.open(io.BytesIO(buffer.data())).convert("RGB")
 
-		bin = PIL.Image.open(page_path.with_suffix(".binarized.png"))
-		alpha = np.array(bin.convert("L")) // 2
-		im = PIL.Image.composite(im, bin.convert("RGB"), PIL.Image.fromarray(alpha))
+		binarized = np.array(page.warped)
+		thresh = skimage.filters.threshold_sauvola(
+			binarized, window_size=15)
+		binarized = PIL.Image.fromarray(
+			(binarized > thresh).astype(np.uint8) * 255)
+
+		alpha = np.array(binarized.convert("L")) // 2
+		im = PIL.Image.composite(
+			im, binarized.convert("RGB"), PIL.Image.fromarray(alpha))
 
 		qt_im = ImageQt(im)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)

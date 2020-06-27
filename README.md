@@ -14,7 +14,7 @@ pip install -r origami/requirements/pip.txt
 
 ```
 cd /path/to/origami
-python -m origami.batch.detect.binarize
+python -m origami.batch.detect.segment
 ```
 
 All command line tools will give you help information on their arguments when called as above.
@@ -37,7 +37,6 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 The necessary order of batches is:
 
 * segment
-* binarize
 * contours
 * warp
 * dewarp
@@ -45,13 +44,6 @@ The necessary order of batches is:
 * lines
 * ocr
 * compose
-
-<dl>
-  <dt>origami.batch.detect.binarize</dt>
-  <dd>needs: images</dd>
-  <dd>⁂ Binarize all images in the given folder according to the specified arguments using Sauvola binarization. This is
-  used in the origami.batch.detect.contours batch to detect column overflow.</dd>
-</dl>
 
 <dl>
   <dt>origami.batch.detect.segment</dt>

@@ -4,24 +4,30 @@ import json
 import click
 import shapely.ops
 import shapely.wkt
-import zipfile
-import PIL.Image
 import shapely.strtree
 import shapely.geometry
 import shapely.ops
 import sklearn.cluster
+import skimage.filters
+import scipy.spatial
+import zipfile
+import PIL.Image
 import networkx
 import collections
+import cv2
+import intervaltree
+import portion
 
 from pathlib import Path
 from atomicwrites import atomic_write
-from functools import partial
+from functools import partial, reduce
 
 from origami.batch.core.block_processor import BlockProcessor
 from origami.core.dewarp import Dewarper, Grid
 from origami.core.predict import PredictorType
 from origami.core.xycut import polygon_order
-from origami.core.segment import Segmentation
+from origami.core.segment import Segmentation, Separators
+from origami.core.math import inset_bounds
 
 
 def overlap_ratio(a, b):
@@ -30,29 +36,9 @@ def overlap_ratio(a, b):
 	return a.intersection(b).area / a.area
 
 
-def aggregation(contours, union, threshold, combine):
-	graph = networkx.Graph()
-	graph.add_nodes_from([c.name for c in contours])
-
-	tree = shapely.strtree.STRtree(contours)
-	for contour in contours:
-		for other in tree.query(contour):
-			if contour.name == other.name:
-				continue
-			if overlap_ratio(contour, other) > threshold:
-				graph.add_edge(contour.name, other.name)
-
-	results = []
-	by_name = dict((c.name, c) for c in contours)
-	for names in networkx.connected_components(graph):
-		target = min(names)
-		combine(names, target)
-		shapes = [by_name[name] for name in names]
-		shape = union(shapes)
-		shape.name = target
-		results.append(shape)
-
-	return results
+def create_filter(s):
+	good = set([tuple(s.split("/"))])
+	return lambda k: k[:2] in good
 
 
 def fixed_point(func, x0, reduce):
@@ -67,37 +53,229 @@ def _cohesion(shapes, union):
 	return sum([shape.area for shape in shapes]) / union.area
 
 
-class SequentialMerger:
-	def __init__(self, cohesion, max_error, line_limit):
+class LineCounts:
+	def __init__(self, lines):
+		num_lines = collections.defaultdict(int)
+		for path, line in lines.items():
+			num_lines[path[:3]] += 1
+		self._num_lines = num_lines
+
+	def add(self, name, count):
+		self._num_lines[name] = count
+
+	def remove(self, name):
+		del self._num_lines[name]
+
+	def combine(self, names, target):
+		self._num_lines[target] = sum([
+			self._num_lines[x] for x in names
+		])
+
+	def __getitem__(self, block_path):
+		return self._num_lines[block_path]
+
+
+class Regions:
+	def __init__(self, page, lines, contours, separators, union):
+		self._page = page
+
+		self._contours = dict(contours)
+		self._unmodified_contours = self._contours.copy()
+		for k, contour in contours:
+			contour.name = "/".join(k)
+		self.separators = separators
+
+		self._line_counts = LineCounts(lines)
+		self._union = union
+
+		max_labels = collections.defaultdict(int)
+		for k in self._contours.keys():
+			max_labels[k[:2]] = max(max_labels[k[:2]], int(k[2]))
+		self._max_labels = max_labels
+
+	@property
+	def page(self):
+		return self._page
+
+	def union(self, shapes):
+		return self._union(self._page, shapes)
+
+	@property
+	def unmodified_contours(self) -> dict:
+		return self._unmodified_contours
+
+	@property
+	def contours(self) -> dict:
+		return self._contours
+
+	@property
+	def by_labels(self):
+		by_labels = collections.defaultdict(list)
+		for k, contour in self._contours.items():
+			by_labels[k[:2]].append(contour)
+		return by_labels
+
+	def line_count(self, a):
+		return self._line_counts[a]
+
+	def map(self, f):
+		def named_f(k, c):
+			contour = f(k, c)
+			contour.name = "/".join(k)
+			return contour
+
+		self._contours = dict(
+			(k, named_f(k, contour))
+			for k, contour in self._contours.items())
+
+	def combine(self, sources):
+		agg_path = min(sources)
+
+		u = self.union([self._contours[p] for p in sources])
+		self.modify_contour(agg_path, u)
+		self._line_counts.combine(sources, agg_path)
+
+		for k in sources:
+			if k != agg_path:
+				self.remove_contour(k)
+
+	def combine_from_graph(self, graph):
+		if graph.number_of_edges() > 0:
+			for nodes in networkx.connected_components(graph):
+				self.combine(nodes)
+
+	def modify_contour(self, path, contour):
+		self._contours[path] = contour
+		contour.name = "/".join(path)
+
+	def remove_contour(self, path):
+		del self._contours[path]
+		self._line_counts.remove(path)
+
+	def add_contour(self, label, contour):
+		i = 1 + self._max_labels[label]
+		self._max_labels[label] = i
+		path = label + (str(i),)
+		self._contours[path] = contour
+		contour.name = "/".join(path)
+
+
+class Transformer:
+	def __init__(self, operators):
+		self._operators = operators
+
+	def __call__(self, regions):
+		for operator in self._operators:
+			operator(regions)
+
+
+class Dilation:
+	def __init__(self):
+		pass
+
+	def __call__(self, regions):
+		regions.map(lambda _, contour: regions.union([contour]))
+
+
+class AdjacencyMerger:
+	def __init__(self, filters, max_line_count=3, cohesion=0.8, alignment=0.8):
+		self._filter = create_filter(filters)
+		self._max_line_count = max_line_count
 		self._cohesion = cohesion
-		self._max_error = max_error
-		self._line_limit = line_limit
+		self._min_alignment = alignment
 
-	def __call__(self, names, shapes, union, error_overlap, line_counts):
-		i = 0
-		while i < len(shapes):
-			good = False
-			for j in range(i + 1, len(shapes)):
-				if self._line_limit is not None:
-					if max(line_counts[x] for x in names[i:j + 1]) > self._line_limit:
-						break
+	def _should_merge(self, regions, p, q):
+		lc = regions.line_count
+		if max(lc(p), lc(q)) > self._max_line_count:
+			return False
 
-				u = union(shapes[i:j + 1])
+		contours = regions.contours
+		a = contours[p]
+		b = contours[q]
 
-				cohesion = _cohesion(shapes[i:j + 1], u)
-				error = error_overlap(u)
+		_, ay0, _, ay1 = a.bounds
+		_, by0, _, by1 = b.bounds
 
-				if cohesion < self._cohesion[0] or error > self._max_error:
-					break
-				elif cohesion > self._cohesion[1]:
-					shapes[j] = u
-					i = j
-					good = True
-					break
+		shared = portion.closed(ay0, ay1) & portion.closed(by0, by1)
+		if shared.empty:
+			return False
 
-			if not good:
-				yield names[i], shapes[i]
-				i += 1
+		overlap = shared.upper - shared.lower
+		alignment = overlap / min(ay1 - ay0, by1 - by0)
+		if alignment < self._min_alignment:
+			return False
+
+		u = regions.union([a, b])
+		c = _cohesion([a, b], u)
+		return c > self._cohesion
+
+	def __call__(self, regions):
+		paths = []
+		points = []
+		for k, c in regions.contours.items():
+			minx, miny, maxx, maxy = c.bounds
+			pts = [(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)]
+			for pt in pts:
+				paths.append(k)
+				points.append(pt)
+
+		vor = scipy.spatial.Voronoi(points)
+
+		neighbors = collections.defaultdict(set)
+		for i, j in vor.ridge_points:
+			if not self._filter(paths[i]):
+				continue
+			if paths[i][:2] == paths[j][:2]:
+				neighbors[paths[i]].add(paths[j])
+				neighbors[paths[j]].add(paths[i])
+
+		graph = networkx.Graph()
+		graph.add_nodes_from(paths)
+
+		checked = set()
+		for p in paths:
+			for q in neighbors[p]:
+				if (p, q) in checked:
+					continue
+				if self._should_merge(regions, p, q):
+					graph.add_edge(p, q)
+				checked.add((p, q))
+
+		regions.combine_from_graph(graph)
+
+
+class OverlapMerger:
+	def __init__(self, maximum_overlap):
+		self._maximum_overlap = maximum_overlap
+
+	def _merge(self, regions, contours):
+		graph = networkx.Graph()
+		graph.add_nodes_from([
+			tuple(c.name.split("/")) for c in contours])
+
+		tree = shapely.strtree.STRtree(contours)
+		for contour in contours:
+			for other in tree.query(contour):
+				if contour.name == other.name:
+					continue
+				if overlap_ratio(contour, other) > self._maximum_overlap:
+					graph.add_edge(
+						tuple(contour.name.split("/")),
+						tuple(other.name.split("/")))
+
+		regions.combine_from_graph(graph)
+
+		return graph.number_of_edges() > 0
+
+	def __call__(self, regions):
+		modify = set(regions.by_labels.keys())
+		while modify:
+			changed = set()
+			for k, contours in regions.by_labels.items():
+				if k in modify:
+					if self._merge(regions, contours):
+						changed.add(k)
+			modify = changed
 
 
 class Overlap:
@@ -113,62 +291,226 @@ class Overlap:
 		return error_area / shape.area
 
 
-class LineCounts:
-	def __init__(self, lines):
-		num_lines = collections.defaultdict(int)
-		for path, line in lines.items():
-			num_lines[path[:3]] += 1
-		self._num_lines = num_lines
+class UnionOperator:
+	def __init__(self, concavity, detail):
+		if concavity != "bounds":
+			try:
+				concavity = float(concavity)
+			except:
+				raise click.BadOptionUsage(
+					"region-concavity", "must be numeric or 'bounds'")
+		self._concavity = concavity
+		self._detail = detail
 
-	def combine(self, names, target):
-		self._num_lines[target] = sum([
-			self._num_lines[x] for x in names
-		])
+	def __call__(self, page, shapes):
+		if len(shapes) > 1:
+			polygon = shapely.ops.cascaded_union(shapes)
+		else:
+			polygon = shapes[0]
 
-	def __getitem__(self, block_path):
-		return self._num_lines[block_path]
+		concavity = self._concavity
+
+		if concavity == "bounds":
+			return shapely.geometry.box(*polygon.bounds)
+		elif concavity > 1:
+			from origami.concaveman import concaveman2d
+
+			mag = self._page.magnitude(dewarped=True)
+			ext = np.array(polygon.exterior.coords)
+			pts = concaveman2d(
+				ext,
+				scipy.spatial.ConvexHull(ext).vertices,
+				concavity=concavity,
+				lengthThreshold=mag * self._detail)
+			return shapely.geometry.Polygon(pts)
+		else:  # disable concaveman
+			return polygon
 
 
-class Separators:
-	def __init__(self, page_path, seps):
-		segmentation = Segmentation.open(
-			page_path.with_suffix(".segment.zip"))
+class SequentialMerger:
+	def __init__(self, filters, cohesion, max_error, fringe, obstacles):
+		self._filter = create_filter(filters)
+		self._cohesion = cohesion
+		self._max_error = max_error
+		self._fringe = fringe
+		self._obstacles = obstacles
 
-		self._predictions = dict()
-		for p in segmentation.predictions:
-			if p.type == PredictorType.SEPARATOR:
-				self._predictions[p.name] = p
+	def _merge(self, regions, names, error_overlap):
+		contours = regions.contours
+		shapes = [contours[x] for x in names]
 
-		parsed_seps = collections.defaultdict(list)
-		for k, geom in seps.items():
-			prediction_name, prediction_type = k[:2]
-			prediction = self._predictions[prediction_name]
-			parsed_seps[prediction.classes[prediction_type]].append(geom)
+		mag = regions.page.magnitude(dewarped=True)
+		fringe = self._fringe * mag
+		label = names[0][:2]
+		assert(all(x[:2] == label for x in names))
 
-		self._seps = parsed_seps
+		graph = networkx.Graph()
+		graph.add_nodes_from(names)
 
-		# bbz specific.
-		self._table_columns = self._seps[
-			self._predictions["separators"].classes["T"]]
+		i = 0
+		while i < len(shapes):
+			good = False
+			for j in range(i + 1, len(shapes)):
+				u = regions.union(shapes[i:j + 1])
 
-		self._min_column_distance = 50
+				if regions.separators.check_obstacles(
+					u.bounds, self._obstacles, fringe):
+					break
 
-	def sample(self, bounds):  # dewarped image space
+				cohesion = _cohesion(shapes[i:j + 1], u)
+				error = error_overlap(u)
+
+				if cohesion < self._cohesion[0] or error > self._max_error:
+					break
+				elif cohesion > self._cohesion[1]:
+					for k in range(i, j):
+						graph.add_edge(names[k], names[k + 1])
+					shapes[j] = u
+					i = j
+					good = True
+					break
+
+			if not good:
+				i += 1
+
+		regions.combine_from_graph(graph)
+
+	def _compute_order(self, regions, contours):
+		mag = regions.page.magnitude(dewarped=True)
+		fringe = self._fringe * mag
+		contours = [(tuple(c.name.split("/")), c) for c in contours]
+		return polygon_order(contours, fringe=fringe)
+
+	def __call__(self, regions):
+		by_labels = regions.by_labels
+		labels = set(by_labels.keys())
+
+		for path, contours in by_labels.items():
+			if not self._filter(path):
+				continue
+
+			order = self._compute_order(regions, contours)
+
+			error_overlap = Overlap(
+				regions.unmodified_contours,
+				labels - set([path[:2]]))
+
+			self._merge(
+				regions,
+				order,
+				error_overlap)
+
+
+class Shrinker:
+	def __init__(self):
 		pass
 
-	def detect_table_data(self, contours):
-		contours = dict([
-			(k, v) for k, v in contours.items()
-			if tuple(k[:2]) == ("regions", "TABULAR")])
+	def __call__(self, regions):
+		by_labels_nomod = collections.defaultdict(list)
+		for k, contour in regions.unmodified_contours.items():
+			by_labels_nomod[k[:2]].append(contour)
+
+		for k0, v0 in by_labels_nomod.items():
+			tree = shapely.strtree.STRtree(v0)
+			for k, contour in regions.contours.items():
+				if k[:2] != k0[:2]:
+					continue
+				try:
+					q = tree.query(contour)
+					if q:
+						bounds = shapely.ops.cascaded_union(q).bounds
+						box = shapely.geometry.box(*bounds)
+						regions.modify_contour(
+							k, box.intersection(contour))
+				except ValueError:
+					pass  # deformed geometry errors
+
+
+class FixSpillOver:
+	def __init__(self, filters, band=0.01, peak=0.9, min_line_count=3, window_size=15):
+		self._filter = create_filter(filters)
+		self._band = band
+		self._peak = peak
+		self._min_line_count = min_line_count
+		self._window_size = window_size
+
+	def __call__(self, regions):
+		# for each contour, sample the binarized image.
+		# if we detect a whitespace region in a column,
+		# we split the polygon here and now.
+		# since we dewarped, we know columns are unskewed.
+		page = regions.page
+		pixels = np.array(page.dewarped.convert("L"))
+
+		kernel_w = max(
+			10,  # pixels in warped image space
+			int(np.ceil(page.magnitude(False) * self._band)))
+
+		splits = []
+
+		for k, contour in regions.contours.items():
+			if not self._filter(k):
+				continue
+
+			if regions.line_count(k) < self._min_line_count:
+				continue
+
+			minx, miny, maxx, maxy = contour.bounds
+
+			miny = int(max(0, miny))
+			minx = int(max(0, minx))
+			maxy = int(min(maxy, pixels.shape[0]))
+			maxx = int(min(maxx, pixels.shape[1]))
+
+			crop = pixels[miny:maxy, minx:maxx]
+
+			thresh_sauvola = skimage.filters.threshold_sauvola(
+				crop, window_size=self._window_size)
+			crop = (crop > thresh_sauvola).astype(np.uint8)
+
+			whitespace = np.mean(crop.astype(np.float32), axis=0)
+			whitespace = np.convolve(
+				whitespace, np.ones((kernel_w,)) / kernel_w, mode="same")
+
+			peaks, info = scipy.signal.find_peaks(
+				whitespace, height=self._peak)
+
+			if len(peaks) > 0:
+				i = np.argmax(info["peak_heights"])
+				x = peaks[i] + minx
+
+				sep = shapely.geometry.LineString([
+					[x, -1], [x, pixels.shape[0] + 1]
+				])
+
+				splits.append((k, contour, sep))
+
+		for k, contour, sep in splits:
+			regions.remove_contour(k)
+			for shape in shapely.ops.split(contour, sep).geoms:
+				regions.add_contour(k[:2], shape)
+
+
+class TableLayoutDetector:
+	def __init__(self, filters, column_label, min_column_distance=50):
+		self._filter = create_filter(filters)
+		self._column_label = column_label
+		self._min_column_distance = min_column_distance
+
+	def __call__(self, regions):
+		contours = dict(
+			(k, v) for k, v
+			in regions.contours.items()
+			if self._filter(k))
 
 		for k, contour in contours.items():
-			contour.name = "/".join(k)
+			assert contour.name == "/".join(k)
 
 		tree = shapely.strtree.STRtree(
 			list(contours.values()))
 		seps = collections.defaultdict(list)
 
-		for sep in self._table_columns:
+		for sep in regions.separators.for_label(self._column_label):
 			for contour in tree.query(sep):
 				if contour.intersects(sep):
 					path = tuple(contour.name.split("/"))
@@ -209,21 +551,31 @@ class LayoutDetectionProcessor(BlockProcessor):
 		self._options = options
 		self._overwrite = self._options["overwrite"]
 
-		concavity = self._options["region_concavity"]
-		if concavity != "bounds":
-			try:
-				concavity = float(concavity)
-			except:
-				raise click.BadOptionUsage(
-					"region-concavity", "must be numeric or 'bounds'")
-		self._concavity = concavity
+		self._union = UnionOperator(
+			self._options["region_concavity"],
+			self._options["region_detail"]
+		)
 
-		self._seq_merge = dict([
-			(("regions", "TABULAR"), SequentialMerger(
-				cohesion=(0.5, 0.9), max_error=0.05, line_limit=None)),
-			(("regions", "TEXT"), SequentialMerger(
-				cohesion=(0.6, 0.8), max_error=0.01, line_limit=3))
+		# bbz specific settings.
+
+		self._transformer = Transformer([
+			Dilation(),
+			AdjacencyMerger("regions/TEXT", max_line_count=3),
+			OverlapMerger(self._options["maximum_overlap"]),
+			Shrinker(),
+			SequentialMerger(
+				filters="regions/TABULAR",
+				cohesion=(0.5, 0.8),
+				max_error=0.05,
+				fringe=self._options["fringe"],
+				obstacles=[
+					"separators/H",
+					"separators/V"]),
+			FixSpillOver("regions/TEXT")
 		])
+
+		self._table_layout_detector = TableLayoutDetector(
+			"regions/TABULAR", "separators/T")
 
 	@property
 	def processor_name(self):
@@ -233,132 +585,37 @@ class LayoutDetectionProcessor(BlockProcessor):
 		return imghdr.what(p) is not None and\
 			p.with_suffix(".dewarped.contours.zip").exists() and (
 				self._overwrite or (
-					not p.with_suffix(".aggregate.contours.zip").exists())
-
-	def _compute_order(self, page, polygons):
-		mag = page.magnitude(dewarped=True)
-		fringe = self._options["fringe"] * mag
-		return polygon_order(polygons, fringe=fringe)
-
-	def concavity(self, page, polygon):
-		concavity = self._concavity
-
-		if concavity == "bounds":
-			return shapely.geometry.box(*polygon.bounds)
-		elif concavity > 1:
-			from origami.concaveman import concaveman2d
-
-			mag = page.magnitude(dewarped=True)
-			ext = np.array(polygon.exterior.coords)
-			pts = concaveman2d(
-				ext,
-				scipy.spatial.ConvexHull(ext).vertices,
-				concavity=concavity,
-				lengthThreshold=mag * self._options["region_detail"])
-			return shapely.geometry.Polygon(pts)
-		else:  # disable concaveman
-			return polygon
-
-	def union(self, page, shapes):
-		return self.concavity(page, shapely.ops.cascaded_union(shapes))
-
-	def aggregate_by_predictor(self, page, contours, line_counts):
-		# modify convexity.
-		contours = [(k, self.concavity(page, polygon)) for k, polygon in contours]
-
-		# names.
-		for k, contour in contours:
-			contour.name = "/".join(k)
-
-		# group by predictor.
-		by_predictor = collections.defaultdict(list)
-		for k, contour in contours:
-			by_predictor[k[:2]].append(contour)
-
-		# aggregate.
-		for k in list(by_predictor.keys()):
-			by_predictor[k] = fixed_point(
-				partial(
-					aggregation,
-					union=partial(self.union, page),
-					threshold=self._options["maximum_overlap"],
-					combine=line_counts.combine),
-				by_predictor[k],
-				lambda x: set([p.wkt for p in x]))
-
-		# export.
-		for k, contours in by_predictor.items():
-			for contour in contours:
-				yield tuple(contour.name.split("/")), contour
-
-	def xycut_orders(self, page, aggregate):
-		blocks_by_class = collections.defaultdict(list)
-		for block_path, block in aggregate:
-			blocks_by_class[tuple(block_path[:2])].append((block_path, block))
-		blocks_by_class[("*", )] = aggregate
-
-		return dict(
-			(block_class, self._compute_order(page, v))
-			for block_class, v in blocks_by_class.items())
-
-	def sequential_merge(self, page, orders, noaggregate, aggregate, line_counts):
-		aggregate = dict(aggregate)
-		new_aggregate = dict()
-
-		for path, regions in orders.items():
-			if path[0] == "*":
-				continue
-
-			merge = self._seq_merge.get(path[:2])
-			if merge is None:
-				for r in regions:
-					new_aggregate[r] = aggregate[r]
-				continue
-
-			error_overlap = Overlap(
-				dict(noaggregate),
-				set(aggregate.keys()) - set([path[:2]]))
-
-			for name, shape in merge(
-				regions,
-				[aggregate[path] for path in regions],
-				partial(self.union, page),
-				error_overlap,
-				line_counts):
-
-				new_aggregate[name] = shape
-
-		return new_aggregate.items()
+					not p.with_suffix(".aggregate.contours.zip").exists()))
 
 	def process(self, page_path: Path):
 		blocks = self.read_dewarped_blocks(page_path)
 
-		separators = Separators(
-			page_path,
-			self.read_dewarped_separators(page_path))
-
 		if not blocks:
 			return
 
+		segmentation = Segmentation.open(
+			page_path.with_suffix(".segment.zip"))
+		separators = Separators(
+			segmentation, self.read_dewarped_separators(page_path))
+
 		warped_blocks = self.read_blocks(page_path)
 		warped_lines = self.read_lines(page_path, warped_blocks)
-		line_counts = LineCounts(warped_lines)
-
-		page = list(blocks.values())[0].page
 
 		zf_path = page_path.with_suffix(".dewarped.contours.zip")
 		with zipfile.ZipFile(zf_path, "r") as zf:
 			meta = zf.read("meta.json")
 
-		noaggregate = [(k, block.image_space_polygon) for k, block in blocks.items()]
+		page = list(blocks.values())[0].page
+		contours = [(k, block.image_space_polygon) for k, block in blocks.items()]
 
-		aggregate = list(self.aggregate_by_predictor(page, noaggregate, line_counts))
-		orders = self.xycut_orders(page, aggregate)
+		regions = Regions(
+			page, warped_lines,
+			contours, separators,
+			self._union)
+		self._transformer(regions)
 
-		aggregate = self.sequential_merge(
-			page, orders, noaggregate, aggregate, line_counts)
+		table_data = self._table_layout_detector(regions)
 
-		table_data = separators.detect_table_data(dict(aggregate))
 		with atomic_write(
 			page_path.with_suffix(".tables.json"),
 			mode="wb", overwrite=self._overwrite) as f:
@@ -368,11 +625,26 @@ class LayoutDetectionProcessor(BlockProcessor):
 		with atomic_write(zf_path, mode="wb", overwrite=self._overwrite) as f:
 			with zipfile.ZipFile(f, "w", self.compression) as zf:
 				zf.writestr("meta.json", meta)
-				for path, shape in aggregate:
+				for path, shape in regions.contours.items():
 					zf.writestr("/".join(path) + ".wkt", shape.wkt.encode("utf8"))
 
-		if True:
-			orders = self.xycut_orders(page, aggregate)
+		if True:  # work in progress
+			def compute_order(contours):
+				mag = page.magnitude(dewarped=True)
+				fringe = self._options["fringe"] * mag
+				return polygon_order(contours, fringe=fringe)
+
+			def xycut_orders():
+				by_labels = collections.defaultdict(list)
+				for p, contour in regions.contours.items():
+					by_labels[p[:2]].append((p, contour))
+				by_labels[("*",)] = list(regions.contours.items())
+
+				return dict(
+					(p, compute_order(v))
+					for p, v in by_labels.items())
+
+			orders = xycut_orders()
 
 			orders = dict(("/".join(k), [
 				"/".join(p) for p in ps]) for k, ps in orders.items())

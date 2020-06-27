@@ -5,13 +5,61 @@ import json
 import zipfile
 import collections
 import PIL.Image
+import shapely.strtree
 
-# export some names
+from cached_property import cached_property
+
 from origami.core.page import Page, Annotations
+from origami.core.math import inset_bounds
+from origami.core.predict import PredictorType
 
 
 Predictor = collections.namedtuple(
 	"Predictor", ["type", "name", "classes"])
+
+
+class Separators:
+	def __init__(self, segmentation, separators):
+		self._predictions = dict()
+		for p in segmentation.predictions:
+			if p.type == PredictorType.SEPARATOR:
+				self._predictions[p.name] = p
+
+		parsed_seps = collections.defaultdict(list)
+		all_seps = []
+		for k, geom in separators.items():
+			prediction_name, prediction_type = k[:2]
+			prediction = self._predictions[prediction_name]
+			parsed_seps[prediction.classes[prediction_type]].append(geom)
+			geom.name = "/".join(k[:2])
+			all_seps.append(geom)
+
+		self._all_seps = all_seps
+		self._parsed_seps = parsed_seps
+
+	@cached_property
+	def _tree(self):
+		return shapely.strtree.STRtree(self._all_seps)
+
+	def query(self, shape):
+		return self._tree.query(shape)
+
+	def label(self, name):
+		prediction_name, prediction_label = name.split("/")
+		return self._predictions[prediction_name].classes[prediction_label]
+
+	def for_label(self, name):
+		return self._parsed_seps[self.label(name)]
+
+	def check_obstacles(self, bounds, obstacles, fringe=0):
+		bounds = inset_bounds(bounds, fringe)
+		obstacles = set([self.label(o) for o in obstacles])
+		box = shapely.geometry.box(*bounds)
+		for sep in self.query(box):
+			if box.intersects(sep):
+				if self.label(sep.name) in obstacles:
+					return True
+		return False
 
 
 class Segmentation:

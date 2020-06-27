@@ -33,8 +33,6 @@ class Processor:
 			for filename in filenames:
 				p = folder / filename
 
-				if p.name.endswith(".binarized.png"):
-					continue
 				if re.match(r".*\.annotate\..*\.(png|jpg)$", p.name):
 					continue
 				if self._name and not re.search(self._name, str(p)):

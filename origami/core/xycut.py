@@ -12,6 +12,8 @@ import numpy as np
 
 from itertools import chain
 
+from origami.core.math import inset_bounds
+
 
 Candidate = collections.namedtuple(
 	'Candidate', ['axis', 'x', 'score'])
@@ -243,12 +245,8 @@ def polygon_order(polygons, fringe):
 	bounds = []
 
 	for name, polygon in polygons:
-		minx, miny, maxx, maxy = polygon.bounds
-
-		minx = min(minx + fringe, maxx)
-		maxx = max(maxx - fringe, minx)
-		miny = min(miny + fringe, maxy)
-		maxy = max(maxy - fringe, miny)
+		minx, miny, maxx, maxy = inset_bounds(
+			polygon.bounds, fringe)
 
 		bounds.append((minx, miny, maxx, maxy))
 		names.append(name)

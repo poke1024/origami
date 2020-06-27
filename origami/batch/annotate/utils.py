@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+import collections
 
 from PySide2 import QtGui, QtCore
 from functools import lru_cache
@@ -89,7 +90,11 @@ def render_blocks(pixmap, blocks, *args, **kwargs):
 	return render_contours(pixmap, contours, *args, **kwargs)
 
 
-def render_contours(pixmap, contours, get_label, predictors=None, brushes=None, matrix=None):
+def render_contours(
+	pixmap, contours, get_label,
+	predictors=None, brushes=None, matrix=None,
+	alternate=False):
+
 	if brushes is None:
 		brushes = LabelBrushes(predictors)
 
@@ -104,17 +109,29 @@ def render_contours(pixmap, contours, get_label, predictors=None, brushes=None, 
 	try:
 		qp.setOpacity(0.5)
 
-		for block_path, contour in contours.items():
-			if contour.geom_type != "Polygon":
-				logging.error("encountered %s" % contour.geom_type)
-				continue
+		label_path = collections.defaultdict(list)
+		for i, (block_path, contour) in enumerate(contours.items()):
+			path, label = get_label(block_path)
+			label_path[path[:2]].append((label, block_path))
 
-			qp.setBrush(brushes.get_brush(block_path))
+		sorted_contours = dict()
+		for k in label_path.keys():
+			sorted_contours[k] = [(x[1], contours[x[1]]) for x in sorted(
+				label_path[k], key=lambda x: x[0])]
 
-			poly = QtGui.QPolygonF()
-			for x, y in contour.exterior.coords:
-				poly.append(point(x, y))
-			qp.drawPolygon(poly)
+		for k in sorted_contours.keys():
+			for i, (block_path, contour) in enumerate(sorted_contours[k]):
+				if contour.geom_type != "Polygon":
+					logging.error("encountered %s" % contour.geom_type)
+					continue
+
+				lighter = (i % 2) * 150 if alternate else 0
+				qp.setBrush(brushes.get_brush(block_path, lighter=lighter))
+
+				poly = QtGui.QPolygonF()
+				for x, y in contour.exterior.coords:
+					poly.append(point(x, y))
+				qp.drawPolygon(poly)
 
 		qp.setBrush(QtGui.QBrush(QtGui.QColor("white")))
 
@@ -139,7 +156,7 @@ def render_contours(pixmap, contours, get_label, predictors=None, brushes=None, 
 			# flags=QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter does
 			# not work. fix it manually.
 			w = fm.horizontalAdvance(label)
-			qp.drawText(p.x() - w / 2, p.y() + fm.descent(), label)
+			qp.drawText(p.x() - w / 2, p.y() + fm.descent(), str(1 + label))
 
 	finally:
 		qp.end()

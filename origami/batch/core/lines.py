@@ -63,7 +63,7 @@ class LineExtractor:
 
 		line_parts = []
 		for path, line in lines.items():
-			if line.confidence > self.min_confidence:
+			if line.confidence > self._min_confidence:
 				line_columns = columns.get(path[:3])
 				if line_columns is None:
 					line_parts.append((path, line, None))
