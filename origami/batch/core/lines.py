@@ -20,8 +20,11 @@ def reliable_contours(all_blocks, all_lines, min_confidence=0.5):
 	for path, lines in block_lines.items():
 		hull = shapely.ops.cascaded_union([
 			line.image_space_polygon for line in lines]).convex_hull
-		reliable[path] = hull.intersection(
+		geom = hull.intersection(
 			all_blocks[path].image_space_polygon)
+		if geom.geom_type != "Polygon":
+			geom = geom.convex_hull
+		reliable[path] = geom
 
 	# for contours, for which we have to lines at all, we keep
 	# the contour as is.

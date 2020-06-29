@@ -4,6 +4,7 @@ import re
 import collections
 import zipfile
 import json
+import logging
 
 from pathlib import Path
 from atomicwrites import atomic_write
@@ -71,6 +72,9 @@ class ReadingOrderProcessor(BlockProcessor):
 				info = dict(version=1)
 				zf.writestr("meta.json", json.dumps(info))
 				for k, contour in reliable.items():
+					if contour.geom_type != "Polygon":
+						logging.error(
+							"refined contour %s is %s" % (k, contour.geom_type))
 					zf.writestr("/".join(k) + ".wkt", contour.wkt)
 
 		orders = self.xycut_orders(page, reliable, separators)
