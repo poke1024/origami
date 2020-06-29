@@ -52,15 +52,16 @@ class DebugLayoutProcessor(BlockProcessor):
 			p.with_suffix(".aggregate.contours.zip").exists() and\
 			p.with_suffix(".aggregate.lines.zip").exists() and\
 			p.with_suffix(".dewarped.transform.zip").exists() and\
-			p.with_suffix(".xycut.json").exists() and (
-				   self._overwrite or
+			p.with_suffix(".order.json").exists() and (
+				self._overwrite or
 				not p.with_suffix(".annotate.layout.jpg").exists())
 
 	def process(self, page_path: Path):
-		blocks = self.read_aggregate_blocks(page_path)
-		lines = self.read_aggregate_lines(page_path, blocks)
+		#blocks = self.read_aggregate_blocks(page_path)
+		#lines = self.read_aggregate_lines(page_path, blocks)
+		contours = self.read_reliable_contours(page_path)
 
-		with open(page_path.with_suffix(".xycut.json"), "r") as f:
+		with open(page_path.with_suffix(".order.json"), "r") as f:
 			xycut_data = json.loads(f.read())
 
 		with open(page_path.with_suffix(".tables.json"), "r") as f:
@@ -68,10 +69,10 @@ class DebugLayoutProcessor(BlockProcessor):
 
 		order = dict(
 			(tuple(path.split("/")), i)
-			for i, path in enumerate(xycut_data["order"]["*"]))
-		blocks = dict(
-			(path, blocks[path])
-			for path in blocks.keys() if path in order)
+			for i, path in enumerate(xycut_data["orders"]["*"]))
+		#blocks = dict(
+		#	(path, blocks[path])
+		#	for path in blocks.keys() if path in order)
 
 		def get_label(block_path):
 			return block_path[:2], order[block_path]
@@ -82,7 +83,6 @@ class DebugLayoutProcessor(BlockProcessor):
 		qt_im = ImageQt(page.dewarped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 
-		contours = reliable_contours(blocks, lines)
 		pixmap = render_contours(
 			pixmap, contours,
 			get_label, predictors, alternate=True)

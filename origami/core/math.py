@@ -58,3 +58,9 @@ def inset_bounds(bounds, fringe):
 	miny = min(miny + fringe, maxy)
 	maxy = max(maxy - fringe, miny)
 	return minx, miny, maxx, maxy
+
+
+def outset_bounds(bounds, margin):
+	assert margin >= 0
+	minx, miny, maxx, maxy = bounds
+	return minx - margin, miny - margin, maxx + margin, maxy + margin

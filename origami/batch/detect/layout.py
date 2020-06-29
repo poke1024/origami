@@ -25,8 +25,8 @@ from functools import partial, reduce
 from origami.batch.core.block_processor import BlockProcessor
 from origami.core.dewarp import Dewarper, Grid
 from origami.core.predict import PredictorType
-from origami.core.xycut import polygon_order
-from origami.core.segment import Segmentation, Separators
+from origami.core.segment import Segmentation
+from origami.core.separate import Separators
 from origami.core.math import inset_bounds
 
 
@@ -627,35 +627,6 @@ class LayoutDetectionProcessor(BlockProcessor):
 				zf.writestr("meta.json", meta)
 				for path, shape in regions.contours.items():
 					zf.writestr("/".join(path) + ".wkt", shape.wkt.encode("utf8"))
-
-		if True:  # work in progress
-			def compute_order(contours):
-				mag = page.magnitude(dewarped=True)
-				fringe = self._options["fringe"] * mag
-				return polygon_order(contours, fringe=fringe)
-
-			def xycut_orders():
-				by_labels = collections.defaultdict(list)
-				for p, contour in regions.contours.items():
-					by_labels[p[:2]].append((p, contour))
-				by_labels[("*",)] = list(regions.contours.items())
-
-				return dict(
-					(p, compute_order(v))
-					for p, v in by_labels.items())
-
-			orders = xycut_orders()
-
-			orders = dict(("/".join(k), [
-				"/".join(p) for p in ps]) for k, ps in orders.items())
-
-			data = dict(
-				version=1,
-				order=orders)
-
-			zf_path = page_path.with_suffix(".xycut.json")
-			with atomic_write(zf_path, mode="w", overwrite=self._overwrite) as f:
-				f.write(json.dumps(data))
 
 
 @click.command()

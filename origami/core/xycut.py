@@ -11,6 +11,7 @@ import collections
 import numpy as np
 
 from itertools import chain
+from functools import partial
 
 from origami.core.math import inset_bounds
 
@@ -19,8 +20,38 @@ Candidate = collections.namedtuple(
 	'Candidate', ['axis', 'x', 'score'])
 
 
-Gap = collections.namedtuple(
-	'Gap', ['minu', 'minv', 'maxu', 'maxv'])
+class Gap(collections.namedtuple(
+	'Gap', ['axis', 'minu', 'minv', 'maxu', 'maxv'])):
+
+	@property
+	def u(self):
+		return self.minu, self.maxu
+
+	@property
+	def v(self):
+		return self.minv, self.maxv
+
+	@property
+	def du(self):
+		return self.maxu - self.minu
+
+	@property
+	def dv(self):
+		return self.maxv - self.minv
+
+	@property
+	def x(self):
+		return [self.u, self.v][self.axis]
+
+	@property
+	def y(self):
+		return [self.u, self.v][1 - self.axis]
+	
+	@property
+	def bounds(self):
+		minx, maxx = self.x
+		miny, maxy = self.y
+		return minx, miny, maxx, maxy
 
 
 def _offset(x0, x1, amount):
@@ -56,24 +87,26 @@ class Box:
 
 class Coordinates:
 	def __init__(self, objs, axis):
+		self._objs = objs
+		self._axis = axis
+
 		xs = np.array([coords[:, axis] for coords in objs])
+		ys = np.array([coords[:, 1 - axis] for coords in objs])
+
+		self._min_by_label = np.min(xs, axis=-1)
+		self._max_by_label = np.max(xs, axis=-1)
+		self._ext_by_label = np.max(ys, axis=-1) - np.min(ys, axis=-1)
+
+		self._ext_min = np.min(ys)
+		self._ext_max = np.max(ys)
 
 		c = np.hstack(xs)
 		i = np.repeat(range(len(objs)), 2)
 
 		s = np.argsort(c)
 
-		self._objs = objs
-		self._axis = axis
-
 		self._x = c[s]
 		self._label = i[s]
-
-		self._min = np.min(xs, axis=-1)
-		self._max = np.max(xs, axis=-1)
-
-		ys = np.array([coords[:, 1 - axis] for coords in objs])
-		self._ext = np.max(ys, axis=-1) - np.min(ys, axis=-1)
 
 	def split_at(self, c):
 		mask = self._x <= c
@@ -83,7 +116,7 @@ class Coordinates:
 		b = set(self._label[np.logical_not(mask)])
 
 		for i in a & b:
-			if abs(c - self._min[i]) < abs(c - self._max[i]):
+			if abs(c - self._min_by_label[i]) < abs(c - self._max_by_label[i]):
 				a.remove(i)
 			else:
 				b.remove(i)
@@ -92,11 +125,11 @@ class Coordinates:
 		b = list(b)
 
 		if not a:
-			k = np.argmin([self._min[i] for i in b])
+			k = np.argmin([self._min_by_label[i] for i in b])
 			a.append(b[k])
 			del b[k]
 		elif not b:
-			k = np.argmax([self._max[i] for i in a])
+			k = np.argmax([self._max_by_label[i] for i in a])
 			b.append(a[k])
 			del a[k]
 
@@ -116,44 +149,33 @@ class Coordinates:
 
 			if x0 > self._x[0] + eps:
 				n = len(active_set)
-				if n == 0:  # classic xy cut on whitespace.
+				if n == 0:  # no overlaps.
 					gap = Gap(
+						axis=self._axis,
 						minu=x0,
-						minv=min(self._min[i0], self._min[i1]),
+						minv=self._ext_min,
 						maxu=x1,
-						maxv=max(self._max[i0], self._max[i1]))
+						maxv=self._ext_max)
 					yield Candidate(
-						self, x0, score(self._axis, gap))
-				elif n >= 1:
+						self, x0, score(gap))
+				elif n >= 1:  # overlaps.
 					err = 0
 					for j in active_set.keys():
-						err += self._ext[j] * min(
-							abs(x0 - self._min[j]),
-							abs(x0 - self._max[j]))
+						err += self._ext_by_label[j] * min(
+							abs(x0 - self._min_by_label[j]),
+							abs(x0 - self._max_by_label[j]))
 					yield Candidate(
 						self, x0, -err)
 
 
-def score_area(axis, gap):
-	return (gap.maxu - gap.minu) * (gap.maxv - gap.minv)
-
-
-def score_u(axis, gap):
-	return gap.maxu - gap.minu
-
-
-def score_v(axis, gap):
-	return gap.maxv - gap.minv
-
-
 default_scores = dict(
-	area=score_area,
-	u=score_u,
-	v=score_v)
+	area=lambda gap: gap.du * gap.dv,
+	u=lambda gap: gap.du,
+	v=lambda gap: gap.dv)
 
 
 class XYCut:
-	def __init__(self, objs, score="v", eps=5):
+	def __init__(self, objs, score="v", eps=0):
 		if isinstance(score, str):
 			score = default_scores[score]
 
@@ -204,16 +226,16 @@ class XYCut:
 		return np.min(coords), np.max(coords)
 
 
-def _rxy_cut(boxes):
+def _rxy_cut(boxes, **kwargs):
 	if len(boxes) <= 1:
 		return [*boxes], []
 
-	cut = XYCut(boxes)
+	cut = XYCut(boxes, **kwargs)
 	if not cut.valid:
 		return [*boxes], []
 
 	if max(len(cut[0]), len(cut[1])) < len(boxes):
-		return list(map(_rxy_cut, cut))
+		return list(map(partial(_rxy_cut, **kwargs), cut))
 	else:
 		logging.info("aborting _rxy_cut (%d elements)." % len(boxes))
 		return [*boxes], []
@@ -227,20 +249,20 @@ def _flatten(boxes, leafs):
 			_flatten(x, leafs)
 
 
-def reading_order(bounds):
+def reading_order(bounds, **kwargs):
 	boxes = [Box(i, *args) for i, args in enumerate(bounds)]
 	leafs = []
-	_flatten(_rxy_cut(boxes), leafs)
+	_flatten(_rxy_cut(boxes, **kwargs), leafs)
 	return [box.name for box in leafs]
 
 
-def sort_blocks(blocks):
+def sort_blocks(blocks, **kwargs):
 	order = reading_order([
-		block.polygon.bounds for block in blocks])
+		block.polygon.bounds for block in blocks], **kwargs)
 	return [blocks[i] for i in order]
 
 
-def polygon_order(polygons, fringe):
+def polygon_order(polygons, fringe, **kwargs):
 	names = []
 	bounds = []
 
@@ -251,4 +273,4 @@ def polygon_order(polygons, fringe):
 		bounds.append((minx, miny, maxx, maxy))
 		names.append(name)
 
-	return [names[i] for i in reading_order(bounds)]
+	return [names[i] for i in reading_order(bounds, **kwargs)]

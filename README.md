@@ -42,6 +42,7 @@ The necessary order of batches is:
 * dewarp
 * layout
 * lines
+* order
 * ocr
 * compose
 

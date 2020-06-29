@@ -1,3 +1,5 @@
+import zipfile
+
 from origami.batch.core.processor import Processor
 from origami.batch.core.utils import *
 from origami.core.segment import Segmentation
@@ -30,3 +32,7 @@ class BlockProcessor(Processor):
 
 	def read_predictors(self, page_path: Path):
 		return Segmentation.read_predictors(page_path.with_suffix(".segment.zip"))
+
+	def read_reliable_contours(self, page_path: Path):
+		return read_reliable_contours(page_path)
+

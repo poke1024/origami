@@ -14,11 +14,13 @@ from origami.batch.core.deskew import Deskewer
 from origami.batch.annotate.utils import render_blocks, default_pen
 
 from origami.core.page import Page
+from origami.core.segment import Segmentation
+from origami.core.separate import Separators, ObstacleSampler
 import origami.core.xycut as xycut
 
 
 class Canvas(QtWidgets.QScrollArea):
-	def __init__(self, page_path, mode="dewarped"):
+	def __init__(self, page_path, stage="reliable"):
 		super().__init__()
 
 		self.setSizePolicy(
@@ -31,36 +33,54 @@ class Canvas(QtWidgets.QScrollArea):
 		self.setWidgetResizable(True)
 		self.setWidget(self.label)
 
-		if mode == "deskewed":
+		polygons = dict()
+		self._xycut_score = "u"
+
+		if stage == "deskewed":
 			blocks = read_blocks(page_path)
 			lines = read_lines(page_path, blocks)
 
 			deskewer = Deskewer(lines)
 
-			boxes = []
 			for block_path, block in blocks.items():
-				minx, miny, maxx, maxy = deskewer.shapely(block.image_space_polygon).bounds
-				boxes.append(xycut.Box(block_path, minx, miny, maxx, maxy))
-			self._boxes = boxes
+				polygons[block_path] = deskewer.shapely(
+					block.image_space_polygon)
 
 			im = PIL.Image.open(page_path)
 			qt_im = ImageQt(deskewer.image(im))
-			self._pixmap = QtGui.QPixmap.fromImage(qt_im)
-		elif mode == "dewarped":
-			page = Page(page_path, True)
+		elif stage == "dewarped":
 			blocks = read_blocks(page_path, stage=Stage.AGGREGATE)
-			#lines = read_lines(page_path, blocks, stage=Stage.AGGREGATE)
 
-			boxes = []
 			for block_path, block in blocks.items():
-				minx, miny, maxx, maxy = block.image_space_polygon.bounds
-				boxes.append(xycut.Box(block_path, minx, miny, maxx, maxy))
-			self._boxes = boxes
+				polygons[block_path] = block.image_space_polygon
 
+			page = Page(page_path, True)
 			qt_im = ImageQt(page.dewarped)
-			self._pixmap = QtGui.QPixmap.fromImage(qt_im)
+		elif stage == "reliable":
+			segmentation = Segmentation.open(
+				page_path.with_suffix(".segment.zip"))
+			separators = Separators(
+				segmentation, read_separators(
+					page_path, stage=Stage.DEWARPED))
+			self._xycut_score = ObstacleSampler(separators)
+
+			contours = read_reliable_contours(page_path)
+
+			for block_path, polygon in contours.items():
+				polygons[block_path] = polygon
+
+			page = Page(page_path, True)
+			qt_im = ImageQt(page.dewarped)
 		else:
 			raise ValueError(mode)
+
+		boxes = []
+		for block_path, polygon in polygons.items():
+			minx, miny, maxx, maxy = polygon.bounds
+			boxes.append(xycut.Box(block_path, minx, miny, maxx, maxy))
+		self._boxes = boxes
+
+		self._pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 		self._zoom = 2
 		self._split_path = None
@@ -74,7 +94,7 @@ class Canvas(QtWidgets.QScrollArea):
 		cuts = []
 		boxes = self._boxes
 		for k in path + (None,):
-			cut = xycut.XYCut(boxes)
+			cut = xycut.XYCut(boxes, score=self._xycut_score)
 			cuts.append(cut)
 			if k is None or not cut.valid:
 				break

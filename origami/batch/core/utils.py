@@ -68,3 +68,17 @@ def read_lines(page_path: Path, blocks, stage=Stage.WARPED, open=open):
 				line_info = json.loads(zf.read(name))
 				lines[parts] = Line(block, **line_info)
 	return lines
+
+
+def read_reliable_contours(page_path):
+	contours = dict()
+	with open(page_path.with_suffix(".reliable.contours.zip"), "rb") as f:
+		with zipfile.ZipFile(f, "r") as zf:
+			for name in zf.namelist():
+				if not name.endswith(".wkt"):
+					continue
+
+				stem = name.rsplit('.', 1)[0]
+				contours[tuple(stem.split("/"))] = shapely.wkt.loads(
+					zf.read(name).decode("utf8"))
+	return contours
