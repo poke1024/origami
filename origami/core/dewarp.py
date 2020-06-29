@@ -19,12 +19,15 @@ import scipy.interpolate
 import math
 import shapely.geometry
 import shapely.ops
+import shapely.strtree
 import io
 import zipfile
 import json
+import logging
 
 from cached_property import cached_property
 from functools import lru_cache
+from sklearn.decomposition import PCA
 
 from origami.core.lingrid import lininterp
 from origami.core.mask import Mask
@@ -33,7 +36,7 @@ from origami.core.mask import Mask
 class LineDetector:
 	def __init__(self):
 		pass
-	
+
 	def binarize(self, im, window=15):
 		im = im.convert("L")
 		pixels = np.array(im)
@@ -157,6 +160,87 @@ class LineSkewEstimator:
 		return PIL.Image.fromarray(pixels)
 
 
+class BorderEstimator:
+	def __init__(self, page, blocks, separators):
+		self._page = page
+
+		regions = [b.image_space_polygon for b in blocks.values()]
+		separators = list(separators.values()) if separators else []
+		hull = shapely.ops.cascaded_union(
+			regions + separators).convex_hull
+
+		coords = np.array(list(hull.exterior.coords))
+
+		while np.all(coords[0] == coords[-1]):
+			coords = coords[:-1]
+
+		dx = np.abs(np.diff(coords[:, 0], append=coords[0, 0]))
+		dy = np.abs(np.diff(coords[:, 1], append=coords[0, 1]))
+
+		self._coords = coords
+		self._vertical = dy - dx > 0
+
+	@cached_property
+	def unfiltered_paths(self):
+		coords = self._coords
+		mask = self._vertical
+
+		if np.min(mask) == np.max(mask):
+			return []
+
+		r = 0
+		while not mask[r]:
+			r += 1
+
+		rmask = np.roll(mask, -r)
+		rcoords = np.roll(coords, -r, axis=0)
+
+		paths = []
+		cur = None
+
+		for i in range(rmask.shape[0]):
+			if rmask[i]:
+				if cur is None:
+					cur = []
+					paths.append(cur)
+				cur.append(rcoords[i])
+			else:
+				cur = None
+
+		return paths
+
+	def filtered_paths(self, margin=0.01, max_variance=1e-5):
+		paths = self.unfiltered_paths
+
+		pca = PCA(n_components=2)
+
+		w, h = self._page.warped.size
+
+		def good(path):
+			pca.fit(path * (1 / w, 1 / h))
+			if min(pca.explained_variance_) > max_variance:
+				return False
+
+			if np.max(path[:, 0]) / w > 1 - margin:
+				return False
+			elif np.min(path[:, 0]) / w < margin:
+				return False
+			return True
+
+		return list(filter(good, map(np.array, paths)))
+
+	def paths(self, **kwargs):
+		paths = self.filtered_paths(**kwargs)
+
+		def downward(path):
+			if path[-1, 1] < path[0, 1]:
+				return path[::-1]
+			else:
+				return path
+
+		return list(map(downward, paths))
+
+
 def subdivide(coords):
 	for p, q in zip(coords, coords[1:]):
 		yield p
@@ -171,6 +255,9 @@ class Samples:
 	def __init__(self):
 		self._points = []
 		self._values = []
+
+	def __len__(self):
+		return len(self._points)
 
 	@property
 	def points(self):
@@ -187,8 +274,15 @@ class Samples:
 		else:
 			return 0
 
-	def _angles(self, sep):
-		coords = np.array(list(sep.coords))
+	def print_stats(self):
+		print(np.min(self._values), np.max(self._values))
+
+	def _angles(self, coords):
+		coords = np.array(coords)
+
+		# normalize. need to check against direction here.
+		# if coords[0, 1] > coords[-1, 1]:
+		#	coords = coords[::-1]
 
 		# generate more coords since many steps further down
 		# in our processing pipeline will get confused if there
@@ -204,11 +298,11 @@ class Samples:
 
 		return coords, phis
 
-	def add_line_skew_hq(self, blocks, lines, max_phi):
+	def add_line_skew_hq(self, blocks, lines, max_phi, delta=0):
 		for line in lines.values():
 			if abs(line.angle) < max_phi:
 				self._points.append(line.center)
-				self._values.append(line.angle)
+				self._values.append(line.angle + delta)
 
 	def add_line_skew_lq(self, blocks, lines, max_phi):
 		estimator = LineSkewEstimator(
@@ -236,9 +330,16 @@ class Samples:
 	def add_separator_skew(self, separators, sep_types):
 		for path, polyline in separators.items():
 			if path[1] in sep_types:
-				sep_points, sep_values = self._angles(polyline)
+				sep_points, sep_values = self._angles(polyline.coords)
 				self._points.extend(sep_points)
 				self._values.extend(sep_values)
+
+	def add_border_skew(self, page, blocks, separators, **kwargs):
+		estimator = BorderEstimator(page, blocks, separators)
+		for coords in estimator.paths(**kwargs):
+			sep_points, sep_values = self._angles(coords)
+			self._points.extend(sep_points)
+			self._values.extend(sep_values)
 
 
 class Field:
@@ -267,6 +368,9 @@ class Field:
 			pts += self.get(pts) * step_size
 			n_steps += 1
 
+		if n_steps >= max_steps:
+			raise RuntimeError("n_steps exceeded %d" % max_steps)
+
 		return n_steps
 
 
@@ -284,12 +388,18 @@ class Transformer:
 
 
 class GridFactory:
-	def __init__(self, size, blocks, lines, separators, grid_res=25, max_phi=30,
-		rescale_separators=False):
+	def __init__(
+			self, page, blocks, lines, separators,
+			grid_res=25, max_phi=30,
+			rescale_separators=False,
+			max_grid_size=1000):
+
+		size = page.warped.size
 
 		self._width = size[0]
 		self._height = size[1]
 		self._grid_res = grid_res
+		self._max_grid_size = max_grid_size
 
 		if separators is not None:
 			if rescale_separators:  # legacy mode
@@ -301,15 +411,20 @@ class GridFactory:
 			separators = None
 
 		self._samples_h = Samples()
+		self._samples_v = Samples()
+
 		if separators:
 			self._samples_h.add_separator_skew(
 				separators, Samples.horizontal_separators)
-		self._samples_h.add_line_skew_hq(blocks, lines, max_phi=max_phi)
-
-		self._samples_v = Samples()
-		if separators:
 			self._samples_v.add_separator_skew(
 				separators, Samples.vertical_separators)
+
+		self._samples_h.add_line_skew_hq(
+			blocks, lines, max_phi=max_phi, delta=0)
+		self._samples_v.add_line_skew_hq(
+			blocks, lines, max_phi=max_phi, delta=math.pi / 2)
+
+		#self._samples_v.add_border_skew(page, blocks, separators)
 
 	@property
 	def res(self):
@@ -337,6 +452,9 @@ class GridFactory:
 			0, self._width, step_size=self._grid_res)
 		est_height = self.field_v.estimate_extent(
 			1, self._height, step_size=self._grid_res)
+		if max(est_width, est_height) > self._max_grid_size:
+			raise RuntimeError(
+				"estimated grid too big: (%d, %d)" % (est_height, est_width))
 		return est_height, est_width
 
 	@cached_property
@@ -357,15 +475,26 @@ class GridFactory:
 
 		return grid
 
+	def make_row(self, gy, k=3):
+		grid_h = self.grid_h
+		grid_w = grid_h.shape[1]
+
+		def ls_for_i(i):
+			return grid_h[gy, min(i, grid_w - k):i + k]
+
+		lines = shapely.geometry.MultiLineString([
+			ls_for_i(i)
+			for i in range(0, grid_w, k - 1)])
+		return shapely.strtree.STRtree(lines)
+
 	@cached_property
 	def grid_hv(self):
 		grid_h = self.grid_h
 		grid_res = self._grid_res
 		field_v = self.field_v.get
 
-		rows = []
-		for gy in range(grid_h.shape[0]):
-			rows.append(shapely.geometry.LineString(grid_h[gy]))
+		ls = shapely.geometry.LineString
+		norm = np.linalg.norm
 
 		grid_hv = np.zeros(grid_h.shape, dtype=np.float32)
 
@@ -375,12 +504,30 @@ class GridFactory:
 			grid_hv[gy, :, :] = pts0
 
 			pts1 = pts0 + field_v(pts0) * grid_res * 2
+			row = self.make_row(gy + 1)
 
 			for i, (p0, p1) in enumerate(zip(pts0, pts1)):
-				ray = shapely.geometry.LineString([p0, p1])
-				inter = ray.intersection(rows[gy + 1])
-				if inter:
-					pts1[i] = list(inter.coords)[0]
+				ray = ls([p0, p1])
+				inter_pts = []
+				for candidate in row.query(ray):
+					inter = ray.intersection(candidate)
+					if inter and not inter.is_empty:
+						geom_type = inter.geom_type
+						if geom_type == "Point":
+							inter_pts.append(np.asarray(inter))
+						elif geom_type == "MultiPoint":
+							inter_pts.extend(np.asarray(inter))
+						else:
+							raise RuntimeError(
+								"unexpected geom_type %s" % geom_type)
+
+				if not inter_pts:
+					logging.info("failed to find intersection.")
+				elif len(inter_pts) == 1:
+					pts1[i] = inter_pts[0]
+				else:
+					dist = norm(np.array(inter_pts) - p0, axis=1)
+					pts1[i] = inter_pts[np.argmin(dist)]
 
 			pts0 = pts1
 

@@ -13,7 +13,7 @@ from calamari_ocr.ocr import Predictor, MultiPredictor
 from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.core.block import Binarizer
+from origami.core.binarize import Binarizer
 from origami.batch.core.lines import LineExtractor
 
 

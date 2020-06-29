@@ -64,7 +64,7 @@ class DewarpProcessor(BlockProcessor):
 		separators = filter_geoms(separators, lambda g: g.length)
 
 		grid = Grid.create(
-			page.warped.size,
+			page,
 			blocks, lines, separators,
 			grid_res=self._options["grid_cell_size"])
 

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from origami.core.math import resize_transform, to_shapely_matrix
 from origami.core.dewarp import Dewarper, Grid
+from origami.core.binarize import Binarizer
 
 
 class Annotations:
@@ -98,6 +99,11 @@ class Page:
 	@property
 	def dewarped(self):
 		return self._dewarped
+
+	@cached_property
+	def binarized(self):
+		binarizer = Binarizer()
+		return binarizer(self.warped)
 
 	def size(self, dewarped):
 		return (self._dewarped if dewarped else self._warped).size

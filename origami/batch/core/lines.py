@@ -7,7 +7,7 @@ import shapely.ops
 from pathlib import Path
 from functools import partial
 
-from origami.core.block import Binarizer
+from origami.core.binarize import Binarizer
 
 
 def reliable_contours(all_blocks, all_lines, min_confidence=0.5):
@@ -22,6 +22,11 @@ def reliable_contours(all_blocks, all_lines, min_confidence=0.5):
 			line.image_space_polygon for line in lines]).convex_hull
 		reliable[path] = hull.intersection(
 			all_blocks[path].image_space_polygon)
+
+	# for contours, for which we have to lines at all, we keep
+	# the contour as is.
+	for k in set(all_blocks.keys()) - set(reliable.keys()):
+		reliable[k] = all_blocks[k].image_space_polygon
 
 	return reliable
 

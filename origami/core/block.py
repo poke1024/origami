@@ -17,6 +17,7 @@ from functools import lru_cache
 
 from origami.core.mask import Mask
 from origami.core.math import to_shapely_matrix
+from origami.core.binarize import Binarizer
 
 
 BACKGROUND = 0.8
@@ -31,29 +32,6 @@ class Stage(enum.Enum):
 	@property
 	def is_dewarped(self):
 		return self.value >= Stage.DEWARPED.value
-
-
-class Binarizer:
-	def __init__(self, window_size=15):
-		self._window_size = window_size
-
-	def __call__(self, im):
-		cutout = np.array(im)
-		window_size = self._window_size
-
-		if window_size is None:
-			window_size = target_height // 2 - 1
-		if window_size <= 0:
-			try:
-				thresh = skimage.filters.threshold_otsu(cutout)
-			except ValueError:
-				thresh = 128
-		else:
-			thresh = skimage.filters.threshold_sauvola(
-				cutout, window_size=window_size)
-
-		cutout = (cutout > thresh).astype(np.uint8) * 255
-		return PIL.Image.fromarray(cutout)
 
 
 def intersect_segments(a, b, default=None):
@@ -93,7 +71,8 @@ class Line:
 
 	@property
 	def center(self):
-		return self._p + self._right / 2
+		p1, p2 = self._tesseract_data['baseline']
+		return (np.array(p1) + np.array(p2)) / 2
 
 	@property
 	def angle(self):
@@ -156,7 +135,10 @@ class Line:
 			background=bg)
 		return image
 
-	def deskewed_image(self, target_height=48, interpolation=cv2.INTER_AREA):
+	def _extract_deskewed(
+		self, pixels, target_height=48,
+		background=255, interpolation=cv2.INTER_AREA):
+
 		p, right, up = self._p, self._right, self._up
 		width = int(math.ceil(np.linalg.norm(right)))
 
@@ -167,12 +149,10 @@ class Line:
 				(width, target_height - 1),
 				(0, 0)]).astype(np.float32))
 
-		pixels = self._block.page_pixels
-
 		warped = cv2.warpAffine(
 			pixels, matrix, (width, target_height), interpolation,
 			borderMode=cv2.BORDER_CONSTANT,
-			borderValue=self._block.background)
+			borderValue=background)
 
 		try:
 			mask = Mask(
@@ -180,14 +160,20 @@ class Line:
 					self._polygon, to_shapely_matrix(matrix)),
 				bounds=(0, 0, width, target_height))
 
-			background = np.quantile(warped, BACKGROUND)
 			cutout = mask.cutout(warped, background=background)
 
 		except ValueError:
 			# might happen on unsupported mask geometry types.
 			cutout = warped
 
-		return PIL.Image.fromarray(cutout)
+		return cutout
+
+	def deskewed_image(self, target_height=48, interpolation=cv2.INTER_AREA):
+		return PIL.Image.fromarray(self._extract_deskewed(
+			self._block.page_pixels,
+			target_height,
+			self._block.background,
+			interpolation))
 
 	def _position(self, xres, column):
 		p0 = self._p
@@ -262,6 +248,21 @@ class Line:
 
 		height = np.median(np.linalg.norm(warped_grid[1] - warped_grid[0], axis=-1))
 		return np.mean(warped_grid, axis=0), abs(height)
+
+	@cached_property
+	def ink(self):
+		assert self._block.stage == Stage.WARPED
+
+		p, right, up = self._p, self._right, self._up
+		height = int(math.ceil(np.linalg.norm(up)))
+
+		cutout = self._extract_deskewed(
+			np.array(self._block.page.binarized),
+			height,
+			255,
+			cv2.INTER_AREA)
+
+		return 1 - np.mean(cutout.astype(np.float32) / 255, axis=0)
 
 	@property
 	def coords(self):
