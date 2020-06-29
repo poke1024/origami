@@ -17,6 +17,7 @@ import collections
 import cv2
 import intervaltree
 import portion
+import logging
 
 from pathlib import Path
 from atomicwrites import atomic_write
@@ -28,6 +29,7 @@ from origami.core.predict import PredictorType
 from origami.core.segment import Segmentation
 from origami.core.separate import Separators
 from origami.core.math import inset_bounds
+from origami.core.xycut import polygon_order
 
 
 def overlap_ratio(a, b):
@@ -92,6 +94,11 @@ class Regions:
 		for k in self._contours.keys():
 			max_labels[k[:2]] = max(max_labels[k[:2]], int(k[2]))
 		self._max_labels = max_labels
+
+	def check_geom_types(self):
+		for k, contour in self._contours.items():
+			if contour.geom_type != "Polygon":
+				raise ValueError("contour %s is %s" % (k, contour.geom_type))
 
 	@property
 	def page(self):
@@ -165,16 +172,20 @@ class Transformer:
 		self._operators = operators
 
 	def __call__(self, regions):
-		for operator in self._operators:
+		for i, operator in enumerate(self._operators):
 			operator(regions)
+			try:
+				regions.check_geom_types()
+			except ValueError as e:
+				logging.error("after stage %d, %s" % (i, e))
 
 
 class Dilation:
-	def __init__(self):
-		pass
+	def __init__(self, spec):
+		self._operator = DilationOperator(spec)
 
 	def __call__(self, regions):
-		regions.map(lambda _, contour: regions.union([contour]))
+		regions.map(lambda _, contour: self._operator(regions.page, contour))
 
 
 class AdjacencyMerger:
@@ -291,40 +302,86 @@ class Overlap:
 		return error_area / shape.area
 
 
+class FunctionProxy:
+	def __init__(self):
+		self.kwargs = dict()
+
+	def __call__(self, **kwargs):
+		self.kwargs = kwargs
+		return self
+
+
+class DilationOperator:
+	def __init__(self, spec):
+		names = ("none", "rect", "convex", "concave")
+		locals = dict((x, FunctionProxy()) for x in names)
+
+		funcs = dict()
+		for x in names:
+			funcs[id(locals[x])] = getattr(DilationOperator, "_" + x)
+
+		data = eval(spec, locals)
+
+		if not isinstance(data, FunctionProxy):
+			raise ValueError(data)
+
+		self._f = partial(funcs[id(data)], **data.kwargs)
+
+	@staticmethod
+	def _none(page, shape):
+		if shape.geom_type == "MultiPolygon":
+			return shape.convex_hull
+		else:
+			return shape
+
+	@staticmethod
+	def _rect(page, shape):
+		return shapely.geometry.box(*shape.bounds)
+
+	@staticmethod
+	def _convex(page, shape):
+		return shape.convex_hull
+
+	@staticmethod
+	def _concave(page, shape, concavity=2, detail=0.01):
+		from origami.concaveman import concaveman2d
+
+		if shape.geom_type == "MultiPolygon":
+			coords = []
+			for geom in shape.geoms:
+				coords.extend(np.asarray(geom.exterior))
+		elif shape.geom_type == "Polygon":
+			coords = np.asarray(shape.exterior)
+		else:
+			raise RuntimeError(
+				"unexpected geom_type %s" % shape.geom_type)
+
+		mag = page.magnitude(dewarped=True)
+		pts = concaveman2d(
+			coords,
+			scipy.spatial.ConvexHull(coords).vertices,
+			concavity=concavity,
+			lengthThreshold=mag * detail)
+
+		shape1 = shapely.geometry.Polygon(pts)
+		shape1 = shape1.union(shape)
+		return shape1
+
+	def __call__(self, page, shape):
+		return self._f(page, shape)
+
+
 class UnionOperator:
-	def __init__(self, concavity, detail):
-		if concavity != "bounds":
-			try:
-				concavity = float(concavity)
-			except:
-				raise click.BadOptionUsage(
-					"region-concavity", "must be numeric or 'bounds'")
-		self._concavity = concavity
-		self._detail = detail
+	def __init__(self, spec):
+		self._dilation = DilationOperator(spec)
 
 	def __call__(self, page, shapes):
 		if len(shapes) > 1:
-			polygon = shapely.ops.cascaded_union(shapes)
+			u = shapely.ops.cascaded_union(shapes)
 		else:
-			polygon = shapes[0]
+			u = shapes[0]
 
-		concavity = self._concavity
-
-		if concavity == "bounds":
-			return shapely.geometry.box(*polygon.bounds)
-		elif concavity > 1:
-			from origami.concaveman import concaveman2d
-
-			mag = self._page.magnitude(dewarped=True)
-			ext = np.array(polygon.exterior.coords)
-			pts = concaveman2d(
-				ext,
-				scipy.spatial.ConvexHull(ext).vertices,
-				concavity=concavity,
-				lengthThreshold=mag * self._detail)
-			return shapely.geometry.Polygon(pts)
-		else:  # disable concaveman
-			return polygon
+		return self._dilation(page, u)
 
 
 class SequentialMerger:
@@ -551,15 +608,12 @@ class LayoutDetectionProcessor(BlockProcessor):
 		self._options = options
 		self._overwrite = self._options["overwrite"]
 
-		self._union = UnionOperator(
-			self._options["region_concavity"],
-			self._options["region_detail"]
-		)
+		self._union = UnionOperator(self._options["union"])
 
 		# bbz specific settings.
 
 		self._transformer = Transformer([
-			Dilation(),
+			Dilation(self._options["dilation"]),
 			AdjacencyMerger("regions/TEXT", max_line_count=3),
 			OverlapMerger(self._options["maximum_overlap"]),
 			Shrinker(),
@@ -626,6 +680,8 @@ class LayoutDetectionProcessor(BlockProcessor):
 			with zipfile.ZipFile(f, "w", self.compression) as zf:
 				zf.writestr("meta.json", meta)
 				for path, shape in regions.contours.items():
+					if shape.geom_type != "Polygon":
+						logging.info("contour %s is %s" % (path, geom.geom_type))
 					zf.writestr("/".join(path) + ".wkt", shape.wkt.encode("utf8"))
 
 
@@ -635,13 +691,13 @@ class LayoutDetectionProcessor(BlockProcessor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'--region-concavity',
+	'--dilation',
 	type=str,
-	default="bounds")
+	default="none")
 @click.option(
-	'--region-detail',
-	type=float,
-	default=0.01)
+	'--union',
+	type=str,
+	default="convex")
 @click.option(
 	'--maximum-overlap',
 	type=float,
