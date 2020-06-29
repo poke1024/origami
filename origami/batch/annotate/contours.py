@@ -40,7 +40,7 @@ class DebugContoursProcessor(BlockProcessor):
 
 		def get_label(block_path):
 			classifier, segmentation_label, block_id = block_path
-			return (classifier, segmentation_label), block_id
+			return (classifier, segmentation_label), int(block_id)
 
 		pixmap = render_blocks(pixmap, blocks, get_label, predictors)
 		pixmap = render_separators(pixmap, separators)
