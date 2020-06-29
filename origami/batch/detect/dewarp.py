@@ -5,6 +5,7 @@ import click
 import shapely.ops
 import shapely.wkt
 import zipfile
+import logging
 import PIL.Image
 
 from pathlib import Path
@@ -20,7 +21,11 @@ def dewarped_contours(page_path, transformer):
 			for name in zf.namelist():
 				if name.endswith(".wkt"):
 					geom = shapely.wkt.loads(zf.read(name).decode("utf8"))
-					yield name, shapely.ops.transform(transformer, geom).wkt.encode("utf8")
+					geom = shapely.ops.transform(transformer, geom)
+					if geom.geom_type not in ("Polygon", "LineString"):
+						logging.error("dewarped contour %s is %s" % (
+							name, geom.geom_type))
+					yield name, geom.wkt.encode("utf8")
 				else:
 					yield name, zf.read(name)
 
@@ -29,6 +34,7 @@ class DewarpProcessor(BlockProcessor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._overwrite = options["overwrite"]
 
 	@property
 	def processor_name(self):
@@ -38,9 +44,10 @@ class DewarpProcessor(BlockProcessor):
 		return imghdr.what(p) is not None and\
 			p.with_suffix(".segment.zip").exists() and\
 			p.with_suffix(".warped.contours.zip").exists() and\
-			p.with_suffix(".warped.lines.zip").exists() and\
-			not p.with_suffix(".dewarped.transform.zip").exists() and\
-			not p.with_suffix(".dewarped.contours.zip").exists()
+			p.with_suffix(".warped.lines.zip").exists() and (
+			self._overwrite or (
+				not p.with_suffix(".dewarped.transform.zip").exists() and
+				not p.with_suffix(".dewarped.contours.zip").exists()))
 
 	def process(self, page_path: Path):
 		separators = self.read_separators(page_path)
@@ -69,13 +76,13 @@ class DewarpProcessor(BlockProcessor):
 			grid_res=self._options["grid_cell_size"])
 
 		zf_path = page_path.with_suffix(".dewarped.contours.zip")
-		with atomic_write(zf_path, mode="wb", overwrite=False) as f:
+		with atomic_write(zf_path, mode="wb", overwrite=self._overwrite) as f:
 			with zipfile.ZipFile(f, "w", self.compression) as zf:
 				for name, data in dewarped_contours(page_path, grid.transformer):
 					zf.writestr(name, data)
 
 		out_path = page_path.with_suffix(".dewarped.transform.zip")
-		with atomic_write(out_path, mode="wb", overwrite=False) as f:
+		with atomic_write(out_path, mode="wb", overwrite=self._overwrite) as f:
 			grid.save(f)
 
 
@@ -105,6 +112,11 @@ class DewarpProcessor(BlockProcessor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
+@click.option(
+	'--overwrite',
+	is_flag=True,
+	default=False,
+	help="Recompute and overwrite existing result files.")
 def dewarp(data_path, **kwargs):
 	""" Dewarp documents in DATA_PATH. """
 	processor = DewarpProcessor(kwargs)
