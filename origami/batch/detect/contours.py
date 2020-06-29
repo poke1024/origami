@@ -142,21 +142,6 @@ class ContoursProcessor(Processor):
 	default=4 / 1000,
 	help="Simplification of separator polylines.")
 @click.option(
-	'--ink-spread',
-	type=str,
-	default="(20, 20)",
-	help="Ink dilation for whitespace detection.")
-@click.option(
-	'--ink-opening',
-	type=str,
-	default="(5, 5)",
-	help="Opening amount to remove ink overflow between columns.")
-@click.option(
-	'--region-glue',
-	type=float,
-	default=0.02,
-	help="Threshold for considering region as glue blob.")
-@click.option(
 	'--name',
 	type=str,
 	default="",
