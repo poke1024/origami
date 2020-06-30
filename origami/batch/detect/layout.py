@@ -21,7 +21,7 @@ import logging
 
 from pathlib import Path
 from atomicwrites import atomic_write
-from functools import partial, reduce, lru_cache
+from functools import partial, reduce
 from cached_property import cached_property
 
 from origami.batch.core.block_processor import BlockProcessor
@@ -191,8 +191,10 @@ class Regions:
 				sources.extend(self.sources(x))
 			return sources
 
-	@lru_cache(maxsize=1024)
 	def line_heights(self, path):
+		# note: we must not cache this function, since with
+		# every combine() the result might change.
+
 		dewarper = self.page.dewarper
 		lines_by_block = self.warped_lines_by_block
 		heights = []
@@ -630,7 +632,7 @@ class FixSpillOver:
 
 
 class TableLayoutDetector:
-	def __init__(self, filters, label, axis, min_distance=50):
+	def __init__(self, filters, label, axis, min_distance=20):
 		self._filter = create_filter(filters)
 		self._label = label
 		self._axis = axis
@@ -722,6 +724,8 @@ def divide(shape, dividers, axis):
 
 
 def find_table_headers(areas, line_h):
+	if line_h is None:
+		return
 	for i, area in enumerate(areas):
 		if area.geom_type == "Polygon":
 			_, miny, _, maxy = area.bounds
@@ -758,10 +762,7 @@ def subdivide_table_blocks(filters, regions, columns, dividers):
 			return "%s.%s" % (block_id, ".".join(pos))
 
 		line_hs = regions.line_heights(k)
-		if len(line_hs) < 2:
-			split_contours[block_path[:2] + (make_id(1, 1, 1), )] = contour
-			continue
-		line_h = np.median(line_hs)
+		line_h = np.median(line_hs) if len(line_hs) >= 2 else None
 
 		areas = divide(contour, dividers.get(k, []), 1)
 		for i in list(find_table_headers(areas, line_h)):
