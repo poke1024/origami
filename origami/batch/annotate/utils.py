@@ -165,7 +165,7 @@ def render_contours(
 			qp.setOpacity(1)
 			# flags=QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter does
 			# not work. fix it manually.
-			label_str = str(1 + label)
+			label_str = label if isinstance(label, str) else str(label)
 			w = fm.horizontalAdvance(label_str)
 			qp.drawText(p.x() - w / 2, p.y() + fm.descent(), label_str)
 

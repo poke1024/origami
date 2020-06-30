@@ -83,18 +83,25 @@ class DebugLayoutProcessor(BlockProcessor):
 	def process(self, page_path: Path):
 		contours = self.read_reliable_contours(page_path)
 
-		with open(page_path.with_suffix(".order.json"), "r") as f:
-			xycut_data = json.loads(f.read())
-
 		with open(page_path.with_suffix(".tables.json"), "r") as f:
 			table_data = json.loads(f.read())
 
-		order = dict(
-			(tuple(path.split("/")), i)
-			for i, path in enumerate(xycut_data["orders"]["*"]))
+		if self._options["label"] == "order":
+			with open(page_path.with_suffix(".order.json"), "r") as f:
+				xycut_data = json.loads(f.read())
+
+			order = dict(
+				(tuple(path.split("/")), i)
+				for i, path in enumerate(xycut_data["orders"]["*"]))
+
+			labels = dict((x, 1 + order.get(x)) for x in contours.keys())
+		elif self._options["label"] == "id":
+			labels = dict((x, int(x[2])) for x in contours.keys())
+		else:
+			raise ValueError(self._options["label"])
 
 		def get_label(block_path):
-			return block_path[:2], order.get(block_path)
+			return block_path[:2], labels.get(block_path)
 
 		page = Page(page_path, dewarp=True)
 		predictors = self.read_predictors(page_path)
@@ -131,6 +138,11 @@ class DebugLayoutProcessor(BlockProcessor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'--label',
+	type=str,
+	default="order",
+	help="How to label the block nodes.")
 @click.option(
 	'--nolock',
 	is_flag=True,
