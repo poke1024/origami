@@ -112,7 +112,8 @@ def render_contours(
 		label_path = collections.defaultdict(list)
 		for i, (block_path, contour) in enumerate(contours.items()):
 			path, label = get_label(block_path)
-			label_path[path[:2]].append((label, block_path))
+			if label is not None:
+				label_path[path[:2]].append((label, block_path))
 
 		sorted_contours = dict()
 		for k in label_path.keys():
@@ -147,6 +148,9 @@ def render_contours(
 		node_r = 50
 
 		for block_path, contour in contours.items():
+			if contour.is_empty:
+				continue
+
 			x, y = contour.centroid.coords[0]
 			p = point(x, y)
 
@@ -280,13 +284,13 @@ def render_warped_line_confidence(pixmap, lines):
 	return pixmap
 
 
-def render_paths(pixmap, columns):
+def render_paths(pixmap, columns, color="blue"):
 	qp = QtGui.QPainter()
 	qp.begin(pixmap)
 
 	try:
 		qp.setOpacity(0.5)
-		qp.setPen(default_pen("blue", 10))
+		qp.setPen(default_pen(color, 10))
 
 		for path in columns:
 			poly = QtGui.QPolygonF()

@@ -47,7 +47,7 @@ class WarpDetectionProcessor(BlockProcessor):
 					block_id = parts[2]
 
 					for line_id, line in enumerate(lines):
-						line_name = "%s/%s/%s/%04d" % (
+						line_name = "%s/%s/%s/%d" % (
 							prediction_name, class_name, block_id, line_id)
 						zf.writestr("%s.json" % line_name, json.dumps(line.info))
 

@@ -5,15 +5,59 @@ import collections
 import zipfile
 import json
 import logging
+import shapely.ops
 
 from pathlib import Path
 from atomicwrites import atomic_write
+from itertools import chain
 
 from origami.batch.core.block_processor import BlockProcessor
 from origami.batch.core.lines import reliable_contours
 from origami.core.xycut import polygon_order
 from origami.core.segment import Segmentation
 from origami.core.separate import Separators, ObstacleSampler
+
+
+class Combinator:
+	def __init__(self, paths):
+		mapping = collections.defaultdict(list)
+		for k in paths:
+			parts = k[-1].split(".")
+			if len(parts) > 1:
+				mapping[k[:-1] + (parts[0], )].append(k)
+			else:
+				mapping[k].append(k)
+		self._mapping = mapping
+
+	def contours(self, contours):
+		combined = dict()
+		for k, v in self._mapping.items():
+			if len(v) == 1:
+				combined[k] = contours[v[0]]
+			else:
+				geom = shapely.ops.cascaded_union([
+					contours[x] for x in v])
+				if geom.geom_type != "Polygon":
+					geom = geom.convex_hull
+				combined[k] = geom
+		return combined
+
+	def lines(self, lines):
+		lines_by_block = collections.defaultdict(list)
+		for k, line in lines.items():
+			lines_by_block[k[:3]].append(line)
+
+		combined = dict()
+		for k, v in self._mapping.items():
+			combined[k] = list(chain(
+				*[lines_by_block[x] for x in v]))
+
+		new_lines = dict()
+		for k, v in combined.items():
+			for i, line in enumerate(v):
+				new_lines[k + (1 + i,)] = line
+
+		return new_lines
 
 
 class ReadingOrderProcessor(BlockProcessor):
@@ -39,6 +83,8 @@ class ReadingOrderProcessor(BlockProcessor):
 		return polygon_order(contours, fringe=fringe, score=sampler)
 
 	def xycut_orders(self, page, contours, separators):
+		contours = dict((k, v) for k, v in contours.items() if not v.is_empty)
+
 		by_labels = collections.defaultdict(list)
 		for p, contour in contours.items():
 			by_labels[p[:2]].append((p, contour))
@@ -56,25 +102,28 @@ class ReadingOrderProcessor(BlockProcessor):
 			return
 
 		page = list(blocks.values())[0].page
-		lines = self.read_aggregate_lines(page_path, blocks)
-		reliable = reliable_contours(blocks, lines)
+
+		combinator = Combinator(blocks.keys())
+		contours = combinator.contours(dict(
+			(k, v.image_space_polygon) for k, v in blocks.items()))
+		lines = combinator.lines(
+			self.read_aggregate_lines(page_path, blocks))
+		reliable = reliable_contours(contours, lines)
 
 		segmentation = Segmentation.open(
 			page_path.with_suffix(".segment.zip"))
 		separators = Separators(
 			segmentation, self.read_dewarped_separators(page_path))
 		
-		# with self.zip_file(p.with_suffix(".reliable.contours.zip"), self._overwrite) as zf:
-
 		zf_path = page_path.with_suffix(".reliable.contours.zip")
 		with atomic_write(zf_path, mode="wb", overwrite=self._overwrite) as f:
 			with zipfile.ZipFile(f, "w", self.compression) as zf:
 				info = dict(version=1)
 				zf.writestr("meta.json", json.dumps(info))
 				for k, contour in reliable.items():
-					if contour.geom_type != "Polygon":
+					if contour.geom_type != "Polygon" and not contour.is_empty:
 						logging.error(
-							"refined contour %s is %s" % (k, contour.geom_type))
+							"reliable contour %s is %s" % (k, contour.geom_type))
 					zf.writestr("/".join(k) + ".wkt", contour.wkt)
 
 		orders = self.xycut_orders(page, reliable, separators)

@@ -10,7 +10,7 @@ from functools import partial
 from origami.core.binarize import Binarizer
 
 
-def reliable_contours(all_blocks, all_lines, min_confidence=0.5):
+def reliable_contours(all_contours, all_lines, min_confidence=0.5):
 	block_lines = collections.defaultdict(list)
 	for path, line in all_lines.items():
 		if line.confidence > min_confidence:
@@ -20,16 +20,15 @@ def reliable_contours(all_blocks, all_lines, min_confidence=0.5):
 	for path, lines in block_lines.items():
 		hull = shapely.ops.cascaded_union([
 			line.image_space_polygon for line in lines]).convex_hull
-		geom = hull.intersection(
-			all_blocks[path].image_space_polygon)
+		geom = hull.intersection(all_contours[path])
 		if geom.geom_type != "Polygon":
 			geom = geom.convex_hull
 		reliable[path] = geom
 
 	# for contours, for which we have to lines at all, we keep
 	# the contour as is.
-	for k in set(all_blocks.keys()) - set(reliable.keys()):
-		reliable[k] = all_blocks[k].image_space_polygon
+	for k in set(all_contours.keys()) - set(reliable.keys()):
+		reliable[k] = all_contours[k]
 
 	return reliable
 
@@ -58,6 +57,17 @@ class LineExtractor:
 			deskewed=not self._options["do_not_deskew"],
 			binarizer=self._binarizer)
 
+	def _column_path(self, path, column):
+		assert column >= 1
+		predictor, label = path[:2]
+		parts = path[2].split(".")
+		if len(parts) != 4:
+			raise RuntimeError("%s is not a valid table path" % str(path))
+		block, division, _, _ = parts
+		line = 1 + int(path[-1])  # index of line inside this block division
+		grid = ".".join(map(str, (block, division, line, column)))
+		return predictor, label, grid, str(0)
+
 	def __call__(self, page_path, lines, ignored=[]):
 		lines = dict(
 			(k, v) for k, v in lines.items()
@@ -69,6 +79,9 @@ class LineExtractor:
 			(tuple(k.split("/")), xs)
 			for k, xs in table_data["columns"].items())
 
+		# this logic is intertwined with the logic in subdivide_table_blocks(). we
+		# split table rows, if our table data says so.
+
 		line_parts = []
 		for path, line in lines.items():
 			if line.confidence > self._min_confidence:
@@ -78,7 +91,7 @@ class LineExtractor:
 				else:
 					line_columns = [None] + line_columns + [None]
 					for i, (x0, x1) in enumerate(zip(line_columns, line_columns[1:])):
-						line_parts.append((path + (str(i),), line, (x0, x1)))
+						line_parts.append((self._column_path(path, 1 + i), line, (x0, x1)))
 
 		pool = multiprocessing.pool.ThreadPool(processes=8)
 		return pool.map(self._extract_line_image, line_parts)

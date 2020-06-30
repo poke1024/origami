@@ -88,6 +88,9 @@ class ObstacleSampler:
 		}
 
 	def __call__(self, gap):
+		if gap.du < 0.5 or gap.dv < 0.5:
+			return 0
+
 		k = 5
 		box = shapely.geometry.box(*outset_bounds(gap.bounds, k))
 

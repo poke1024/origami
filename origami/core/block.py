@@ -372,6 +372,10 @@ class Block:
 	def stage(self):
 		return self._stage
 
+	@property
+	def is_empty(self):
+		return self._image_space_polygon.is_empty
+
 	@lru_cache(maxsize=3)
 	def image(self, **kwargs):
 		mask = Mask(self.text_area(**kwargs))
@@ -437,6 +441,7 @@ class LineDetector:
 	def __init__(
 		self,
 		force_parallel_lines=False,
+		force_lines=False,
 		extra_height=0.05,
 		extra_descent=0,
 		contours_buffer=DEFAULT_BUFFER,
@@ -445,6 +450,7 @@ class LineDetector:
 		binarizer=Binarizer()):
 
 		self._force_parallel_baselines = force_parallel_lines
+		self._force_lines = force_lines
 
 		self._extra_height = extra_height
 		self._extra_descent = extra_descent
@@ -455,6 +461,27 @@ class LineDetector:
 			detail=contours_detail)
 
 		self._binarizer = binarizer
+
+	def create_fake_line(self, block, text_area):
+		minx, miny, maxx, maxy = block.image_space_polygon.bounds
+		h = maxy - miny
+
+		p1 = np.array([minx, maxy])
+		p2 = np.array([maxx, maxy])
+		up = np.array([0, -h])
+
+		baseline = dict(
+			baseline=(p1.tolist(), p2.tolist()),
+			descent=0,
+			ascent=h,
+			height=h)
+
+		return Line(
+			block,
+			p=p1, right=p2 - p1, up=up,
+			contour_data=self._contour_data,
+			tesseract_data=baseline,
+			text_area=text_area)
 
 	def detect_baselines(self, block):
 		import tesserocr
@@ -519,6 +546,9 @@ class LineDetector:
 		return baselines
 
 	def detect_lines(self, block):
+		if block.is_empty:
+			return []
+
 		text_area = block.text_area(**self._contour_data)
 		lines = []
 		for baseline in self.detect_baselines(block):
@@ -551,6 +581,9 @@ class LineDetector:
 					contour_data=self._contour_data,
 					tesseract_data=baseline,
 					text_area=text_area))
+
+		if self._force_lines and not lines:
+			lines.append(self.create_fake_line(block, text_area))
 
 		return lines
 

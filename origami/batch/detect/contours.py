@@ -58,10 +58,10 @@ class ContoursProcessor(Processor):
 						im.save(f, format='png')
 						data = f.getvalue()
 
-					zf.writestr("%s/%s/%03d.png" % (
+					zf.writestr("%s/%s/%d.png" % (
 						prediction.name, prediction_class.name, region_id), data)
 
-				zf.writestr("%s/%s/%03d.wkt" % (
+				zf.writestr("%s/%s/%d.wkt" % (
 					prediction.name, prediction_class.name, region_id), polygon.wkt)
 
 	def _process_separator_contours(self, zf, annotations, prediction):
@@ -83,7 +83,7 @@ class ContoursProcessor(Processor):
 		for prediction_class, shapes in region_separators.items():
 			widths = []
 			for separator_id, polyline in enumerate(shapes):
-				zf.writestr("%s/%s/%03d.wkt" % (
+				zf.writestr("%s/%s/%d.wkt" % (
 					prediction.name, prediction_class.name, separator_id), polyline.line_string.wkt)
 				widths.append(polyline.width)
 

@@ -21,7 +21,8 @@ import logging
 
 from pathlib import Path
 from atomicwrites import atomic_write
-from functools import partial, reduce
+from functools import partial, reduce, lru_cache
+from cached_property import cached_property
 
 from origami.batch.core.block_processor import BlockProcessor
 from origami.core.dewarp import Dewarper, Grid
@@ -90,6 +91,7 @@ class Regions:
 		self._line_counts = LineCounts(warped_lines)
 		self._warped_lines = warped_lines
 		self._union = union
+		self._mapped_from = collections.defaultdict(list)
 
 		max_labels = collections.defaultdict(int)
 		for k in self._contours.keys():
@@ -119,6 +121,13 @@ class Regions:
 	@property
 	def warped_lines(self) -> dict:
 		return self._warped_lines
+
+	@cached_property
+	def warped_lines_by_block(self) -> dict:
+		lines_by_block = collections.defaultdict(list)
+		for k, line in self._warped_lines.items():
+			lines_by_block[k[:3]].append(line)
+		return lines_by_block
 
 	@property
 	def by_labels(self):
@@ -150,6 +159,7 @@ class Regions:
 		for k in sources:
 			if k != agg_path:
 				self.remove_contour(k)
+				self._mapped_from[agg_path].append(k)
 
 	def combine_from_graph(self, graph):
 		if graph.number_of_edges() > 0:
@@ -170,6 +180,29 @@ class Regions:
 		path = label + (str(i),)
 		self._contours[path] = contour
 		contour.name = "/".join(path)
+
+	def sources(self, path):
+		m = self._mapped_from.get(path)
+		if m is None:
+			return [path]
+		else:
+			sources = []
+			for x in m:
+				sources.extend(self.sources(x))
+			return sources
+
+	@lru_cache(maxsize=1024)
+	def line_heights(self, path):
+		dewarper = self.page.dewarper
+		lines_by_block = self.warped_lines_by_block
+		heights = []
+
+		for source in self.sources(path):
+			lines = lines_by_block.get(source, [])
+			for line in lines:
+				heights.append(line.dewarped_height(dewarper))
+
+		return heights
 
 
 class Transformer:
@@ -230,27 +263,14 @@ class IsBelow:
 		self._min_alignment = alignment
 
 	def for_regions(self, regions):
-		lines = regions.warped_lines
-		dewarper = regions.page.dewarper
+		return partial(self.check, regions=regions)
 
-		lines_by_block = collections.defaultdict(list)
-		for k, line in lines.items():
-			lines_by_block[k[:3]].append(line)
-
-		heights = dict()
-		for k, v in lines_by_block.items():
-			heights[k] = [line.dewarped_height(dewarper) for line in v]
-
-		return partial(
-			self.check,
-			contours=regions.contours,
-			heights=heights)
-
-	def check(self, path_a, path_b, contours, heights):
-		hs = heights.get(path_a, []) + heights.get(path_b, [])
+	def check(self, path_a, path_b, regions):
+		hs = regions.line_heights(path_a) + regions.line_heights(path_b)
 		if len(hs) < 2:
 			return False
 
+		contours = regions.contours
 		contour_a = contours[path_a]
 		contour_b = contours[path_b]
 		minxa, minya, maxxa, maxya = contour_a.bounds
@@ -610,10 +630,11 @@ class FixSpillOver:
 
 
 class TableLayoutDetector:
-	def __init__(self, filters, column_label, min_column_distance=50):
+	def __init__(self, filters, label, axis, min_distance=50):
 		self._filter = create_filter(filters)
-		self._column_label = column_label
-		self._min_column_distance = min_column_distance
+		self._label = label
+		self._axis = axis
+		self._min_distance = min_distance
 
 	def __call__(self, regions):
 		contours = dict(
@@ -628,16 +649,16 @@ class TableLayoutDetector:
 			list(contours.values()))
 		seps = collections.defaultdict(list)
 
-		for sep in regions.separators.for_label(self._column_label):
+		for sep in regions.separators.for_label(self._label):
 			for contour in tree.query(sep):
 				if contour.intersects(sep):
 					path = tuple(contour.name.split("/"))
-					mx = np.median(np.array(sep.coords)[:, 0])
+					mx = np.median(np.array(sep.coords)[:, self._axis])
 					seps[path].append(mx)
 
 		agg = sklearn.cluster.AgglomerativeClustering(
 			n_clusters=None,
-			distance_threshold=self._min_column_distance,
+			distance_threshold=self._min_distance,
 			affinity="l1",
 			linkage="average",
 			compute_full_tree=True)
@@ -656,11 +677,123 @@ class TableLayoutDetector:
 			else:
 				columns[path] = [xs[0]]
 
-		return dict(
-			version=1,
-			columns=dict(
-				("/".join(path), [round(x, 1) for x in xs])
-				for path, xs in columns.items()))
+		return columns
+
+
+def divide(shape, dividers, axis):
+	if not dividers:
+		return [shape]
+
+	rest = shape
+	areas = []
+	for divider in sorted(dividers):
+		bounds = np.array(shape.bounds).reshape((2, 2))
+
+		p0 = bounds[0] - np.array([1, 1])
+		p1 = bounds[1] + np.array([1, 1])
+		p0[axis] = divider
+		p1[axis] = divider
+
+		line = shapely.geometry.LineString([p0, p1])
+		items = shapely.ops.split(rest, line)
+
+		bins = [[], []]
+		for geom in items:
+			coords = list(geom.centroid.coords)[0]
+			is_before = coords[axis] - divider < 0
+			bins[0 if is_before else 1].append(geom)
+
+		parts = []
+		for i in (0, 1):
+			geoms = bins[i]
+			if len(geoms) > 1:
+				part = shapely.ops.cascaded_union(geoms).convex_hull
+			elif len(geoms) == 1:
+				part = geoms[0]
+			else:
+				part = shapely.geometry.GeometryCollection()  # empty
+			parts.append(part)
+
+		areas.append(parts[0])
+		rest = parts[1]
+
+	areas.append(rest)
+	return areas
+
+
+def find_table_headers(areas, line_h):
+	for i, area in enumerate(areas):
+		if area.geom_type == "Polygon":
+			_, miny, _, maxy = area.bounds
+			if maxy - miny < 3 * line_h:
+				yield i
+
+
+def map_dict(values, mapping):
+	mapped_values = dict()
+	for k, v in values.items():
+		for k2 in mapping.get(k, [k]):
+			mapped_values[k2] = v
+	return mapped_values
+
+
+def subdivide_table_blocks(filters, regions, columns, dividers):
+	split_map = collections.defaultdict(list)
+	split_contours = dict()
+
+	contours = regions.contours
+	filter_ = create_filter(filters)
+
+	for k, contour in contours.items():
+		if not filter_(k):
+			split_contours[k] = contour
+			continue
+
+		block_path = k[:3]
+		block_id = block_path[-1]
+
+		def make_id(division, row, column):
+			pos = (division, row, column)
+			pos = list(map(str, filter(lambda x: x, pos)))
+			return "%s.%s" % (block_id, ".".join(pos))
+
+		line_hs = regions.line_heights(k)
+		if len(line_hs) < 2:
+			split_contours[block_path[:2] + (make_id(1, 1, 1), )] = contour
+			continue
+		line_h = np.median(line_hs)
+
+		areas = divide(contour, dividers.get(k, []), 1)
+		for i in list(find_table_headers(areas, line_h)):
+			areas[i] = divide(areas[i], columns.get(k, []), 0)
+
+		def split_block(split_block_id, area, add_to_map):
+			split_k = block_path[:2] + (split_block_id,)
+			if add_to_map:
+				split_map[k].append(split_k)
+			split_contours[split_k] = area
+
+		for i, area_y in enumerate(areas):
+			if isinstance(area_y, list):
+				for j, area_xy in enumerate(area_y):
+					split_block(make_id(
+						i + 1, 1, j + 1), area_xy, False)
+			elif k in columns:
+				# id will get rewritten for various columns
+				# inside LineExtractor._column_path
+				split_block(make_id(i + 1, 1, 1), area_y, True)
+			else:
+				# happens if we have a table without any
+				# detected T separators.
+				split_block(make_id(i + 1, 1, 1), area_y, False)
+
+	return split_contours, map_dict(columns, split_map), map_dict(dividers, split_map)
+
+
+def to_table_data_dict(items):
+	return dict(
+		("/".join(path), [round(x, 1) for x in xs])
+		for path, xs in items.items())
 
 
 class LayoutDetectionProcessor(BlockProcessor):
@@ -692,8 +825,10 @@ class LayoutDetectionProcessor(BlockProcessor):
 			FixSpillOver("regions/TEXT")
 		])
 
-		self._table_layout_detector = TableLayoutDetector(
-			"regions/TABULAR", "separators/T")
+		self._table_column_detector = TableLayoutDetector(
+			"regions/TABULAR", "separators/T", axis=0)
+		self._table_divider_detector = TableLayoutDetector(
+			"regions/TABULAR", "separators/H", axis=1)
 
 	@property
 	def processor_name(self):
@@ -732,7 +867,16 @@ class LayoutDetectionProcessor(BlockProcessor):
 			self._union)
 		self._transformer(regions)
 
-		table_data = self._table_layout_detector(regions)
+		split_contours, columns, dividers = subdivide_table_blocks(
+			"regions/TABULAR",
+			regions,
+			columns=self._table_column_detector(regions),
+			dividers=self._table_divider_detector(regions))
+
+		table_data = dict(
+			version=1,
+			columns=to_table_data_dict(columns),
+			dividers=to_table_data_dict(dividers))
 
 		with atomic_write(
 			page_path.with_suffix(".tables.json"),
@@ -743,9 +887,9 @@ class LayoutDetectionProcessor(BlockProcessor):
 		with atomic_write(zf_path, mode="wb", overwrite=self._overwrite) as f:
 			with zipfile.ZipFile(f, "w", self.compression) as zf:
 				zf.writestr("meta.json", meta)
-				for path, shape in regions.contours.items():
-					if shape.geom_type != "Polygon":
-						logging.info("contour %s is %s" % (path, geom.geom_type))
+				for path, shape in split_contours.items():
+					if shape.geom_type != "Polygon" and not shape.is_empty:
+						logging.info("contour %s is %s" % (path, shape.geom_type))
 					zf.writestr("/".join(path) + ".wkt", shape.wkt.encode("utf8"))
 
 

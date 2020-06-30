@@ -28,12 +28,36 @@ def linestrings(geom):
 		for g in geom.geoms:
 			for ls in linestrings(g):
 				yield ls
+	else:
+		raise RuntimeError("unexpected geom_type %s" % geom.geom_type)
+
+
+def cond_table_data(data):
+	data2 = dict()
+	for k, v in data.items():
+		k = tuple(k.split("/"))
+		k2 = k[:-1] + (k[-1].split(".")[0],)
+		data2["/".join(k2)] = v
+	return data2
 
 
 def column_paths(shape, x):
+	if shape.is_empty:
+		return
+	ext_shape = shape.buffer(10)
 	_, miny, _, maxy = shape.bounds
 	line = shapely.geometry.LineString([[x, miny - 1], [x, maxy + 1]])
-	for geom in linestrings(line.intersection(shape)):
+	for geom in linestrings(line.intersection(ext_shape)):
+		yield list(geom.coords)
+
+
+def divider_paths(shape, y):
+	if shape.is_empty:
+		return
+	ext_shape = shape.buffer(10)
+	minx, _, maxx, _ = shape.bounds
+	line = shapely.geometry.LineString([[minx - 1, y], [maxx + 1, y]])
+	for geom in linestrings(line.intersection(ext_shape)):
 		yield list(geom.coords)
 
 
@@ -70,7 +94,7 @@ class DebugLayoutProcessor(BlockProcessor):
 			for i, path in enumerate(xycut_data["orders"]["*"]))
 
 		def get_label(block_path):
-			return block_path[:2], order[block_path]
+			return block_path[:2], order.get(block_path)
 
 		page = Page(page_path, dewarp=True)
 		predictors = self.read_predictors(page_path)
@@ -83,12 +107,20 @@ class DebugLayoutProcessor(BlockProcessor):
 			get_label, predictors, alternate=True)
 
 		columns = []
-		for path, xs in table_data["columns"].items():
+		for path, xs in cond_table_data(table_data["columns"]).items():
 			path = tuple(path.split("/"))
 			for x in xs:
 				for coords in column_paths(contours[path], x):
 					columns.append(coords)
-		pixmap = render_paths(pixmap, columns)
+		pixmap = render_paths(pixmap, columns, "blue")
+
+		dividers = []
+		for path, ys in cond_table_data(table_data["dividers"]).items():
+			path = tuple(path.split("/"))
+			for y in ys:
+				for coords in divider_paths(contours[path], y):
+					dividers.append(coords)
+		pixmap = render_paths(pixmap, dividers, "magenta")
 
 		pixmap.toImage().save(str(
 			page_path.with_suffix(".annotate.layout.jpg")))

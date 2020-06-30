@@ -79,6 +79,7 @@ class LineDetectionProcessor(BlockProcessor):
 
 		detector = ConcurrentLineDetector(
 			force_parallel_lines=False,
+			force_lines=True,
 			extra_height=self._options["extra_height"],
 			extra_descent=self._options["extra_descent"],
 			contours_buffer=self._options["contours_buffer"],
@@ -104,7 +105,7 @@ class LineDetectionProcessor(BlockProcessor):
 					block_id = parts[2]
 
 					for line_id, line in enumerate(lines):
-						line_name = "%s/%s/%s/%04d" % (
+						line_name = "%s/%s/%s/%d" % (
 							prediction_name, class_name, block_id, line_id)
 						zf.writestr("%s.json" % line_name, json.dumps(line.info))
 
