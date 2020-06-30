@@ -45,7 +45,7 @@ class Table:
 				for column in columns:
 					texts = [s.strip() for s in self._texts.get(
 						(division, row, column), [])]
-					row_data.append(" ".join(texts))
+					row_data.append("\n".join(texts))
 				table_data.append(row_data)
 
 		if len(columns) == 1:
@@ -134,7 +134,6 @@ class ComposeProcessor(BlockProcessor):
 			for k, texts in regular.items():
 				texts_by_block[k] = line_separator.join(texts).strip()
 			for k, table in tables.items():
-				print("TABLE", k)
 				texts_by_block[k] = table.to_text()
 
 			for path in map(lambda x: tuple(x.split("/")), order):
