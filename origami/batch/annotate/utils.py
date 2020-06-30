@@ -93,7 +93,7 @@ def render_blocks(pixmap, blocks, *args, **kwargs):
 def render_contours(
 	pixmap, contours, get_label,
 	predictors=None, brushes=None, matrix=None,
-	alternate=False):
+	alternate=False, edges=None):
 
 	if brushes is None:
 		brushes = LabelBrushes(predictors)
@@ -143,6 +143,8 @@ def render_contours(
 		fm = QtGui.QFontMetrics(font)
 
 		qp.setPen(default_pen())
+		nodes = dict()
+		node_r = 50
 
 		for block_path, contour in contours.items():
 			x, y = contour.centroid.coords[0]
@@ -152,7 +154,9 @@ def render_contours(
 			qp.setBrush(brushes.get_brush(block_path, lighter=150))
 
 			qp.setOpacity(0.8)
-			qp.drawEllipse(p, 50, 50)
+			qp.drawEllipse(p, node_r, node_r)
+			if edges:
+				nodes[block_path] = p
 
 			qp.setOpacity(1)
 			# flags=QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter does
@@ -160,6 +164,14 @@ def render_contours(
 			label_str = str(1 + label)
 			w = fm.horizontalAdvance(label_str)
 			qp.drawText(p.x() - w / 2, p.y() + fm.descent(), label_str)
+
+		if edges:
+			qp.setOpacity(0.8)
+			qp.setPen(default_pen(width=10))
+
+			for p, q in edges:
+				coords = [nodes[p], nodes[q]]
+				qp.drawPolyline(coords)
 
 	finally:
 		qp.end()

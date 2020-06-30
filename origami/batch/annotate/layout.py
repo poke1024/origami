@@ -57,8 +57,6 @@ class DebugLayoutProcessor(BlockProcessor):
 				not p.with_suffix(".annotate.layout.jpg").exists())
 
 	def process(self, page_path: Path):
-		#blocks = self.read_aggregate_blocks(page_path)
-		#lines = self.read_aggregate_lines(page_path, blocks)
 		contours = self.read_reliable_contours(page_path)
 
 		with open(page_path.with_suffix(".order.json"), "r") as f:
@@ -70,9 +68,6 @@ class DebugLayoutProcessor(BlockProcessor):
 		order = dict(
 			(tuple(path.split("/")), i)
 			for i, path in enumerate(xycut_data["orders"]["*"]))
-		#blocks = dict(
-		#	(path, blocks[path])
-		#	for path in blocks.keys() if path in order)
 
 		def get_label(block_path):
 			return block_path[:2], order[block_path]
