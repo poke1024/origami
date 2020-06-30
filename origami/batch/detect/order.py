@@ -63,7 +63,7 @@ class ReadingOrderProcessor(BlockProcessor):
 			page_path.with_suffix(".segment.zip"))
 		separators = Separators(
 			segmentation, self.read_dewarped_separators(page_path))
-
+		
 		# with self.zip_file(p.with_suffix(".reliable.contours.zip"), self._overwrite) as zf:
 
 		zf_path = page_path.with_suffix(".reliable.contours.zip")

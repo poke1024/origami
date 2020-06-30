@@ -294,14 +294,27 @@ class Line:
 				ascent=self._tesseract_data['ascent'],
 				height=self._tesseract_data['height']))
 
-	@property
+	@cached_property
 	def length(self):
 		return np.linalg.norm(self._right)
 
-	@property
+	@cached_property
 	def unextended_length(self):
 		p1, p2 = self._tesseract_data['baseline']
 		return np.linalg.norm(np.array(p1) - np.array(p2))
+
+	@cached_property
+	def height(self):
+		return np.linalg.norm(self._up)
+
+	def dewarped_height(self, dewarper):
+		assert not self._block.stage.is_dewarped
+		p0, right, up = self._p, self._right, self._up
+		tfm = dewarper.grid.transformer
+		p1 = p0 + up
+		tx, ty = tfm(*np.array([p0, p1]).transpose())
+		q0, q1 = np.array([tx, ty]).transpose()
+		return np.linalg.norm(q1 - q0)
 
 
 def _extended_baseline(text_area, p, right, up, max_ext=3):

@@ -78,7 +78,7 @@ class LineCounts:
 
 
 class Regions:
-	def __init__(self, page, lines, contours, separators, union):
+	def __init__(self, page, warped_lines, contours, separators, union):
 		self._page = page
 
 		self._contours = dict(contours)
@@ -87,7 +87,8 @@ class Regions:
 			contour.name = "/".join(k)
 		self.separators = separators
 
-		self._line_counts = LineCounts(lines)
+		self._line_counts = LineCounts(warped_lines)
+		self._warped_lines = warped_lines
 		self._union = union
 
 		max_labels = collections.defaultdict(int)
@@ -114,6 +115,10 @@ class Regions:
 	@property
 	def contours(self) -> dict:
 		return self._contours
+
+	@property
+	def warped_lines(self) -> dict:
+		return self._warped_lines
 
 	@property
 	def by_labels(self):
@@ -180,22 +185,27 @@ class Transformer:
 				logging.error("after stage %d, %s" % (i, e))
 
 
-class Dilation:
-	def __init__(self, spec):
-		self._operator = DilationOperator(spec)
+def _alignment(a0, a1, b0, b1):
+	span_a = portion.closed(a0, a1)
+	span_b = portion.closed(b0, b1)
+	shared = span_a & span_b
+	if shared.empty:
+		return 0
 
-	def __call__(self, regions):
-		regions.map(lambda _, contour: self._operator(regions.page, contour))
+	return (shared.upper - shared.lower) / min(
+		a1 - a0, b1 - b0)
 
 
-class AdjacencyMerger:
-	def __init__(self, filters, max_line_count=3, cohesion=0.8, alignment=0.8):
-		self._filter = create_filter(filters)
+class IsOnSameLine:
+	def __init__(self, max_line_count=3, cohesion=0.8, alignment=0.8):
 		self._max_line_count = max_line_count
 		self._cohesion = cohesion
 		self._min_alignment = alignment
 
-	def _should_merge(self, regions, p, q):
+	def for_regions(self, regions):
+		return partial(self.check, regions=regions)
+
+	def check(self, p, q, regions):
 		lc = regions.line_count
 		if max(lc(p), lc(q)) > self._max_line_count:
 			return False
@@ -207,18 +217,67 @@ class AdjacencyMerger:
 		_, ay0, _, ay1 = a.bounds
 		_, by0, _, by1 = b.bounds
 
-		shared = portion.closed(ay0, ay1) & portion.closed(by0, by1)
-		if shared.empty:
-			return False
-
-		overlap = shared.upper - shared.lower
-		alignment = overlap / min(ay1 - ay0, by1 - by0)
-		if alignment < self._min_alignment:
+		if _alignment(ay0, ay1, by0, by1) < self._min_alignment:
 			return False
 
 		u = regions.union([a, b])
 		c = _cohesion([a, b], u)
 		return c > self._cohesion
+
+
+class IsBelow:
+	def __init__(self, alignment=0.95):
+		self._min_alignment = alignment
+
+	def for_regions(self, regions):
+		lines = regions.warped_lines
+		dewarper = regions.page.dewarper
+
+		lines_by_block = collections.defaultdict(list)
+		for k, line in lines.items():
+			lines_by_block[k[:3]].append(line)
+
+		heights = dict()
+		for k, v in lines_by_block.items():
+			heights[k] = [line.dewarped_height(dewarper) for line in v]
+
+		return partial(
+			self.check,
+			contours=regions.contours,
+			heights=heights)
+
+	def check(self, path_a, path_b, contours, heights):
+		hs = heights.get(path_a, []) + heights.get(path_b, [])
+		if len(hs) < 2:
+			return False
+
+		contour_a = contours[path_a]
+		contour_b = contours[path_b]
+		minxa, minya, maxxa, maxya = contour_a.bounds
+		minxb, minyb, maxxb, maxyb = contour_b.bounds
+
+		h = np.median(hs)
+		if not (0 < minyb - maxya < h):
+			return False
+
+		if _alignment(minxa, maxxa, minxb, maxxb) < self._min_alignment:
+			return False
+
+		return True
+
+
+class Dilation:
+	def __init__(self, spec):
+		self._operator = DilationOperator(spec)
+
+	def __call__(self, regions):
+		regions.map(lambda _, contour: self._operator(regions.page, contour))
+
+
+class AdjacencyMerger:
+	def __init__(self, filters, criterion):
+		self._filter = create_filter(filters)
+		self._criterion = criterion
 
 	def __call__(self, regions):
 		paths = []
@@ -243,12 +302,14 @@ class AdjacencyMerger:
 		graph = networkx.Graph()
 		graph.add_nodes_from(paths)
 
+		should_merge = self._criterion.for_regions(regions)
+
 		checked = set()
 		for p in paths:
 			for q in neighbors[p]:
 				if (p, q) in checked:
 					continue
-				if self._should_merge(regions, p, q):
+				if should_merge(p, q):
 					graph.add_edge(p, q)
 				checked.add((p, q))
 
@@ -614,7 +675,8 @@ class LayoutDetectionProcessor(BlockProcessor):
 
 		self._transformer = Transformer([
 			Dilation(self._options["dilation"]),
-			AdjacencyMerger("regions/TEXT", max_line_count=3),
+			AdjacencyMerger(
+				"regions/TEXT", IsOnSameLine(max_line_count=3)),
 			OverlapMerger(self._options["maximum_overlap"]),
 			Shrinker(),
 			SequentialMerger(
@@ -625,6 +687,8 @@ class LayoutDetectionProcessor(BlockProcessor):
 				obstacles=[
 					"separators/H",
 					"separators/V"]),
+			AdjacencyMerger(
+				"regions/TABULAR", IsBelow()),
 			FixSpillOver("regions/TEXT")
 		])
 
