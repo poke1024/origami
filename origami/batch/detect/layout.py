@@ -12,7 +12,7 @@ import skimage.filters
 import scipy.spatial
 import zipfile
 import PIL.Image
-import networkx
+import networkx as nx
 import collections
 import cv2
 import intervaltree
@@ -31,6 +31,7 @@ from origami.core.segment import Segmentation
 from origami.core.separate import Separators
 from origami.core.math import inset_bounds
 from origami.core.xycut import polygon_order
+from origami.core.neighbors import neighbors
 
 
 def overlap_ratio(a, b):
@@ -163,7 +164,7 @@ class Regions:
 
 	def combine_from_graph(self, graph):
 		if graph.number_of_edges() > 0:
-			for nodes in networkx.connected_components(graph):
+			for nodes in nx.connected_components(graph):
 				self.combine(nodes)
 
 	def modify_contour(self, path, contour):
@@ -267,18 +268,10 @@ class IsBelow:
 	def for_regions(self, regions):
 		return partial(self.check, regions=regions)
 
-	def check(self, path_a, path_b, regions):
-		hs = regions.line_heights(path_a) + regions.line_heights(path_b)
-		if len(hs) < 2:
-			return False
-
-		contours = regions.contours
-		contour_a = contours[path_a]
-		contour_b = contours[path_b]
+	def _is_below(self, contour_a, contour_b, h):
 		minxa, minya, maxxa, maxya = contour_a.bounds
 		minxb, minyb, maxxb, maxyb = contour_b.bounds
 
-		h = np.median(hs)
 		if not (0 < minyb - maxya < h):
 			return False
 
@@ -286,6 +279,18 @@ class IsBelow:
 			return False
 
 		return True
+
+	def check(self, path_a, path_b, regions):
+		hs = regions.line_heights(path_a) + regions.line_heights(path_b)
+		if len(hs) < 2:
+			return False
+		h = np.median(hs)
+
+		contours = regions.contours
+		a = contours[path_a]
+		b = contours[path_b]
+
+		return self._is_below(a, b, h) or self._is_below(b, a, h)
 
 
 class Dilation:
@@ -302,38 +307,16 @@ class AdjacencyMerger:
 		self._criterion = criterion
 
 	def __call__(self, regions):
-		paths = []
-		points = []
-		for k, c in regions.contours.items():
-			minx, miny, maxx, maxy = c.bounds
-			pts = [(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)]
-			for pt in pts:
-				paths.append(k)
-				points.append(pt)
-
-		vor = scipy.spatial.Voronoi(points)
-
-		neighbors = collections.defaultdict(set)
-		for i, j in vor.ridge_points:
-			if not self._filter(paths[i]):
-				continue
-			if paths[i][:2] == paths[j][:2]:
-				neighbors[paths[i]].add(paths[j])
-				neighbors[paths[j]].add(paths[i])
-
-		graph = networkx.Graph()
-		graph.add_nodes_from(paths)
-
 		should_merge = self._criterion.for_regions(regions)
+		neighbors_ = neighbors(regions.contours)
 
-		checked = set()
-		for p in paths:
-			for q in neighbors[p]:
-				if (p, q) in checked:
-					continue
+		graph = nx.Graph()
+		graph.add_nodes_from(regions.contours.keys())
+
+		for p, q in neighbors_.edges():
+			if self._filter(p) and self._filter(q):
 				if should_merge(p, q):
 					graph.add_edge(p, q)
-				checked.add((p, q))
 
 		regions.combine_from_graph(graph)
 
@@ -343,7 +326,7 @@ class OverlapMerger:
 		self._maximum_overlap = maximum_overlap
 
 	def _merge(self, regions, contours):
-		graph = networkx.Graph()
+		graph = nx.Graph()
 		graph.add_nodes_from([
 			tuple(c.name.split("/")) for c in contours])
 
@@ -484,7 +467,7 @@ class SequentialMerger:
 		label = names[0][:2]
 		assert(all(x[:2] == label for x in names))
 
-		graph = networkx.Graph()
+		graph = nx.Graph()
 		graph.add_nodes_from(names)
 
 		i = 0
@@ -823,6 +806,7 @@ class LayoutDetectionProcessor(BlockProcessor):
 					"separators/V"]),
 			AdjacencyMerger(
 				"regions/TABULAR", IsBelow()),
+			OverlapMerger(self._options["maximum_overlap"]),
 			FixSpillOver("regions/TEXT")
 		])
 

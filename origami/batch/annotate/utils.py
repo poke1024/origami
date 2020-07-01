@@ -1,4 +1,5 @@
 import numpy as np
+import networkx as nx
 import logging
 import collections
 
@@ -6,6 +7,7 @@ from PySide2 import QtGui, QtCore
 from functools import lru_cache
 
 from origami.core.predict import PredictorType
+from origami.core.neighbors import neighbors
 
 
 class Pens:
@@ -13,7 +15,8 @@ class Pens:
 		self._pens = dict()
 
 		for i, k in enumerate(keys):
-			color = QtGui.QColor.fromHsv(20 + 230 * (i / (1 + len(keys))), 200, 250)
+			color = QtGui.QColor.fromHsv(
+				20 + 230 * (i / (1 + len(keys))), 200, 250)
 			pen = QtGui.QPen()
 			pen.setWidth(width)
 			pen.setColor(color)
@@ -64,17 +67,19 @@ class LabelBrushes:
 	def __init__(self, predictors):
 		self._classes = get_region_classes(predictors)
 
-	@lru_cache(maxsize=8)
-	def brushes(self, lighter=0):
+	@lru_cache(maxsize=32)
+	def brushes(self, hue=0, saturation=0, value=0, style=QtCore.Qt.SolidPattern):
 		brushes = dict()
-		for c, hsv in block_hsv(self._classes):
+		for c, (h, s, v) in block_hsv(self._classes):
 			brushes[c] = QtGui.QBrush(
-				QtGui.QColor.fromHsv(*hsv).lighter(lighter))
+				QtGui.QColor.fromHsv(
+					(h + hue) % 256, s + saturation, v + value),
+				style)
 		return brushes
 
-	def get_brush(self, block_path, lighter=0):
+	def get_brush(self, block_path, **kwargs):
 		classifier, label, block_id = block_path
-		return self.brushes(lighter)[(classifier, label)]
+		return self.brushes(**kwargs)[(classifier, label)]
 
 
 def default_pen(color="black", width=5):
@@ -90,6 +95,16 @@ def render_blocks(pixmap, blocks, *args, **kwargs):
 	return render_contours(pixmap, contours, *args, **kwargs)
 
 
+_patterns = (
+	QtCore.Qt.SolidPattern,
+	QtCore.Qt.Dense1Pattern,
+	QtCore.Qt.Dense2Pattern,
+	QtCore.Qt.Dense3Pattern,
+	QtCore.Qt.Dense4Pattern,
+	QtCore.Qt.Dense5Pattern
+)
+
+
 def render_contours(
 	pixmap, contours, get_label,
 	predictors=None, brushes=None, matrix=None,
@@ -102,6 +117,15 @@ def render_contours(
 		if matrix is not None:
 			x, y = matrix @ np.array([x, y, 1])
 		return QtCore.QPointF(x, y)
+
+	if alternate:
+		smaller_contours = dict(
+			(k, v.buffer(-10)) for k, v in contours.items())
+		neighbors_ = neighbors(smaller_contours)
+		patterns = nx.algorithms.coloring.equitable_color(
+			neighbors_, 1 + max(d for _, d in neighbors_.degree()))
+	else:
+		patterns = None
 
 	qp = QtGui.QPainter()
 	qp.begin(pixmap)
@@ -128,8 +152,13 @@ def render_contours(
 							contour.geom_type, block_path))
 					continue
 
-				lighter = (i % 2) * 150 if alternate else 0
-				qp.setBrush(brushes.get_brush(block_path, lighter=lighter))
+				if patterns:
+					style = _patterns[patterns[block_path] % len(_patterns)]
+				else:
+					style = QtCore.Qt.SolidPattern
+
+				qp.setBrush(brushes.get_brush(
+					block_path, style=style))
 
 				poly = QtGui.QPolygonF()
 				for x, y in contour.exterior.coords:
@@ -155,7 +184,7 @@ def render_contours(
 			p = point(x, y)
 
 			path, label = get_label(block_path)
-			qp.setBrush(brushes.get_brush(block_path, lighter=150))
+			qp.setBrush(brushes.get_brush(block_path, value=50))
 
 			qp.setOpacity(0.8)
 			qp.drawEllipse(p, node_r, node_r)
