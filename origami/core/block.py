@@ -45,10 +45,9 @@ def intersect_segments(a, b, default=None):
 class Line:
 	def __init__(
 		self, block, p, right, up,
-		contour_data, tesseract_data,
+		tesseract_data,
 		wkt=None, text_area=None, confidence=1):
 
-		self._contour_data = contour_data
 		self._tesseract_data = tesseract_data
 		self._block = block
 
@@ -85,11 +84,9 @@ class Line:
 	def update_confidence(self, confidence):
 		self._confidence = confidence
 
-	def annotate(self, buffer=DEFAULT_BUFFER):
+	def annotate(self, text_area):
 		im, pos = self.block.extract_image(buffer)
 		pixels = np.array(im.convert("RGB"))
-
-		text_area = self.block.text_area(**self._contour_data)
 
 		pts = np.array(list(text_area.exterior.coords)) - pos
 		for p, q in zip(pts, pts[1:]):
@@ -283,11 +280,6 @@ class Line:
 			up=self._up.tolist(),
 			wkt=self._polygon.wkt,
 			confidence=self._confidence,
-			contour_data=dict(
-				buffer=self._contour_data["buffer"],
-				concavity=self._contour_data["concavity"],
-				detail=self._contour_data["detail"]
-			),
 			tesseract_data=dict(
 				baseline=self._tesseract_data['baseline'],
 				descent=self._tesseract_data['descent'],
@@ -376,34 +368,14 @@ class Block:
 	def is_empty(self):
 		return self._image_space_polygon.is_empty
 
-	@lru_cache(maxsize=3)
-	def image(self, **kwargs):
-		mask = Mask(self.text_area(**kwargs))
+	def image(self, text_area):
+		mask = Mask(text_area)
 		return mask.extract_image(
 			self.page_pixels, background=self.background)
 
 	@property
 	def image_space_polygon(self):
 		return self._image_space_polygon
-
-	@lru_cache(maxsize=3)
-	def text_area(self, buffer=DEFAULT_BUFFER, concavity=2, detail=0.01):
-		mag = self.page.magnitude(self._stage.is_dewarped)
-
-		poly = self.image_space_polygon.buffer(mag * buffer)
-
-		if concavity > 1:
-			from origami.concaveman import concaveman2d
-
-			ext = np.array(poly.exterior.coords)
-			pts = concaveman2d(
-				ext,
-				scipy.spatial.ConvexHull(ext).vertices,
-				concavity=concavity,
-				lengthThreshold=mag * detail)
-			return shapely.geometry.Polygon(pts)
-		else:  # disable concaveman
-			return poly
 
 	@property
 	def coords(self):
@@ -426,6 +398,23 @@ class Block:
 		return max(maxx - minx, maxy - miny)
 
 
+class TextAreaFactory:
+	def __init__(self, blocks=[], buffer=DEFAULT_BUFFER):
+		self._blocks = blocks
+		self._buffer = buffer
+		self._tree = shapely.strtree.STRtree([
+			block.image_space_polygon for block in blocks
+		])
+
+	def __call__(self, block):
+		mag = block.page.magnitude(block.stage.is_dewarped)
+		polygon = block.image_space_polygon.buffer(mag * self._buffer)
+		for other in self._tree.query(polygon):
+			if other is not block.image_space_polygon:
+				polygon = polygon.difference(other)
+		return polygon
+
+
 def padded(im, pad=32, background_color=255):
 	im = im.convert("L")
 	width, height = im.size
@@ -444,9 +433,7 @@ class LineDetector:
 		force_lines=False,
 		extra_height=0.05,
 		extra_descent=0,
-		contours_buffer=DEFAULT_BUFFER,
-		contours_concavity=2,
-		contours_detail=0.001,
+		text_area_factory=TextAreaFactory(),
 		binarizer=Binarizer()):
 
 		self._force_parallel_baselines = force_parallel_lines
@@ -455,11 +442,7 @@ class LineDetector:
 		self._extra_height = extra_height
 		self._extra_descent = extra_descent
 
-		self._contour_data = dict(
-			buffer=contours_buffer,
-			concavity=contours_concavity,
-			detail=contours_detail)
-
+		self._text_area_factory = text_area_factory
 		self._binarizer = binarizer
 
 	def create_fake_line(self, block, text_area):
@@ -479,11 +462,10 @@ class LineDetector:
 		return Line(
 			block,
 			p=p1, right=p2 - p1, up=up,
-			contour_data=self._contour_data,
 			tesseract_data=baseline,
 			text_area=text_area)
 
-	def detect_baselines(self, block):
+	def detect_baselines(self, block, text_area):
 		import tesserocr
 
 		with tesserocr.PyTessBaseAPI(psm=tesserocr.PSM.SINGLE_BLOCK) as api:
@@ -502,7 +484,7 @@ class LineDetector:
 				bg = block.background
 
 			pad = 32
-			im, pos = block.image(**self._contour_data)
+			im, pos = block.image(text_area)
 			im = padded(im, pad=pad, background_color=bg)
 
 			if self._binarizer is not None:
@@ -549,9 +531,12 @@ class LineDetector:
 		if block.is_empty:
 			return []
 
-		text_area = block.text_area(**self._contour_data)
+		text_area = self._text_area_factory(block)
+		if text_area.is_empty:
+			return []
+
 		lines = []
-		for baseline in self.detect_baselines(block):
+		for baseline in self.detect_baselines(block, text_area):
 			p1, p2 = baseline['baseline']
 			descent = baseline['descent']
 
@@ -578,7 +563,6 @@ class LineDetector:
 				Line(
 					block,
 					**spec,
-					contour_data=self._contour_data,
 					tesseract_data=baseline,
 					text_area=text_area))
 

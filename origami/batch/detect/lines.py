@@ -11,7 +11,7 @@ from pathlib import Path
 from atomicwrites import atomic_write
 
 from origami.batch.core.block_processor import BlockProcessor
-from origami.core.block import ConcurrentLineDetector
+from origami.core.block import ConcurrentLineDetector, TextAreaFactory
 from origami.core.segment import Segmentation
 from origami.core.predict import PredictorType
 
@@ -78,13 +78,13 @@ class LineDetectionProcessor(BlockProcessor):
 		sampler = ConfidenceSampler(page_path, blocks)
 
 		detector = ConcurrentLineDetector(
+			text_area_factory=TextAreaFactory(
+				list(blocks.values()),
+				buffer=self._options["contours_buffer"]),
 			force_parallel_lines=False,
 			force_lines=True,
 			extra_height=self._options["extra_height"],
-			extra_descent=self._options["extra_descent"],
-			contours_buffer=self._options["contours_buffer"],
-			contours_concavity=self._options["contours_concavity"],
-			contours_detail=self._options["contours_detail"])
+			extra_descent=self._options["extra_descent"])
 
 		block_lines = detector(blocks)
 
@@ -126,17 +126,7 @@ class LineDetectionProcessor(BlockProcessor):
 	'--contours-buffer',
 	default=0.0015,
 	type=float,
-	help='contour boundary expansion')
-@click.option(
-	'--contours-concavity',
-	default=8,
-	type=float,
-	help='contour concavity')
-@click.option(
-	'--contours-detail',
-	default=0.01,
-	type=float,
-	help='contour detail in terms of segment length')
+	help='contour expansion')
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),
