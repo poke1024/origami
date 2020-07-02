@@ -551,12 +551,27 @@ class Shrinker:
 
 
 class FixSpillOver:
-	def __init__(self, filters, band=0.01, peak=0.9, min_line_count=3, window_size=15):
+	def __init__(
+			self, filters,
+			band=0.01, peak=0.9, whratio=1.5, min_line_count=3,
+			min_area=0.2, window_size=15):
+
+		# "whratio" is measured in line height (lh). examples:
+		# good split: w=90, lh=35, whratio=2.5
+		# bad split: w=30, lh=40, whratio=0.75
+
 		self._filter = create_filter(filters)
 		self._band = band
 		self._peak = peak
+		self._whratio = whratio
 		self._min_line_count = min_line_count
+		self._min_area = min_area
 		self._window_size = window_size
+
+	def _good_split(self, union, shapes):
+		union_area = union.area
+		min_area = min([shape.area for shape in shapes])
+		return min_area >= union_area * self._min_area
 
 	def __call__(self, regions):
 		# for each contour, sample the binarized image.
@@ -565,10 +580,11 @@ class FixSpillOver:
 		# since we dewarped, we know columns are unskewed.
 		page = regions.page
 		pixels = np.array(page.dewarped.convert("L"))
+		mag = page.magnitude(False)
 
 		kernel_w = max(
 			10,  # pixels in warped image space
-			int(np.ceil(page.magnitude(False) * self._band)))
+			int(np.ceil(mag * self._band)))
 
 		splits = []
 
@@ -578,6 +594,8 @@ class FixSpillOver:
 
 			if regions.line_count(k) < self._min_line_count:
 				continue
+
+			line_height = np.median(regions.line_heights(k))
 
 			minx, miny, maxx, maxy = contour.bounds
 
@@ -597,7 +615,9 @@ class FixSpillOver:
 				whitespace, np.ones((kernel_w,)) / kernel_w, mode="same")
 
 			peaks, info = scipy.signal.find_peaks(
-				whitespace, height=self._peak)
+				whitespace,
+				height=self._peak,
+				width=line_height * self._whratio)
 
 			if len(peaks) > 0:
 				i = np.argmax(info["peak_heights"])
@@ -610,9 +630,11 @@ class FixSpillOver:
 				splits.append((k, contour, sep))
 
 		for k, contour, sep in splits:
-			regions.remove_contour(k)
-			for shape in shapely.ops.split(contour, sep).geoms:
-				regions.add_contour(k[:2], shape)
+			shapes = shapely.ops.split(contour, sep).geoms
+			if self._good_split(contour, shapes):
+				regions.remove_contour(k)
+				for shape in shapes:
+					regions.add_contour(k[:2], shape)
 
 
 class TableLayoutDetector:
