@@ -108,7 +108,9 @@ class SegmentationPredictor:
 			loaded = predict.load([
 				(predict.NetPredictor, "v3/sep/1"),
 				(predict.NetPredictor, "v3/sep/2"),
+				(predict.NetPredictor, "v3/sep/3"),
 				(predict.NetPredictor, "v3/sep/4"),
+				(predict.NetPredictor, "v3/sep/5"),
 				(predict.NetPredictor, "v3/blkx/1"),
 				(predict.NetPredictor, "v3/blkx/2"),
 				(predict.NetPredictor, "v3/blkx/3"),
@@ -120,7 +122,9 @@ class SegmentationPredictor:
 				predict.VotingPredictor(
 					loaded["v3/sep/1"],
 					loaded["v3/sep/2"],
+					loaded["v3/sep/3"],
 					loaded["v3/sep/4"],
+					loaded["v3/sep/5"],
 					name="separators"),
 				predict.VotingPredictor(
 					loaded["v3/blkx/1"],
