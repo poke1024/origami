@@ -2,7 +2,9 @@
 
 import imghdr
 import click
+import json
 import collections
+import numpy as np
 
 from pathlib import Path
 from tabulate import tabulate
@@ -24,6 +26,15 @@ class StatsProcessor(Processor):
 
 		self._num_pages = 0
 		self._artifacts = collections.defaultdict(int)
+		self._times = collections.defaultdict(list)
+
+	def add_runtimes(self, path):
+		with open(path, "r") as f:
+			runtime_data = json.loads(f.read())
+			for batch, data in runtime_data.items():
+				t = data.get("total_time")
+				if t is not None:
+					self._times[batch].append(t)
 
 	def artifacts(self):
 		return []
@@ -41,17 +52,43 @@ class StatsProcessor(Processor):
 		for p in data_path.iterdir():
 			if not p.name.startswith("."):
 				self._artifacts[p.name] += 1
+			if p.name == "runtime.json":
+				self.add_runtimes(p)
 
-	def print(self):
+	def print_artifacts(self):
 		data = []
-
 		data.append(["pages", str(self._num_pages)])
 		for name, n in sorted(self._artifacts.items()):
 			data.append([name, str(n)])
-
 		print(tabulate(data, tablefmt="psql"))
 
+	def print_runtimes(self):
+		data = []
+		for k in sorted(list(self._times.keys())):
+			v = self._times[k]
+			data.append((
+				k,
+				"%.1f" % np.min(v),
+				"%.1f" % np.median(v),
+				"%.1f" % np.max(v)))
+		print(tabulate(
+			data,
+			tablefmt="psql",
+			headers=["batch", "min", "median", "max"]))
+
+	def print(self):
+		if self._artifacts:
+			print("artifacts.")
+			self.print_artifacts()
+
+		if self._times:
+			print("")
+			print("runtimes.")
+			self.print_runtimes()
+
 		if self._list_names:
+			print("")
+			print("names.")
 			for name in self._names:
 				print(name)
 
