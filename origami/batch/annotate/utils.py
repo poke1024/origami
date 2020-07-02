@@ -159,6 +159,9 @@ def render_contours(
 
 		for k in sorted_contours.keys():
 			for i, (block_path, contour) in enumerate(sorted_contours[k]):
+				if contour.is_empty:
+					continue
+
 				if contour.geom_type != "Polygon":
 					logging.error(
 						"encountered %s while rendering contour %s" % (
