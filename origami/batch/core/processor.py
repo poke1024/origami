@@ -20,13 +20,16 @@ from origami.batch.core.io import *
 
 class Processor:
 	def __init__(self, options):
-		self._lock_files = not options["nolock"]
+		self._lock_files = not options.get("nolock", True)
 		self._overwrite = options.get("overwrite", False)
 		self._name = options.get("name", "")
 
 	@property
 	def processor_name(self):
 		return self.__class__.__name__
+
+	def should_process(self, page_path):
+		return True
 
 	def prepare_process(self, page_path):
 		artifacts = self.artifacts()
@@ -62,6 +65,9 @@ class Processor:
 				if self._name and not re.search(self._name, str(p)):
 					continue
 				if imghdr.what(p) is None:
+					continue
+
+				if not self.should_process(p):
 					continue
 
 				kwargs = self.prepare_process(p)
