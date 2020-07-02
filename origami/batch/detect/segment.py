@@ -21,7 +21,7 @@ class SegmentationProcessor(Processor):
 
 	def artifacts(self):
 		return [
-			("output", Output(Artifact.SEGMENT)),
+			("output", Output(Artifact.SEGMENTATION)),
 		]
 
 	def process(self, p: Path, output):
