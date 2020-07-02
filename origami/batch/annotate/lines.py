@@ -8,11 +8,11 @@ from pathlib import Path
 from PySide2 import QtGui, QtCore
 from PIL.ImageQt import ImageQt
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
 from origami.batch.annotate.utils import render_warped_line_paths, render_warped_line_confidence
 
 
-class DebugLinesProcessor(BlockProcessor):
+class DebugLinesProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options

@@ -8,11 +8,11 @@ import origami.pagexml.pagexml as pagexml
 
 from pathlib import Path
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
 from origami.core.block import Line
 
 
-class ExportPageXMLProcessor(BlockProcessor):
+class ExportPageXMLProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options

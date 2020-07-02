@@ -7,11 +7,11 @@ from pathlib import Path
 from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
 from origami.batch.annotate.utils import render_blocks, render_separators
 
 
-class DebugContoursProcessor(BlockProcessor):
+class DebugContoursProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options

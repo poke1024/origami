@@ -7,6 +7,7 @@ from atomicwrites import atomic_write
 
 from origami.core.segment import SegmentationPredictor
 from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 
 
 class SegmentationProcessor(Processor):
@@ -18,16 +19,14 @@ class SegmentationProcessor(Processor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			not p.with_suffix(".segment.zip").exists()
+	def artifacts(self):
+		return [
+			("output", Output(Artifact.SEGMENT)),
+		]
 
-	def process(self, p: Path):
+	def process(self, p: Path, output):
 		segmentation = self._predictor(p)
-
-		zf_path = p.with_suffix(".segment.zip")
-		with atomic_write(zf_path, mode="wb", overwrite=False) as f:
-			segmentation.save(f)
+		output.segmentation(segmentation)
 
 
 @click.command()

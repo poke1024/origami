@@ -24,16 +24,6 @@ BACKGROUND = 0.8
 DEFAULT_BUFFER = 0.0015
 
 
-class Stage(enum.Enum):
-	WARPED = 0
-	DEWARPED = 1
-	AGGREGATE = 2
-
-	@property
-	def is_dewarped(self):
-		return self.value >= Stage.DEWARPED.value
-
-
 def intersect_segments(a, b, default=None):
 	c = a.intersection(b)
 	if c.geom_type == "Point":
@@ -200,11 +190,11 @@ class Line:
 
 		return p0, right, up, xres
 
-	def dewarped_grid(self, xsteps=None, ysteps=None, xres=1, yres=1, column=None):
+	def warped_grid(self, xsteps=None, ysteps=None, xres=1, yres=1, column=None):
 		p0, right, up, xres = self._position(xres, column)
 
 		if xsteps is None or ysteps is None:
-			rough_grid = self.dewarped_grid(xsteps=2, ysteps=2)
+			rough_grid = self.warped_grid(xsteps=2, ysteps=2)
 			assert tuple(rough_grid.shape[:2]) == (2, 2)
 
 		if xsteps is None:
@@ -230,7 +220,7 @@ class Line:
 	def dewarped_image(self, target_height=48, column=None, interpolation=cv2.INTER_LINEAR):
 		assert self.block.stage.is_dewarped
 
-		warped_grid = self.dewarped_grid(ysteps=target_height, column=column)
+		warped_grid = self.warped_grid(ysteps=target_height, column=column)
 
 		pixels = np.array(self.block.page.warped)
 		pixels = cv2.remap(pixels, warped_grid, None, interpolation)
@@ -241,7 +231,7 @@ class Line:
 	def warped_path(self, resolution=1):
 		assert self.block.stage.is_dewarped
 
-		warped_grid = self.dewarped_grid(ysteps=2, xres=resolution)
+		warped_grid = self.warped_grid(ysteps=2, xres=resolution)
 
 		height = np.median(np.linalg.norm(warped_grid[1] - warped_grid[0], axis=-1))
 		return np.mean(warped_grid, axis=0), abs(height)

@@ -6,13 +6,13 @@ import logging
 import multiprocessing.pool
 
 from pathlib import Path
-from atomicwrites import atomic_write
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.block import ConcurrentLineDetector
 
 
-class WarpDetectionProcessor(BlockProcessor):
+class WarpDetectionProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -21,35 +21,31 @@ class WarpDetectionProcessor(BlockProcessor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return (imghdr.what(p) is not None) and\
-			p.with_suffix(".warped.contours.zip").exists() and\
-			not p.with_suffix(".warped.lines.zip").exists()
+	def artifacts(self):
+		return [
+			("input", Input(Artifact.CONTOURS, stage=Stage.WARPED)),
+			("output", Output(Artifact.LINES, stage=Stage.WARPED))
+		]
 
-	def process(self, page_path: Path):
-		blocks = self.read_blocks(page_path)
-
+	def process(self, page_path: Path, input, output):
 		detector = ConcurrentLineDetector(
 			force_parallel_lines=False)
 
-		block_lines = detector(blocks)
+		block_lines = detector(input.blocks)
 
-		lines_path = page_path.with_suffix(".warped.lines.zip")
-		with atomic_write(lines_path, mode="wb", overwrite=False) as f:
+		with output.lines() as zf:
+			info = dict(version=1)
+			zf.writestr("meta.json", json.dumps(info))
 
-			with zipfile.ZipFile(f, "w", compression=self.compression) as zf:
-				info = dict(version=1)
-				zf.writestr("meta.json", json.dumps(info))
+			for parts, lines in block_lines.items():
+				prediction_name = parts[0]
+				class_name = parts[1]
+				block_id = parts[2]
 
-				for parts, lines in block_lines.items():
-					prediction_name = parts[0]
-					class_name = parts[1]
-					block_id = parts[2]
-
-					for line_id, line in enumerate(lines):
-						line_name = "%s/%s/%s/%d" % (
-							prediction_name, class_name, block_id, line_id)
-						zf.writestr("%s.json" % line_name, json.dumps(line.info))
+				for line_id, line in enumerate(lines):
+					line_name = "%s/%s/%s/%d" % (
+						prediction_name, class_name, block_id, line_id)
+					zf.writestr("%s.json" % line_name, json.dumps(line.info))
 
 
 @click.command()

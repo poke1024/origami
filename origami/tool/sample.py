@@ -7,7 +7,7 @@ import functools
 
 from pathlib import Path
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
 from origami.pagexml.transcriptions import TranscriptionReader
 
 
@@ -43,7 +43,7 @@ def _parse_samplers(spec):
 	return counts
 
 
-class SampleProcessor(BlockProcessor):
+class SampleProcessor(Processor):
 	def __init__(self, data_path, options):
 		super().__init__(options)
 		self._data_path = Path(data_path)

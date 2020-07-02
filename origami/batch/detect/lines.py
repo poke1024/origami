@@ -10,7 +10,8 @@ import cv2
 from pathlib import Path
 from atomicwrites import atomic_write
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.block import ConcurrentLineDetector, TextAreaFactory
 from origami.core.segment import Segmentation
 from origami.core.predict import PredictorType
@@ -24,9 +25,7 @@ def scale_grid(s0, s1, grid):
 
 
 class ConfidenceSampler:
-	def __init__(self, page_path, blocks):
-		segmentation = Segmentation.open(
-			page_path.with_suffix(".segment.zip"))
+	def __init__(self, blocks, segmentation):
 		self._predictions = dict()
 		for p in segmentation.predictions:
 			self._predictions[p.name] = p
@@ -40,7 +39,7 @@ class ConfidenceSampler:
 		predictor = self._predictions[prediction_name]
 		lineclass = predictor.classes[predictor_class]
 
-		grid = line.dewarped_grid(xres=res, yres=res)
+		grid = line.warped_grid(xres=res, yres=res)
 
 		scale_grid(self._page_shape, predictor.labels.shape, grid)
 		labels = cv2.remap(predictor.labels, grid, None, cv2.INTER_NEAREST)
@@ -53,7 +52,7 @@ class ConfidenceSampler:
 		return counts[lineclass.value] / sum_all
 
 
-class LineDetectionProcessor(BlockProcessor):
+class LineDetectionProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -63,19 +62,19 @@ class LineDetectionProcessor(BlockProcessor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return (imghdr.what(p) is not None) and\
-			p.with_suffix(".segment.zip").exists() and\
-			p.with_suffix(".aggregate.contours.zip").exists() and(
-				self._overwrite or
-				not p.with_suffix(".aggregate.lines.zip").exists())
+	def artifacts(self):
+		return [
+			("warped", Input(Artifact.SEGMENTATION, stage=Stage.WARPED)),
+			("aggregate", Input(Artifact.CONTOURS, stage=Stage.AGGREGATE)),
+			("output", Output(Artifact.LINES, stage=Stage.AGGREGATE))
+		]
 
-	def process(self, page_path: Path):
-		blocks = self.read_aggregate_blocks(page_path)
+	def process(self, page_path: Path, warped, aggregate, output):
+		blocks = aggregate.blocks
 		if not blocks:
 			return
 
-		sampler = ConfidenceSampler(page_path, blocks)
+		sampler = ConfidenceSampler(blocks, warped.segmentation)
 
 		detector = ConcurrentLineDetector(
 			text_area_factory=TextAreaFactory(
@@ -92,22 +91,19 @@ class LineDetectionProcessor(BlockProcessor):
 			for line in lines:
 				line.update_confidence(sampler(block_path, line))
 
-		lines_path = page_path.with_suffix(".aggregate.lines.zip")
-		with atomic_write(lines_path, mode="wb", overwrite=self._overwrite) as f:
+		with output.lines() as zf:
+			info = dict(version=1)
+			zf.writestr("meta.json", json.dumps(info))
 
-			with zipfile.ZipFile(f, "w", compression=self.compression) as zf:
-				info = dict(version=1)
-				zf.writestr("meta.json", json.dumps(info))
+			for parts, lines in block_lines.items():
+				prediction_name = parts[0]
+				class_name = parts[1]
+				block_id = parts[2]
 
-				for parts, lines in block_lines.items():
-					prediction_name = parts[0]
-					class_name = parts[1]
-					block_id = parts[2]
-
-					for line_id, line in enumerate(lines):
-						line_name = "%s/%s/%s/%d" % (
-							prediction_name, class_name, block_id, line_id)
-						zf.writestr("%s.json" % line_name, json.dumps(line.info))
+				for line_id, line in enumerate(lines):
+					line_name = "%s/%s/%s/%d" % (
+						prediction_name, class_name, block_id, line_id)
+					zf.writestr("%s.json" % line_name, json.dumps(line.info))
 
 
 

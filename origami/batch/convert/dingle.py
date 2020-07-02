@@ -6,14 +6,20 @@ import json
 
 from pathlib import Path
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output, DebuggingArtifact
 from origami.pagexml import pagexml
 
 
 def parse_line_path(path):
 	path = path.rsplit(".", 1)[0]
 	region, kind, block_id, line_id = path.split("/")
-	return region, kind, int(block_id), int(line_id)
+	return region, kind, tuple(map(int, block_id.split("."))), int(line_id)
+
+
+def text_region_name(path):
+	block_id = ".".join(map(str, path[2]))
+	return "-".join(map(str, path[:2] + (block_id,)))
 
 
 def normalize_text(text):
@@ -22,7 +28,7 @@ def normalize_text(text):
 	return text
 
 
-class DinglehopperProcessor(BlockProcessor):
+class DinglehopperProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -33,17 +39,14 @@ class DinglehopperProcessor(BlockProcessor):
 		else:
 			self._block_filter = None
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".ocr.zip").exists() and\
-			p.with_suffix(".xycut.json").exists() and\
-			not p.with_suffix(".dinglehopper.xml").exists()
+	def artifacts(self):
+		return [
+			("input", Input(Artifact.OCR, Artifact.ORDER, stage=Stage.RELIABLE)),
+			("output", Output(DebuggingArtifact("dinglehopper.xml"))),
+		]
 
-	def process(self, page_path: Path):
-		texts = dict()
-		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
-			for name in zf.namelist():
-				texts[name] = normalize_text(zf.read(name).decode("utf8"))
+	def process(self, page_path: Path, input, output):
+		texts = input.ocr
 
 		paths = list(map(parse_line_path, list(texts.keys())))
 		path_to_name = dict(zip(paths, texts.keys()))
@@ -57,10 +60,9 @@ class DinglehopperProcessor(BlockProcessor):
 		doc = pagexml.Document(page_path.name, im.size)
 
 		if self._use_xy_cut:
-			with open(page_path.with_suffix(".xycut.json"), "r") as f:
-				xycut_data = json.loads(f.read())
+			xycut_data = input.order
 
-			orders = xycut_data["order"]
+			orders = xycut_data["orders"]
 			if self._block_filter:
 				order = orders["/".join(self._block_filter)]
 			else:
@@ -69,7 +71,9 @@ class DinglehopperProcessor(BlockProcessor):
 			ordered_blocks = []
 			for block_name in order:
 				region, kind, block_id = block_name.split("/")
-				ordered_blocks.append((region, kind, int(block_id)))
+				ordered_blocks.append((region, kind, (int(block_id),)))
+				# FIXME. to include table data here, would need to expand
+				# (int(block_id),) into all forms occuring in ocr output.
 		else:
 			ordered_blocks = block_paths
 
@@ -80,7 +84,7 @@ class DinglehopperProcessor(BlockProcessor):
 			if self._block_filter and block_path[:2] != self._block_filter:
 				continue
 
-			region = pagexml.TextRegion("-".join(map(str, block_path)))
+			region = pagexml.TextRegion(text_region_name(block_path))
 			doc.append(region)
 
 			line_text = []
@@ -90,7 +94,7 @@ class DinglehopperProcessor(BlockProcessor):
 
 			region.append_text_equiv("\n".join(line_text))
 
-		doc.write(page_path.with_suffix(".dinglehopper.xml"), validate=False)
+		doc.write(output.paths[0], validate=False)
 
 
 @click.command()

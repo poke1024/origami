@@ -9,16 +9,16 @@ import scipy.ndimage
 import skimage.morphology
 
 from pathlib import Path
-from atomicwrites import atomic_write
 from ast import literal_eval as make_tuple
 from functools import partial
 
 from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 
 from origami.core.segment import Segmentation
 from origami.core.page import Page, Annotations
 import origami.core.contours as contours
-from origami.core.block import Block, Stage
+from origami.core.block import Block
 from origami.core.predict import PredictorType
 
 
@@ -90,13 +90,14 @@ class ContoursProcessor(Processor):
 			zf.writestr("%s/%s/meta.json" % (
 				prediction.name, prediction_class.name), json.dumps(dict(width=widths)))
 
-	def should_process(self, p: Path) -> bool:
-		return (imghdr.what(p) is not None) and\
-			p.with_suffix(".segment.zip").exists() and\
-			not p.with_suffix(".warped.contours.zip").exists()
+	def artifacts(self):
+		return [
+			("input", Input(Artifact.SEGMENTATION)),
+			("output", Output(Artifact.CONTOURS, stage=Stage.WARPED))
+		]
 
-	def process(self, p: Path):
-		segmentation = Segmentation.open(p.with_suffix(".segment.zip"))
+	def process(self, p: Path, input, output):
+		segmentation = input.segmentation
 
 		page = Page(p)
 		annotations = Annotations(page, segmentation)
@@ -106,14 +107,12 @@ class ContoursProcessor(Processor):
 			(PredictorType.SEPARATOR, self._process_separator_contours)
 		))
 
-		zf_path = p.with_suffix(".warped.contours.zip")
-		with atomic_write(zf_path, mode="wb", overwrite=False) as f:
-			with zipfile.ZipFile(f, "w", self.compression) as zf:
-				info = dict(version=1)
-				for prediction in segmentation.predictions:
-					handlers[prediction.type](zf, annotations, prediction)
-					info[prediction.name] = dict(type=prediction.type.name)
-				zf.writestr("meta.json", json.dumps(info))
+		with output.contours() as zf:
+			info = dict(version=1)
+			for prediction in segmentation.predictions:
+				handlers[prediction.type](zf, annotations, prediction)
+				info[prediction.name] = dict(type=prediction.type.name)
+			zf.writestr("meta.json", json.dumps(info))
 
 
 @click.command()

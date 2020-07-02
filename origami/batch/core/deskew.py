@@ -5,7 +5,6 @@ import cv2
 import shapely.affinity
 import PIL.Image
 
-from origami.batch.core.utils import *
 from origami.core.math import to_shapely_matrix
 
 

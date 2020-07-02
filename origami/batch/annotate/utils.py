@@ -119,9 +119,16 @@ def render_contours(
 		return QtCore.QPointF(x, y)
 
 	if alternate:
-		smaller_contours = dict(
-			(k, v.buffer(-10)) for k, v in contours.items())
-		neighbors_ = neighbors(smaller_contours)
+		buffered_contours = dict(
+			(k, v.buffer(-5)) for k, v in contours.items())
+		neighbors_ = neighbors(buffered_contours)
+		threshold = 10
+		apart = set()
+		for a, b in neighbors_.edges():
+			if buffered_contours[a].distance(buffered_contours[b]) > threshold:
+				apart.add((a, b))
+		for a, b in apart:
+			neighbors_.remove_edge(a, b)
 		patterns = nx.algorithms.coloring.equitable_color(
 			neighbors_, 1 + max(d for _, d in neighbors_.degree()))
 	else:

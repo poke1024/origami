@@ -9,8 +9,8 @@ from PySide2 import QtWidgets, QtGui, QtCore
 from pathlib import Path
 from functools import lru_cache
 
-from origami.batch.core.utils import *
 from origami.batch.core.deskew import Deskewer
+from origami.batch.core.io import Reader, Artifact, Stage
 from origami.batch.annotate.utils import render_blocks, default_pen
 
 from origami.core.page import Page
@@ -49,27 +49,30 @@ class Canvas(QtWidgets.QScrollArea):
 			im = PIL.Image.open(page_path)
 			qt_im = ImageQt(deskewer.image(im))
 		elif stage == "dewarped":
-			blocks = read_blocks(page_path, stage=Stage.AGGREGATE)
+			reader = Reader([Artifact.CONTOURS], Stage.AGGREGATE, page_path)
+			blocks = reader.blocks
 
 			for block_path, block in blocks.items():
 				polygons[block_path] = block.image_space_polygon
 
-			page = Page(page_path, True)
+			page = reader.page
 			qt_im = ImageQt(page.dewarped)
 		elif stage == "reliable":
-			segmentation = Segmentation.open(
-				page_path.with_suffix(".segment.zip"))
+			warped = Reader([Artifact.SEGMENTATION], Stage.WARPED, page_path)
+			reliable = Reader([Artifact.CONTOURS], Stage.RELIABLE, page_path)
+
 			separators = Separators(
-				segmentation, read_separators(
-					page_path, stage=Stage.DEWARPED))
+				warped.segmentation, reliable.separators)
 			self._xycut_score = ObstacleSampler(separators)
 
-			contours = read_reliable_contours(page_path)
+			contours = dict(
+				(k, b.image_space_polygon)
+				for k, b in reliable.blocks.items())
 
 			for block_path, polygon in contours.items():
 				polygons[block_path] = polygon
 
-			page = Page(page_path, True)
+			page = reliable.page
 			qt_im = ImageQt(page.dewarped)
 		else:
 			raise ValueError(mode)

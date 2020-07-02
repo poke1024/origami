@@ -11,7 +11,8 @@ from pathlib import Path
 from atomicwrites import atomic_write
 from itertools import chain
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.batch.core.lines import reliable_contours
 from origami.core.xycut import polygon_order
 from origami.core.segment import Segmentation
@@ -60,7 +61,7 @@ class Combinator:
 		return new_lines
 
 
-class ReadingOrderProcessor(BlockProcessor):
+class ReadingOrderProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -69,13 +70,6 @@ class ReadingOrderProcessor(BlockProcessor):
 	@property
 	def processor_name(self):
 		return __loader__.name
-
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".aggregate.lines.zip").exists() and (
-			self._overwrite or (
-				not p.with_suffix(".order.json").exists() and
-				not p.with_suffix(".reliable.contours.zip").exists()))
 
 	def compute_order(self, page, contours, sampler):
 		mag = page.magnitude(dewarped=True)
@@ -96,8 +90,16 @@ class ReadingOrderProcessor(BlockProcessor):
 			(p, self.compute_order(page, v, sampler))
 			for p, v in by_labels.items())
 
-	def process(self, page_path: Path):
-		blocks = self.read_aggregate_blocks(page_path)
+	def artifacts(self):
+		return [
+			("warped", Input(Artifact.SEGMENTATION, stage=Stage.WARPED)),
+			("dewarped", Input(Artifact.CONTOURS, stage=Stage.DEWARPED)),
+			("aggregate", Input(Artifact.CONTOURS, Artifact.LINES, stage=Stage.AGGREGATE)),
+			("output", Output(Artifact.ORDER, Artifact.CONTOURS, stage=Stage.RELIABLE)),
+		]
+
+	def process(self, page_path: Path, warped, dewarped, aggregate, output):
+		blocks = aggregate.blocks
 		if not blocks:
 			return
 
@@ -106,38 +108,27 @@ class ReadingOrderProcessor(BlockProcessor):
 		combinator = Combinator(blocks.keys())
 		contours = combinator.contours(dict(
 			(k, v.image_space_polygon) for k, v in blocks.items()))
-		lines = combinator.lines(
-			self.read_aggregate_lines(page_path, blocks))
+		lines = combinator.lines(aggregate.lines)
 		reliable = reliable_contours(contours, lines)
 
-		segmentation = Segmentation.open(
-			page_path.with_suffix(".segment.zip"))
 		separators = Separators(
-			segmentation, self.read_dewarped_separators(page_path))
-		
-		zf_path = page_path.with_suffix(".reliable.contours.zip")
-		with atomic_write(zf_path, mode="wb", overwrite=self._overwrite) as f:
-			with zipfile.ZipFile(f, "w", self.compression) as zf:
-				info = dict(version=1)
-				zf.writestr("meta.json", json.dumps(info))
-				for k, contour in reliable.items():
-					if contour.geom_type != "Polygon" and not contour.is_empty:
-						logging.error(
-							"reliable contour %s is %s" % (k, contour.geom_type))
-					zf.writestr("/".join(k) + ".wkt", contour.wkt)
+			warped.segmentation, dewarped.separators)
+
+		with output.contours(copy_meta_from=aggregate) as zf:
+			for k, contour in reliable.items():
+				if contour.geom_type != "Polygon" and not contour.is_empty:
+					logging.error(
+						"reliable contour %s is %s" % (k, contour.geom_type))
+				zf.writestr("/".join(k) + ".wkt", contour.wkt)
 
 		orders = self.xycut_orders(page, reliable, separators)
 
 		orders = dict(("/".join(k), [
 			"/".join(p) for p in ps]) for k, ps in orders.items())
 
-		data = dict(
+		output.order(dict(
 			version=1,
-			orders=orders)
-
-		zf_path = page_path.with_suffix(".order.json")
-		with atomic_write(zf_path, mode="w", overwrite=self._overwrite) as f:
-			f.write(json.dumps(data))
+			orders=orders))
 
 
 @click.command()

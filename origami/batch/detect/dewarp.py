@@ -11,12 +11,13 @@ import PIL.Image
 from pathlib import Path
 from atomicwrites import atomic_write
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.dewarp import Dewarper, Grid
 
 
-def dewarped_contours(page_path, transformer):
-	with open(page_path.with_suffix(".warped.contours.zip"), "rb") as f:
+def dewarped_contours(input, transformer):
+	with open(input.path(Artifact.CONTOURS), "rb") as f:
 		with zipfile.ZipFile(f, "r") as zf:
 			for name in zf.namelist():
 				if name.endswith(".wkt"):
@@ -26,11 +27,9 @@ def dewarped_contours(page_path, transformer):
 						logging.error("dewarped contour %s is %s" % (
 							name, geom.geom_type))
 					yield name, geom.wkt.encode("utf8")
-				else:
-					yield name, zf.read(name)
 
 
-class DewarpProcessor(BlockProcessor):
+class DewarpProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -40,22 +39,26 @@ class DewarpProcessor(BlockProcessor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".segment.zip").exists() and\
-			p.with_suffix(".warped.contours.zip").exists() and\
-			p.with_suffix(".warped.lines.zip").exists() and (
-			self._overwrite or (
-				not p.with_suffix(".dewarped.transform.zip").exists() and
-				not p.with_suffix(".dewarped.contours.zip").exists()))
+	def artifacts(self):
+		return [
+			("input", Input(
+				Artifact.CONTOURS,
+				Artifact.LINES,
+				stage=Stage.WARPED)),
+			("output", Output(
+				Artifact.DEWARPING_TRANSFORM,
+				Artifact.CONTOURS,
+				stage=Stage.DEWARPED))
+		]
 
-	def process(self, page_path: Path):
-		separators = self.read_separators(page_path)
-		blocks = self.read_blocks(page_path)
-		lines = self.read_lines(page_path, blocks)
+	def process(self, page_path: Path, input, output):
+		blocks = input.blocks
 
 		if not blocks:
 			return
+
+		lines = input.lines
+		separators = input.separators
 
 		page = list(blocks.values())[0].page
 
@@ -75,14 +78,11 @@ class DewarpProcessor(BlockProcessor):
 			blocks, lines, separators,
 			grid_res=self._options["grid_cell_size"])
 
-		zf_path = page_path.with_suffix(".dewarped.contours.zip")
-		with atomic_write(zf_path, mode="wb", overwrite=self._overwrite) as f:
-			with zipfile.ZipFile(f, "w", self.compression) as zf:
-				for name, data in dewarped_contours(page_path, grid.transformer):
-					zf.writestr(name, data)
+		with output.contours(copy_meta_from=input) as zf:
+			for name, data in dewarped_contours(input, grid.transformer):
+				zf.writestr(name, data)
 
-		out_path = page_path.with_suffix(".dewarped.transform.zip")
-		with atomic_write(out_path, mode="wb", overwrite=self._overwrite) as f:
+		with output.dewarping_transform() as f:
 			grid.save(f)
 
 

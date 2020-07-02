@@ -34,7 +34,7 @@ def reliable_contours(all_contours, all_lines, min_confidence=0.5):
 
 
 class LineExtractor:
-	def __init__(self, line_height, options, min_confidence=0.5):
+	def __init__(self, tables, line_height, options, min_confidence=0.5):
 		self._options = options
 		self._line_height = line_height
 		assert self._line_height is not None
@@ -46,6 +46,10 @@ class LineExtractor:
 			self._binarizer = None
 
 		self._min_confidence = min_confidence
+
+		self._columns = dict(
+			(tuple(k.split("/")), xs)
+			for k, xs in tables["columns"].items())
 
 	def _extract_line_image(self, item):
 		line_path, line, column = item
@@ -68,16 +72,10 @@ class LineExtractor:
 		grid = ".".join(map(str, (block, division, line, column)))
 		return predictor, label, grid, str(0)
 
-	def __call__(self, page_path, lines, ignored=[]):
+	def __call__(self, lines, ignored=[]):
 		lines = dict(
 			(k, v) for k, v in lines.items()
 			if tuple(k[:2]) not in ignored)
-
-		with open(page_path.with_suffix(".tables.json"), "r") as f:
-			table_data = json.loads(f.read())
-		columns = dict(
-			(tuple(k.split("/")), xs)
-			for k, xs in table_data["columns"].items())
 
 		# this logic is intertwined with the logic in subdivide_table_blocks(). we
 		# split table rows, if our table data says so.
@@ -85,7 +83,7 @@ class LineExtractor:
 		line_parts = []
 		for path, line in lines.items():
 			if line.confidence > self._min_confidence:
-				line_columns = columns.get(path[:3])
+				line_columns = self._columns.get(path[:3])
 				if line_columns is None:
 					line_parts.append((path, line, None))
 				else:

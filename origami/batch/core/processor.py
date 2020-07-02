@@ -6,21 +6,44 @@ import zipfile
 import portalocker
 import contextlib
 import traceback
+import imghdr
 
 from pathlib import Path
+from functools import partial
 from tqdm import tqdm
+from atomicwrites import atomic_write
+from contextlib import contextmanager
 
 from origami.core.time import elapsed_timer
+from origami.batch.core.io import *
 
 
 class Processor:
 	def __init__(self, options):
 		self._lock_files = not options["nolock"]
+		self._overwrite = options.get("overwrite", False)
 		self._name = options.get("name", "")
 
 	@property
 	def processor_name(self):
 		return self.__class__.__name__
+
+	def prepare_process(self, page_path):
+		artifacts = self.artifacts()
+
+		kwargs = dict()
+		for arg, spec in artifacts:
+			f = spec.instantiate(
+				page_path=page_path,
+				processor=self,
+				overwrite=self._overwrite)
+
+			if not f.is_ready():
+				return False
+
+			kwargs[arg] = f
+
+		return kwargs
 
 	def traverse(self, path: Path):
 		if not Path(path).is_dir():
@@ -30,22 +53,29 @@ class Processor:
 
 		for folder, _, filenames in os.walk(path):
 			folder = Path(folder)
+			if folder.name.endswith(".out"):
+				continue
+
 			for filename in filenames:
 				p = folder / filename
 
-				if re.match(r".*\.annotate\..*\.(png|jpg)$", p.name):
-					continue
 				if self._name and not re.search(self._name, str(p)):
 					continue
+				if imghdr.what(p) is None:
+					continue
 
-				if self.should_process(p):
-					queued.append(p)
+				kwargs = self.prepare_process(p)
+				if kwargs is not False:
+					queued.append((p, kwargs))
 
-		for p in tqdm(sorted(queued)):
+		for p, kwargs in tqdm(sorted(queued)):
 			try:
 				with self.page_lock(p) as _:
 					with elapsed_timer() as elapsed:
-						runtime_info = self.process(p)
+						data_path = find_data_path(p)
+						data_path.mkdir(exist_ok=True)
+
+						runtime_info = self.process(p, **kwargs)
 
 					if runtime_info is None:
 						runtime_info = dict()
@@ -59,9 +89,6 @@ class Processor:
 				break
 			except:
 				logging.exception("Failed to process %s." % p)
-
-	def should_process(self, p: Path) -> bool:
-		return True
 
 	def process(self, p: Path):
 		pass
@@ -78,9 +105,10 @@ class Processor:
 		else:
 			return contextlib.nullcontext()
 
-	def _update_runtime_info(self, path, updates):
+	def _update_runtime_info(self, page_path, updates):
 		try:
-			json_path = path.with_suffix(".runtime.json")
+			data_path = find_data_path(page_path)
+			json_path = data_path / Artifact.RUNTIME.filename()
 			if not json_path.exists():
 				mode = "w+"
 			else:
@@ -105,3 +133,9 @@ class Processor:
 	@property
 	def compression(self):
 		return zipfile.ZIP_DEFLATED  # zipfile.ZIP_LZMA
+
+	@contextmanager
+	def write_zip_file(self, path, overwrite=False):
+		with atomic_write(path, mode="wb", overwrite=overwrite) as f:
+			with zipfile.ZipFile(f, "w", self.compression) as zf:
+				yield zf

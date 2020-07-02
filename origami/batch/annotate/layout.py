@@ -13,7 +13,8 @@ from pathlib import Path
 from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 from origami.core.page import Page
 from origami.batch.annotate.utils import render_contours, render_paths
 from origami.batch.core.lines import reliable_contours
@@ -61,7 +62,7 @@ def divider_paths(shape, y):
 		yield list(geom.coords)
 
 
-class DebugLayoutProcessor(BlockProcessor):
+class DebugLayoutProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -71,24 +72,25 @@ class DebugLayoutProcessor(BlockProcessor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".aggregate.contours.zip").exists() and\
-			p.with_suffix(".aggregate.lines.zip").exists() and\
-			p.with_suffix(".dewarped.transform.zip").exists() and\
-			p.with_suffix(".order.json").exists() and (
-				self._overwrite or
-				not p.with_suffix(".annotate.layout.jpg").exists())
+	def artifacts(self):
+		return [
+			("warped", Input(Artifact.SEGMENTATION)),
+			("reliable", Input(
+				Artifact.CONTOURS, Artifact.LINES,
+				Artifact.TABLES, Artifact.ORDER,
+				stage=Stage.RELIABLE)),
+			("output", Output(Annotation("layout"))),
+		]
 
-	def process(self, page_path: Path):
-		contours = self.read_reliable_contours(page_path)
+	def process(self, page_path: Path, warped, reliable, output):
+		contours = dict([
+			(k, b.image_space_polygon)
+			for k, b in reliable.blocks.items()])
 
-		with open(page_path.with_suffix(".tables.json"), "r") as f:
-			table_data = json.loads(f.read())
+		table_data = reliable.tables
 
 		if self._options["label"] == "order":
-			with open(page_path.with_suffix(".order.json"), "r") as f:
-				xycut_data = json.loads(f.read())
+			xycut_data = reliable.order
 
 			order = dict(
 				(tuple(path.split("/")), i)
@@ -103,8 +105,8 @@ class DebugLayoutProcessor(BlockProcessor):
 		def get_label(block_path):
 			return block_path[:2], labels.get(block_path)
 
-		page = Page(page_path, dewarp=True)
-		predictors = self.read_predictors(page_path)
+		page = reliable.page
+		predictors = warped.predictors
 
 		qt_im = ImageQt(page.dewarped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
@@ -129,8 +131,7 @@ class DebugLayoutProcessor(BlockProcessor):
 					dividers.append(coords)
 		pixmap = render_paths(pixmap, dividers, "magenta")
 
-		pixmap.toImage().save(str(
-			page_path.with_suffix(".annotate.layout.jpg")))
+		output.annotation(pixmap.toImage())
 
 
 @click.command()

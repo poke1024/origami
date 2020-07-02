@@ -12,12 +12,13 @@ from atomicwrites import atomic_write
 from calamari_ocr.ocr import Predictor, MultiPredictor
 from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.binarize import Binarizer
 from origami.batch.core.lines import LineExtractor
 
 
-class OCRProcessor(BlockProcessor):
+class OCRProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._model_path = Path(options["model"])
@@ -66,23 +67,25 @@ class OCRProcessor(BlockProcessor):
 			self._voter = ConfidenceVoter()
 			self._line_height = int(self._predictor.predictors[0].model_params.line_height)
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".aggregate.lines.zip").exists() and\
-			p.with_suffix(".dewarped.transform.zip").exists() and\
-			not p.with_suffix(".ocr.zip").exists()
+	def artifacts(self):
+		return [
+			("aggregate", Input(
+				Artifact.LINES, Artifact.TABLES,
+				stage=Stage.AGGREGATE)),
+			("output", Output(Artifact.OCR)),
+		]
 
-	def process(self, page_path: Path):
+	def process(self, page_path: Path, aggregate, output):
 		self._load_models()
 
-		blocks = self.read_aggregate_blocks(page_path)
-		lines = self.read_aggregate_lines(page_path, blocks)
+		lines = aggregate.lines
 
-		extractor = LineExtractor(self._line_height, self._options)
+		extractor = LineExtractor(
+			aggregate.tables, self._line_height, self._options)
 
 		names = []
 		images = []
-		for stem, im in extractor(page_path, lines, ignored=self._ignored):
+		for stem, im in extractor(lines, ignored=self._ignored):
 			names.append("/".join(stem))
 			images.append(np.array(im))
 
@@ -94,11 +97,9 @@ class OCRProcessor(BlockProcessor):
 				prediction = self._voter.vote_prediction_result(prediction)
 			texts.append(prediction.sentence)
 
-		zf_path = page_path.with_suffix(".ocr.zip")
-		with atomic_write(zf_path, mode="wb", overwrite=False) as f:
-			with zipfile.ZipFile(f, "w", self.compression) as zf:
-				for name, text in zip(names, texts):
-					zf.writestr("%s.txt" % name, text)
+		with output.ocr() as zf:
+			for name, text in zip(names, texts):
+				zf.writestr("%s.txt" % name, text)
 
 
 @click.command()

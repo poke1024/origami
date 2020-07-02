@@ -10,7 +10,8 @@ from pathlib import Path
 from atomicwrites import atomic_write
 from tabulate import tabulate
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 
 
 def sorted_by_keys(x):
@@ -65,7 +66,7 @@ def sortable_path(line_name):
 	return line_path[:-1] + (int(line_path[-1]),)
 
 
-class ComposeProcessor(BlockProcessor):
+class ComposeProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -85,65 +86,68 @@ class ComposeProcessor(BlockProcessor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".aggregate.lines.zip").exists() and\
-			p.with_suffix(".ocr.zip").exists() and\
-			p.with_suffix(".order.json").exists() and (
-				self._overwrite or
-				not p.with_suffix(".compose.txt").exists())
+	def artifacts(self):
+		return [
+			("input", Input(
+				Artifact.LINES,
+				Artifact.OCR,
+				Artifact.ORDER,
+				stage=Stage.AGGREGATE)),
+			("output", Output(Artifact.COMPOSE)),
+		]
 
-	def process(self, page_path: Path):
-		blocks = self.read_aggregate_blocks(page_path)
+	def process(self, page_path: Path, input, output):
+		blocks = input.blocks
 		if not blocks:
 			return
 
-		lines = self.read_aggregate_lines(page_path, blocks)
+		lines = input.lines
 
-		with open(page_path.with_suffix(".order.json"), "r") as f:
-			order_data = json.loads(f.read())
+		order_data = input.order
 		order = order_data["orders"]["*"]
 
 		line_separator = "\n"
 		block_separator = self._block_separator
 
 		page_texts = []
-		with zipfile.ZipFile(page_path.with_suffix(".ocr.zip"), "r") as zf:
-			def read_text(path):
-				return zf.read("/".join(map(str, path)) + ".txt").decode("utf8")
 
-			regular = collections.defaultdict(list)
-			tables = collections.defaultdict(Table)
-			for line_path in sorted(map(sortable_path, zf.namelist())):
-				block_path = line_path[:3]
+		ocr_data = input.ocr
 
-				# if we cut multiple column images from one line, we will see
-				# paths here that are not in "lines".
-				# block, division, line, column
-				#line = lines[tuple(map(str, line_path))]
+		def to_text_name(path):
+			return "/".join(map(str, path)) + ".txt"
 
-				table_path = block_path[2].split(".")
-				if len(table_path) > 1:
-					tables[block_path[:2] + (table_path[0], )].append_cell_text(
-						table_path[1:], read_text(line_path))
-				else:  #if line.confidence > 0.5:
-					regular[block_path].append(
-						read_text(line_path))
+		regular = collections.defaultdict(list)
+		tables = collections.defaultdict(Table)
+		for line_path in sorted(map(sortable_path, ocr_data.keys())):
+			block_path = line_path[:3]
 
-			texts_by_block = dict()
-			for k, texts in regular.items():
-				texts_by_block[k] = line_separator.join(texts).strip()
-			for k, table in tables.items():
-				texts_by_block[k] = table.to_text()
+			# if we cut multiple column images from one line, we will see
+			# paths here that are not in "lines".
+			# block, division, line, column
+			#line = lines[tuple(map(str, line_path))]
 
-			for path in map(lambda x: tuple(x.split("/")), order):
-				block_text = texts_by_block.get(path, [])
-				if block_text:
-					page_texts.append(block_text)
+			ocr_text = ocr_data[to_text_name(line_path)]
 
-		out_path = page_path.with_suffix(".compose.txt")
-		with atomic_write(out_path, mode="w", overwrite=self._overwrite) as f:
-			f.write(block_separator.join(page_texts))
+			table_path = block_path[2].split(".")
+			if len(table_path) > 1:
+				tables[block_path[:2] + (table_path[0], )].append_cell_text(
+					table_path[1:], ocr_text)
+			else:  #if line.confidence > 0.5:
+				regular[block_path].append(ocr_text)
+
+		texts_by_block = dict()
+		for k, texts in regular.items():
+			texts_by_block[k] = line_separator.join(texts).strip()
+		for k, table in tables.items():
+			texts_by_block[k] = table.to_text()
+
+		for path in map(lambda x: tuple(x.split("/")), order):
+			block_text = texts_by_block.get(path, [])
+			if block_text:
+				page_texts.append(block_text)
+
+		with output.compose() as zf:
+			zf.writestr("page.txt", block_separator.join(page_texts))
 
 
 @click.command()

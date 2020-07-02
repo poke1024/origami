@@ -24,7 +24,8 @@ from atomicwrites import atomic_write
 from functools import partial, reduce
 from cached_property import cached_property
 
-from origami.batch.core.block_processor import BlockProcessor
+from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.dewarp import Dewarper, Grid
 from origami.core.predict import PredictorType
 from origami.core.segment import Segmentation
@@ -780,7 +781,7 @@ def to_table_data_dict(items):
 		for path, xs in items.items())
 
 
-class LayoutDetectionProcessor(BlockProcessor):
+class LayoutDetectionProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -819,35 +820,33 @@ class LayoutDetectionProcessor(BlockProcessor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".dewarped.contours.zip").exists() and (
-				self._overwrite or (
-					not p.with_suffix(".aggregate.contours.zip").exists()))
+	def artifacts(self):
+		return [
+			("warped", Input(
+				Artifact.CONTOURS, Artifact.LINES, Artifact.SEGMENTATION,
+				stage=Stage.WARPED)),
+			("dewarped", Input(
+				Artifact.CONTOURS,
+				stage=Stage.DEWARPED)),
+			("output", Output(
+				Artifact.CONTOURS, Artifact.TABLES,
+				stage=Stage.AGGREGATE))
+		]
 
-	def process(self, page_path: Path):
-		blocks = self.read_dewarped_blocks(page_path)
+	def process(self, page_path: Path, warped, dewarped, output):
+		blocks = dewarped.blocks
 
 		if not blocks:
 			return
 
-		segmentation = Segmentation.open(
-			page_path.with_suffix(".segment.zip"))
 		separators = Separators(
-			segmentation, self.read_dewarped_separators(page_path))
-
-		warped_blocks = self.read_blocks(page_path)
-		warped_lines = self.read_lines(page_path, warped_blocks)
-
-		zf_path = page_path.with_suffix(".dewarped.contours.zip")
-		with zipfile.ZipFile(zf_path, "r") as zf:
-			meta = zf.read("meta.json")
+			warped.segmentation, dewarped.separators)
 
 		page = list(blocks.values())[0].page
 		contours = [(k, block.image_space_polygon) for k, block in blocks.items()]
 
 		regions = Regions(
-			page, warped_lines,
+			page, warped.lines,
 			contours, separators,
 			self._union)
 		self._transformer(regions)
@@ -858,24 +857,16 @@ class LayoutDetectionProcessor(BlockProcessor):
 			columns=self._table_column_detector(regions),
 			dividers=self._table_divider_detector(regions))
 
-		table_data = dict(
+		output.tables(dict(
 			version=1,
 			columns=to_table_data_dict(columns),
-			dividers=to_table_data_dict(dividers))
+			dividers=to_table_data_dict(dividers)))
 
-		with atomic_write(
-			page_path.with_suffix(".tables.json"),
-			mode="wb", overwrite=self._overwrite) as f:
-			f.write(json.dumps(table_data).encode("utf8"))
-
-		zf_path = page_path.with_suffix(".aggregate.contours.zip")
-		with atomic_write(zf_path, mode="wb", overwrite=self._overwrite) as f:
-			with zipfile.ZipFile(f, "w", self.compression) as zf:
-				zf.writestr("meta.json", meta)
-				for path, shape in split_contours.items():
-					if shape.geom_type != "Polygon" and not shape.is_empty:
-						logging.info("contour %s is %s" % (path, shape.geom_type))
-					zf.writestr("/".join(path) + ".wkt", shape.wkt.encode("utf8"))
+		with output.contours(copy_meta_from=dewarped) as zf:
+			for path, shape in split_contours.items():
+				if shape.geom_type != "Polygon" and not shape.is_empty:
+					logging.info("contour %s is %s" % (path, shape.geom_type))
+				zf.writestr("/".join(path) + ".wkt", shape.wkt.encode("utf8"))
 
 
 @click.command()

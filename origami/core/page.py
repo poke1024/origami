@@ -10,7 +10,7 @@ from cached_property import cached_property
 from pathlib import Path
 
 from origami.core.math import resize_transform, to_shapely_matrix
-from origami.core.dewarp import Dewarper, Grid
+from origami.core.dewarp import Dewarper
 from origami.core.binarize import Binarizer
 
 
@@ -80,13 +80,12 @@ def _find_image_path(path):
 
 
 class Page:
-	def __init__(self, path, dewarp=False):
+	def __init__(self, path, dewarping_transform=None):
 		path = _find_image_path(path)
 		self._warped = PIL.Image.open(str(path)).convert("L")
 
-		if dewarp:
-			grid = Grid.open(path.with_suffix(".dewarped.transform.zip"))
-			self._dewarper = Dewarper(self._warped, grid)
+		if dewarping_transform is not None:
+			self._dewarper = Dewarper(self._warped, dewarping_transform)
 			self._dewarped = self._dewarper.dewarped
 		else:
 			self._dewarper = None
