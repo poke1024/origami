@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import imghdr
 import numpy as np
 import json
