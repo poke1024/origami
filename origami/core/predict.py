@@ -236,7 +236,7 @@ class NetPredictor(Predictor):
 
 	def _predict(self, page, labels=None, verbose=False):
 		if labels is None:
-			im = page.image.convert("RGB")
+			im = page.warped.convert("RGB")
 			pixels = np.array(im)
 
 			net_input = cv2.resize(pixels, self._full_size, interpolation=cv2.INTER_AREA)
