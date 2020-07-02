@@ -150,6 +150,10 @@ class OCRProcessor(Processor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
+@click.option(
+	'--profile',
+	is_flag=True,
+	default=False)
 def segment(data_path, **kwargs):
 	""" Perform OCR on all recognized lines in DATA_PATH. """
 	processor = OCRProcessor(kwargs)

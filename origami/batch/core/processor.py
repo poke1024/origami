@@ -14,7 +14,7 @@ from pathlib import Path
 from functools import partial
 from tqdm import tqdm
 from atomicwrites import atomic_write
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 from origami.core.time import elapsed_timer
 from origami.batch.core.io import *
@@ -25,6 +25,13 @@ class Processor:
 		self._lock_files = not options.get("nolock", True)
 		self._overwrite = options.get("overwrite", False)
 		self._name = options.get("name", "")
+
+		if options.get("profile"):
+			from profiling.sampling import SamplingProfiler
+			self._profiler = SamplingProfiler()
+			self._overwrite = True  # profile implies overwrite
+		else:
+			self._profiler = None
 
 	@property
 	def processor_name(self):
@@ -76,27 +83,31 @@ class Processor:
 				if kwargs is not False:
 					queued.append((p, kwargs))
 
-		for p, kwargs in tqdm(sorted(queued)):
-			try:
-				with self.page_lock(p) as _:
-					with elapsed_timer() as elapsed:
-						data_path = find_data_path(p)
-						data_path.mkdir(exist_ok=True)
+		with self._profiler or nullcontext():
+			for p, kwargs in tqdm(sorted(queued)):
+				try:
+					with self.page_lock(p) as _:
+						with elapsed_timer() as elapsed:
+							data_path = find_data_path(p)
+							data_path.mkdir(exist_ok=True)
 
-						runtime_info = self.process(p, **kwargs)
+							runtime_info = self.process(p, **kwargs)
 
-					if runtime_info is None:
-						runtime_info = dict()
-					runtime_info["total_time"] = round(elapsed(), 2)
+						if runtime_info is None:
+							runtime_info = dict()
+						runtime_info["total_time"] = round(elapsed(), 2)
 
-					self._update_runtime_info(
-						p, {self.processor_name: runtime_info})
+						self._update_runtime_info(
+							p, {self.processor_name: runtime_info})
 
-			except KeyboardInterrupt:
-				logging.exception("Interrupted at %s." % p)
-				break
-			except:
-				logging.exception("Failed to process %s." % p)
+				except KeyboardInterrupt:
+					logging.exception("Interrupted at %s." % p)
+					break
+				except:
+					logging.exception("Failed to process %s." % p)
+
+		if self._profiler:
+			self._profiler.run_viewer()
 
 	def process(self, p: Path):
 		pass

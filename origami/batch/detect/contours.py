@@ -153,6 +153,10 @@ class ContoursProcessor(Processor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
+@click.option(
+	'--profile',
+	is_flag=True,
+	default=False)
 def extract_contours(data_path, **kwargs):
 	""" Extract contours from all document images in DATA_PATH.
 	Information from segmentation and binarize batch needs to be present. """

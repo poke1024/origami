@@ -35,7 +35,6 @@ class DewarpProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
-		self._overwrite = options["overwrite"]
 
 	@property
 	def processor_name(self):
@@ -119,6 +118,10 @@ class DewarpProcessor(Processor):
 	is_flag=True,
 	default=False,
 	help="Recompute and overwrite existing result files.")
+@click.option(
+	'--profile',
+	is_flag=True,
+	default=False)
 def dewarp(data_path, **kwargs):
 	""" Dewarp documents in DATA_PATH. """
 	processor = DewarpProcessor(kwargs)

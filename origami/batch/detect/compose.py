@@ -72,7 +72,6 @@ class ComposeProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
-		self._overwrite = options["overwrite"]
 
 		if options["filter"]:
 			self._block_filter = [tuple(options["filter"].split("."))]
@@ -187,6 +186,10 @@ class ComposeProcessor(Processor):
 	is_flag=True,
 	default=False,
 	help="Recompute and overwrite existing result files.")
+@click.option(
+	'--profile',
+	is_flag=True,
+	default=False)
 def compose(data_path, **kwargs):
 	""" Produce text composed in a single text file for each page in DATA_PATH. """
 	processor = ComposeProcessor(kwargs)

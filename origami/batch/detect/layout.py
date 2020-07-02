@@ -809,7 +809,6 @@ class LayoutDetectionProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
-		self._overwrite = self._options["overwrite"]
 
 		self._union = UnionOperator(self._options["union"])
 
@@ -930,6 +929,10 @@ class LayoutDetectionProcessor(Processor):
 	is_flag=True,
 	default=False,
 	help="Recompute and overwrite existing result files.")
+@click.option(
+	'--profile',
+	is_flag=True,
+	default=False)
 def detect_layout(data_path, **kwargs):
 	""" Detect layout and reading order for documents in DATA_PATH. """
 	processor = LayoutDetectionProcessor(kwargs)

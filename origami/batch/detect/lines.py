@@ -58,7 +58,6 @@ class LineDetectionProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
-		self._overwrite = self._options["overwrite"]
 
 	@property
 	def processor_name(self):
@@ -145,6 +144,10 @@ class LineDetectionProcessor(Processor):
 	is_flag=True,
 	default=False,
 	help="Recompute and overwrite existing result files.")
+@click.option(
+	'--profile',
+	is_flag=True,
+	default=False)
 def detect_lines(data_path, **kwargs):
 	""" Perform line detection on all document images in DATA_PATH. Needs
 	information from contours batch. """

@@ -66,6 +66,15 @@ class WarpDetectionProcessor(Processor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
+@click.option(
+	'--overwrite',
+	is_flag=True,
+	default=False,
+	help="Recompute and overwrite existing result files.")
+@click.option(
+	'--profile',
+	is_flag=True,
+	default=False)
 def detect_warp(data_path, **kwargs):
 	""" Perform warp detection on all document images in DATA_PATH. Needs
 	information from contours batch. """

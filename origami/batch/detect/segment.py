@@ -52,6 +52,10 @@ class SegmentationProcessor(Processor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
+@click.option(
+	'--profile',
+	is_flag=True,
+	default=False)
 def segment(data_path, model, **kwargs):
 	""" Perform page segmentation on all document images in DATA_PATH. """
 	predictor = SegmentationPredictor(model)
