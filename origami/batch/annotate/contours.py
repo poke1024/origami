@@ -8,45 +8,49 @@ from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.processor import Processor
+from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 from origami.batch.annotate.utils import render_blocks, render_separators
 
 
-class DebugContoursProcessor(Processor):
+class AnnotateContoursProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._stage = Stage[options["stage"].upper()]
 
 	@property
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".warped.contours.zip").exists()
+	def artifacts(self):
+		return [
+			("warped", Input(Artifact.SEGMENTATION, stage=Stage.WARPED)),
+			("input", Input(Artifact.CONTOURS, stage=self._stage)),
+			("output", Output(Annotation("contours." + self._stage.name.lower()))),
+		]
 
-	def process(self, page_path: Path):
-		blocks = self.read_blocks(page_path)
-		separators = self.read_separators(page_path)
+	def process(self, page_path: Path, warped, input, output):
+		blocks = input.blocks
+		separators = input.separators
 
 		if not blocks:
 			logging.info("no blocks for %s" % page_path)
 			return
 
 		page = list(blocks.values())[0].page
-		predictors = self.read_predictors(page_path)
+		predictors = warped.predictors
 
-		qt_im = ImageQt(page.warped)
+		qt_im = ImageQt(page.dewarped if self._stage.is_dewarped else page.warped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 		def get_label(block_path):
 			classifier, segmentation_label, block_id = block_path
-			return (classifier, segmentation_label), int(block_id)
+			return (classifier, segmentation_label), int(block_id.split(".")[0])
 
 		pixmap = render_blocks(pixmap, blocks, get_label, predictors)
 		pixmap = render_separators(pixmap, separators)
 
-		pixmap.toImage().save(str(
-			page_path.with_suffix(".annotate.warped.contours.jpg")))
+		output.annotation(pixmap.toImage())
 
 
 @click.command()
@@ -55,6 +59,10 @@ class DebugContoursProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
+	'--stage',
+	type=str,
+	default="warped")
+@click.option(
 	'--nolock',
 	is_flag=True,
 	default=False,
@@ -62,7 +70,7 @@ class DebugContoursProcessor(Processor):
 	"but is necessary on some network file systems.")
 def debug_contours(data_path, **kwargs):
 	""" Export annotate information on vectors for all document images in DATA_PATH. """
-	processor = DebugContoursProcessor(kwargs)
+	processor = AnnotateContoursProcessor(kwargs)
 	processor.traverse(data_path)
 
 

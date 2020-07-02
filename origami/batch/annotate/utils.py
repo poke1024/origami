@@ -105,6 +105,23 @@ _patterns = (
 )
 
 
+def contour_patterns(contours, buffer=-5, threshold=10):
+	buffered_contours = dict(
+		(k, v.buffer(buffer)) for k, v in contours.items())
+	buffered_contours = dict([
+		(k, c.convex_hull if c.geom_type != "Polygon" else c)
+		for k, c in buffered_contours.items()])
+	neighbors_ = neighbors(buffered_contours)
+	apart = set()
+	for a, b in neighbors_.edges():
+		if buffered_contours[a].distance(buffered_contours[b]) > threshold:
+			apart.add((a, b))
+	for a, b in apart:
+		neighbors_.remove_edge(a, b)
+	return nx.algorithms.coloring.equitable_color(
+		neighbors_, 1 + max(d for _, d in neighbors_.degree()))
+
+
 def render_contours(
 	pixmap, contours, get_label,
 	predictors=None, brushes=None, matrix=None,
@@ -119,18 +136,7 @@ def render_contours(
 		return QtCore.QPointF(x, y)
 
 	if alternate:
-		buffered_contours = dict(
-			(k, v.buffer(-5)) for k, v in contours.items())
-		neighbors_ = neighbors(buffered_contours)
-		threshold = 10
-		apart = set()
-		for a, b in neighbors_.edges():
-			if buffered_contours[a].distance(buffered_contours[b]) > threshold:
-				apart.add((a, b))
-		for a, b in apart:
-			neighbors_.remove_edge(a, b)
-		patterns = nx.algorithms.coloring.equitable_color(
-			neighbors_, 1 + max(d for _, d in neighbors_.degree()))
+		patterns = contour_patterns(contours)
 	else:
 		patterns = None
 
