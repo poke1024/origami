@@ -91,10 +91,10 @@ class Regions:
 			max_labels[k[:2]] = max(max_labels[k[:2]], int(k[2]))
 		self._max_labels = max_labels
 
-	def check_geom_types(self):
+	def check_geometries(self):
 		for k, contour in self._contours.items():
-			if contour.geom_type != "Polygon":
-				raise ValueError("contour %s is %s" % (k, contour.geom_type))
+			assert contour.is_valid
+			assert contour.geom_type == "Polygon"
 
 	@property
 	def page(self):
@@ -206,11 +206,12 @@ class Transformer:
 
 	def __call__(self, regions):
 		for i, operator in enumerate(self._operators):
-			operator(regions)
 			try:
-				regions.check_geom_types()
-			except ValueError as e:
-				logging.error("after stage %d, %s" % (i, e))
+				operator(regions)
+				regions.check_geometries()
+			except:
+				logging.exception("error in %s in Transformer stage %d" % (
+					operator.__class__.__name__, 1 + i))
 
 
 def _alignment(a0, a1, b0, b1):
@@ -535,8 +536,8 @@ class Shrinker:
 					if q:
 						bounds = shapely.ops.cascaded_union(q).bounds
 						box = shapely.geometry.box(*bounds)
-						regions.modify_contour(
-							k, box.intersection(contour))
+						modified = box.intersection(contour)
+						regions.modify_contour(k, modified)
 				except ValueError:
 					pass  # deformed geometry errors
 
