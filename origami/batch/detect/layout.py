@@ -96,10 +96,10 @@ class Regions:
 			max_labels[k[:2]] = max(max_labels[k[:2]], int(k[2]))
 		self._max_labels = max_labels
 
-	def check_geometries(self):
+	def check_geometries(self, allowed):
 		for k, contour in self._contours.items():
 			assert contour.is_valid
-			assert contour.geom_type == "Polygon"
+			assert contour.geom_type in allowed
 
 	@property
 	def page(self):
@@ -214,12 +214,12 @@ class Transformer:
 		self._operators = operators
 
 	def __call__(self, regions):
-		regions.check_geometries()
+		regions.check_geometries(allowed=["Polygon", "MultiPolygon"])
 
 		for i, operator in enumerate(self._operators):
 			try:
 				operator(regions)
-				regions.check_geometries()
+				regions.check_geometries(allowed=["Polygon"])
 			except:
 				logging.exception("error in %s in Transformer stage %d" % (
 					operator.__class__.__name__, 1 + i))
