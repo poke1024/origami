@@ -15,6 +15,17 @@ from origami.core.xycut import polygon_order
 from origami.core.separate import Separators, ObstacleSampler
 
 
+class RegionsFilter:
+	def __init__(self, spec):
+		self._paths = set()
+		for s in spec.split(","):
+			self._paths.add(
+				tuple(s.strip().split("/")))
+
+	def __call__(self, path):
+		return tuple(path[:2]) in self._paths
+
+
 class Combinator:
 	def __init__(self, paths):
 		mapping = collections.defaultdict(list)
@@ -61,6 +72,7 @@ class ReadingOrderProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._ignore = RegionsFilter(options["ignore"])
 
 	@property
 	def processor_name(self):
@@ -77,7 +89,9 @@ class ReadingOrderProcessor(Processor):
 		by_labels = collections.defaultdict(list)
 		for p, contour in contours.items():
 			by_labels[p[:2]].append((p, contour))
-		by_labels[("*",)] = list(contours.items())
+
+		by_labels[("*",)] = [
+			(k, v) for k, v in contours.items() if not self._ignore(k)]
 
 		sampler = ObstacleSampler(separators)
 
@@ -131,6 +145,10 @@ class ReadingOrderProcessor(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'--ignore',
+	type=str,
+	default="regions/ILLUSTRATION")
 @click.option(
 	'--fringe',
 	type=float,
