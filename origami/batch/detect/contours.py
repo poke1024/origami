@@ -126,7 +126,7 @@ class ContoursProcessor(Processor):
 @click.option(
 	'-m', '--margin-noise',
 	type=float,
-	default=0.05,
+	default=0.075,
 	help="Max. relative width of margin noise.")
 @click.option(
 	'-s', '--sep-threshold',

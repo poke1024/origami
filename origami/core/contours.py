@@ -21,6 +21,7 @@ import scipy.optimize
 import PIL.Image
 import PIL.ImageDraw
 
+from heapq import heappush, heappop
 from cached_property import cached_property
 
 import origami.core.geometry as geometry
@@ -665,9 +666,16 @@ class HeuristicFrameDetector:
 
 		n_polygons = len(polygons)
 
-		for i, r in ((0, False), (2, True)):
-			candidates = sorted(polygons, key=lambda p: p.bounds[i], reverse=r)
-			polygons = list(itertools.dropwhile(_is_noise, candidates))
+		for axis, direction in ((0, 1), (1, -1)):
+			heap = []
+			for i, p in enumerate(polygons):
+				heappush(heap, (
+					int(p.bounds[axis * 2] * direction),
+					int(p.bounds[2] - p.bounds[0]),
+					i, p))
+			while heap and _is_noise(heap[0][-1]):
+				heappop(heap)
+			polygons = [x[-1] for x in heap]
 
 		if len(polygons) < n_polygons:
 			logging.info("removed %s polygons." % (n_polygons - len(polygons)))
@@ -675,7 +683,8 @@ class HeuristicFrameDetector:
 		return polygons
 
 	def multi_class_filter(self, polygons):
-		classes = dict(itertools.chain(*[[(id(p), k)
+		classes = dict(itertools.chain(*[[(
+			id(p), k)
 			for p in class_polygons] for k, class_polygons in polygons.items()]))
 
 		f_polygons = self.filter(list(itertools.chain(*list(polygons.values()))))
