@@ -18,7 +18,7 @@ from PIL.ImageQt import ImageQt
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 from origami.core.page import Page
-from origami.batch.annotate.utils import render_contours, render_paths
+from origami.batch.annotate.utils import render_contours, render_paths, qt_app
 from origami.batch.core.lines import reliable_contours
 
 
@@ -164,5 +164,5 @@ def debug_layout(data_path, **kwargs):
 
 
 if __name__ == "__main__":
-	app = QtGui.QGuiApplication()
+	app = qt_app()
 	debug_layout()

@@ -9,7 +9,7 @@ from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.block_processor import Processor
-from origami.batch.annotate.utils import render_lines
+from origami.batch.annotate.utils import render_lines, qt_app
 
 
 class DebugWarpProcessor(Processor):
@@ -62,5 +62,5 @@ def debug_warp(data_path, **kwargs):
 
 
 if __name__ == "__main__":
-	app = QtGui.QGuiApplication()
+	app = qt_app()
 	debug_warp()

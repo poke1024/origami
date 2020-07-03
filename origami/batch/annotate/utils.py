@@ -4,6 +4,7 @@ import numpy as np
 import networkx as nx
 import logging
 import collections
+import os
 
 from PySide2 import QtGui, QtCore
 from functools import lru_cache
@@ -349,3 +350,9 @@ def render_paths(pixmap, columns, color="blue"):
 		qp.end()
 
 	return pixmap
+
+
+def qt_app():
+	os.environ["QT_QPA_PLATFORM"] = "offscreen"
+	# export =offscreen
+	return QtGui.QGuiApplication()
