@@ -233,10 +233,11 @@ def _alignment(a0, a1, b0, b1):
 
 
 class IsOnSameLine:
-	def __init__(self, max_line_count=3, cohesion=0.8, alignment=0.8):
+	def __init__(self, max_line_count=3, cohesion=0.8, alignment=0.8, fringe=0):
 		self._max_line_count = max_line_count
 		self._cohesion = cohesion
 		self._min_alignment = alignment
+		self._fringe = fringe
 
 	def for_regions(self, regions):
 		return partial(self.check, regions=regions)
@@ -257,6 +258,11 @@ class IsOnSameLine:
 			return False
 
 		u = regions.union([a, b])
+
+		if regions.separators.check_obstacles(
+			u.bounds, ["separators/V", "separators/T"], self._fringe):
+			return False
+
 		c = _cohesion([a, b], u)
 		return c > self._cohesion
 
@@ -595,7 +601,11 @@ class FixSpillOver:
 			if regions.line_count(k) < self._min_line_count:
 				continue
 
-			line_height = np.median(regions.line_heights(k))
+			line_heights = regions.line_heights(k)
+			if not line_heights:
+				continue
+
+			line_height = np.median(line_heights)
 			int_line_height = max(6, int(line_height))
 
 			minx, miny, maxx, maxy = contour.bounds
@@ -821,7 +831,10 @@ class LayoutDetectionProcessor(Processor):
 		self._transformer = Transformer([
 			Dilation(self._options["dilation"]),
 			AdjacencyMerger(
-				"regions/TEXT", IsOnSameLine(max_line_count=3)),
+				"regions/TEXT",
+				IsOnSameLine(
+					max_line_count=3,
+					fringe=self._options["fringe"])),
 			OverlapMerger(self._options["maximum_overlap"]),
 			Shrinker(),
 			SequentialMerger(
