@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 
-import imghdr
 import click
-import zipfile
-import json
 import collections
 import codecs
-import shapely.strtree
 
 from pathlib import Path
-from atomicwrites import atomic_write
 from tabulate import tabulate
 
 from origami.batch.core.processor import Processor

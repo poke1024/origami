@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 
-import imghdr
 import click
-import zipfile
 import json
-import logging
-import multiprocessing.pool
 
 from pathlib import Path
 

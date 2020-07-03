@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
-import imghdr
 import click
-import re
 
 from pathlib import Path
-from atomicwrites import atomic_write
 
 from origami.core.segment import SegmentationPredictor
 from origami.batch.core.processor import Processor

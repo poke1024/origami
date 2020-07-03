@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
 
-import imghdr
 import click
-import zipfile
 import io
 import json
-import numpy as np
-import PIL.Image
-import scipy.ndimage
-import skimage.morphology
 
 from pathlib import Path
-from ast import literal_eval as make_tuple
-from functools import partial
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 
-from origami.core.segment import Segmentation
 from origami.core.page import Page, Annotations
 import origami.core.contours as contours
 from origami.core.block import Block

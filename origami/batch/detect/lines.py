@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
 
-import imghdr
 import click
-import zipfile
 import json
-import logging
-import multiprocessing.pool
 import numpy as np
 import cv2
 
 from pathlib import Path
-from atomicwrites import atomic_write
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.block import ConcurrentLineDetector, TextAreaFactory
-from origami.core.segment import Segmentation
-from origami.core.predict import PredictorType
 
 
 def scale_grid(s0, s1, grid):

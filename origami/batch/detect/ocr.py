@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
 
-import imghdr
 import click
-import zipfile
 import numpy as np
-import time
-import multiprocessing.pool
 
 from pathlib import Path
-from functools import partial
-from atomicwrites import atomic_write
 
 from calamari_ocr.ocr import Predictor, MultiPredictor
 from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
-from origami.core.binarize import Binarizer
 from origami.batch.core.lines import LineExtractor
 
 

@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
 
-import imghdr
-import numpy as np
-import json
 import click
 import shapely.ops
 import shapely.wkt
 import zipfile
 import logging
-import PIL.Image
 
 from pathlib import Path
-from atomicwrites import atomic_write
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
-from origami.core.dewarp import Dewarper, Grid
+from origami.core.dewarp import Grid
 
 
 def dewarped_contours(input, transformer):

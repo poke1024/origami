@@ -1,23 +1,17 @@
 #!/usr/bin/env python3
 
-import imghdr
 import click
-import re
 import collections
-import zipfile
-import json
 import logging
 import shapely.ops
 
 from pathlib import Path
-from atomicwrites import atomic_write
 from itertools import chain
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.batch.core.lines import reliable_contours
 from origami.core.xycut import polygon_order
-from origami.core.segment import Segmentation
 from origami.core.separate import Separators, ObstacleSampler
 
 

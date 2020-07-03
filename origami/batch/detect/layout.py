@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
-import imghdr
 import numpy as np
-import json
 import click
 import shapely.ops
 import shapely.wkt
@@ -12,27 +10,18 @@ import shapely.ops
 import sklearn.cluster
 import skimage.filters
 import scipy.spatial
-import zipfile
-import PIL.Image
 import networkx as nx
 import collections
-import cv2
-import intervaltree
 import portion
 import logging
 
 from pathlib import Path
-from atomicwrites import atomic_write
-from functools import partial, reduce
+from functools import partial
 from cached_property import cached_property
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
-from origami.core.dewarp import Dewarper, Grid
-from origami.core.predict import PredictorType
-from origami.core.segment import Segmentation
 from origami.core.separate import Separators
-from origami.core.math import inset_bounds
 from origami.core.xycut import polygon_order
 from origami.core.neighbors import neighbors
 
