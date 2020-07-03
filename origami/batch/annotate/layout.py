@@ -98,7 +98,7 @@ class DebugLayoutProcessor(Processor):
 				(tuple(path.split("/")), i)
 				for i, path in enumerate(xycut_data["orders"]["*"]))
 
-			labels = dict((x, 1 + order.get(x)) for x in contours.keys())
+			labels = dict((x, 1 + order.get(x, -1)) for x in contours.keys())
 		elif self._options["label"] == "id":
 			labels = dict((x, int(x[2])) for x in contours.keys())
 		else:
