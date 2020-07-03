@@ -613,7 +613,7 @@ class Grid:
 
 		return scipy.interpolate.RegularGridInterpolator(
 			(np.arange(grid.shape[0]), np.arange(grid.shape[1])),
-			grid, method="linear")
+			grid, method="linear", bounds_error=False, fill_value=None)
 
 
 class Dewarper:
