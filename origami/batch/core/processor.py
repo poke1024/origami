@@ -111,6 +111,11 @@ class Processor:
 						traceback=traceback.format_exc())
 					self._update_runtime_info(p, {
 						self.processor_name: runtime_info})
+				finally:
+					# free memory allocated in cached io.Reader
+					# attributes. this can get substantial for
+					# long runs.
+					kwargs.clear()
 
 		if self._profiler:
 			self._profiler.run_viewer()
