@@ -347,7 +347,7 @@ class Field:
 		self._size = size
 
 		self._interp = lininterp(
-			samples.points, samples.values, size[0], size[1])
+			samples.points, samples.values, (0, 0, size[0] - 1, size[1] - 1))
 
 	def get(self, pts):
 		angles = self._interp(pts)
@@ -378,12 +378,20 @@ class Transformer:
 	def __init__(self, grid, grid_res):
 		h, w = grid.shape[:2]
 
-		self._interp = scipy.interpolate.LinearNDInterpolator(
-			grid.reshape((h * w, 2)),
-			np.flip(np.dstack(np.mgrid[0:h, 0:w]), axis=-1).reshape((h * w, 2)) * grid_res)
+		source = grid.reshape((h * w, 2))
+		target = np.flip(np.dstack(
+			np.mgrid[0:h, 0:w]), axis=-1).reshape((h * w, 2)) * grid_res
+
+		minx = np.min(source[:, 0])
+		miny = np.min(source[:, 1])
+		maxx = np.max(source[:, 0])
+		maxy = np.max(source[:, 1])
+
+		self._interp = lininterp(source, target, (minx, miny, maxx, maxy))
 
 	def __call__(self, x, y):
 		pts = self._interp(np.squeeze(np.dstack([x, y]), axis=0))
+		assert not np.any(np.isnan(pts))
 		return pts[:, 0], pts[:, 1]
 
 
@@ -403,8 +411,8 @@ class GridFactory:
 
 		if separators is not None:
 			if rescale_separators:  # legacy mode
-				sx = im.width / 1280
-				sy = im.height / 2400
+				sx = self._width / 1280
+				sy = self._height / 2400
 				separators = dict((k, shapely.affinity.scale(
 					s, sx, sy, origin=(0, 0))) for k, s in separators.items())
 		else:
@@ -473,6 +481,8 @@ class GridFactory:
 			grid[:, gx, :] = pts
 			pts += field_h(pts) * grid_res
 
+		assert not np.any(np.isnan(grid))
+
 		return grid
 
 	def make_row(self, gy, k=3):
@@ -532,6 +542,8 @@ class GridFactory:
 			pts0 = pts1
 
 		grid_hv[-1, :, :] = pts0
+
+		assert not np.any(np.isnan(grid_hv))
 
 		return grid_hv
 

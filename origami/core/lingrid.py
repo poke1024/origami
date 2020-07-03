@@ -25,14 +25,12 @@ class Border(Enum):
 
 
 class Box:
-	def __init__(self, width, height):
-		margin = 1
-
+	def __init__(self, minx, miny, maxx, maxy, margin=1):
 		box_pts = [
-			(-margin, -margin),
-			(width + margin, -margin),
-			(width + margin, height + margin),
-			(-margin, height + margin)]
+			(minx - margin, miny - margin),
+			(maxx + margin, miny - margin),
+			(maxx + margin, maxy + margin),
+			(minx - margin, maxy + margin)]
 
 		self._minx = box_pts[0][0]
 		self._miny = box_pts[0][1]
@@ -40,7 +38,7 @@ class Box:
 		self._maxy = box_pts[2][1]
 
 		self._box = shapely.geometry.LinearRing(box_pts)
-		self._box_size = max(width, height) + 2 * margin + 1
+		self._box_size = max(maxx - minx, maxy - miny) + 2 * margin + 1
 
 		self._points = []
 		self._borders = dict((b, []) for b in Border)
@@ -65,8 +63,10 @@ class Box:
 		ray = shapely.geometry.LineString([
 			p, p + dir * self._box_size])
 		int_pt = ray.intersection(self._box)
-		if int_pt is None:
-			raise ValueError("points outside given domain, ray %s does not hit %s" % (ray, self._box))
+		if int_pt is None or int_pt.is_empty:
+			raise ValueError(
+				"point %s outside given domain, %s does not hit %s" % (
+					p, ray, self._box))
 
 		pt = tuple(list(int_pt.coords)[0])
 		borders = set()
@@ -161,19 +161,20 @@ class Box:
 
 
 class Interpolator:
-	def __init__(self, inter, extra, w, h):
+	def __init__(self, inter, extra, bounds):
 		self._inter = inter
 		self._extra = extra
-		self._w = w
-		self._h = h
+		self._bounds = bounds
 
 	def __call__(self, pts):
 		pts = np.array(pts)
 		if len(pts.shape) == 1:
 			pts = pts[np.newaxis, :]
 
-		pts[:, 0] = np.clip(pts[:, 0], 0, self._w - 1)
-		pts[:, 1] = np.clip(pts[:, 1], 0, self._h - 1)
+		minx, miny, maxx, maxy = self._bounds
+
+		pts[:, 0] = np.clip(pts[:, 0], minx, maxx)
+		pts[:, 1] = np.clip(pts[:, 1], miny, maxy)
 
 		if self._inter is None:
 			return self._extra(pts)
@@ -184,13 +185,12 @@ class Interpolator:
 
 
 class InterpolatorFactory:
-	def __init__(self, points, values, width, height):
+	def __init__(self, points, values, bounds):
 		self._points = points
 		self._values = values
-		self._width = width
-		self._height = height
+		self._bounds = bounds
 
-		box = Box(width, height)
+		box = Box(*self._bounds)
 
 		if not isinstance(values[0], np.ndarray):
 			self._squeeze = True
@@ -239,7 +239,10 @@ class InterpolatorFactory:
 
 	@cached_property
 	def grid(self):
-		grid = np.dstack(np.mgrid[0:self._width, 0:self._height])
+		minx, miny, maxx, maxy = self._bounds
+		assert minx == 0 and miny == 0
+
+		grid = np.dstack(np.mgrid[0:maxx + 1, 0:maxy + 1])
 
 		extra_pixels = scipy.interpolate.griddata(
 			self._extra_pts, self._extra_val, grid,
@@ -275,12 +278,12 @@ class InterpolatorFactory:
 				self._points, self._values, fill_value=np.nan)
 		else:
 			inter = None
-		return Interpolator(inter, extra, self._width, self._height)
+		return Interpolator(inter, extra, self._bounds)
 
 
 def lingrid(points, values, width, height):
-	return InterpolatorFactory(points, values, width, height).grid
+	return InterpolatorFactory(points, values, (0, 0, width - 1, height - 1)).grid
 
 
-def lininterp(points, values, width, height):
-	return InterpolatorFactory(points, values, width, height).interpolator
+def lininterp(points, values, bounds):
+	return InterpolatorFactory(points, values, bounds).interpolator
