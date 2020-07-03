@@ -210,6 +210,8 @@ class Transformer:
 		self._operators = operators
 
 	def __call__(self, regions):
+		regions.check_geometries()
+
 		for i, operator in enumerate(self._operators):
 			try:
 				operator(regions)
