@@ -395,6 +395,77 @@ class Transformer:
 		return pts[:, 0], pts[:, 1]
 
 
+class ShapelyBatchIntersections:
+	def __init__(self, grid_h):
+		self.grid_h = grid_h
+
+	def make_row(self, gy, k=3):
+		grid_h = self.grid_h
+		grid_w = grid_h.shape[1]
+
+		def ls_for_i(i):
+			return grid_h[gy, min(i, grid_w - k):i + k]
+
+		lines = shapely.geometry.MultiLineString([
+			ls_for_i(i)
+			for i in range(0, grid_w, k - 1)])
+		return shapely.strtree.STRtree(lines)
+
+	def __call__(self, pts0, pts1, gy):
+		row = self.make_row(gy + 1)
+		ls = shapely.geometry.LineString
+		norm = np.linalg.norm
+
+		for i, (p0, p1) in enumerate(zip(pts0, pts1)):
+			ray = ls([p0, p1])
+			inter_pts = []
+			for candidate in row.query(ray):
+				inter = ray.intersection(candidate)
+				if inter and not inter.is_empty:
+					geom_type = inter.geom_type
+					if geom_type == "Point":
+						inter_pts.append(np.asarray(inter))
+					elif geom_type == "MultiPoint":
+						inter_pts.extend(np.asarray(inter))
+					else:
+						raise RuntimeError(
+							"unexpected geom_type %s" % geom_type)
+
+			if not inter_pts:
+				logging.info("failed to find intersection.")
+			elif len(inter_pts) == 1:
+				pts1[i] = inter_pts[0]
+			else:
+				dist = norm(np.array(inter_pts) - p0, axis=1)
+				pts1[i] = inter_pts[np.argmin(dist)]
+
+
+class BentleyOttmanBatchIntersections:
+	def __init__(self, grid_h):
+		from bentley_ottmann.planar import segments_intersections
+
+		self.grid_h = grid_h
+		self.intersections = segments_intersections
+
+	def __call__(self, pts0, pts1, gy):
+		grid_h = self.grid_h
+		n = len(pts0)
+
+		segments = list(zip(pts0, pts1)) + list(zip(grid_h[gy, 0:], grid_h[gy, 1:]))
+		segments = [((x1, y1), (x2, y2)) for ((x1, y1), (x2, y2)) in segments]
+
+		for pt, pairs in self.intersections(
+			segments, accurate=False, validate=False).items():
+			for a, b in pairs:
+				if a < n <= b:
+					pts1[a] = pt
+				elif b < n <= a:
+					pts1[b] = pt
+
+
+BatchIntersections = ShapelyBatchIntersections
+
+
 class GridFactory:
 	def __init__(
 			self, page, blocks, lines, separators,
@@ -485,60 +556,21 @@ class GridFactory:
 
 		return grid
 
-	def make_row(self, gy, k=3):
-		grid_h = self.grid_h
-		grid_w = grid_h.shape[1]
-
-		def ls_for_i(i):
-			return grid_h[gy, min(i, grid_w - k):i + k]
-
-		lines = shapely.geometry.MultiLineString([
-			ls_for_i(i)
-			for i in range(0, grid_w, k - 1)])
-		return shapely.strtree.STRtree(lines)
-
 	@cached_property
 	def grid_hv(self):
 		grid_h = self.grid_h
 		grid_res = self._grid_res
 		field_v = self.field_v.get
 
-		ls = shapely.geometry.LineString
-		norm = np.linalg.norm
-
 		grid_hv = np.zeros(grid_h.shape, dtype=np.float32)
+		intersections = BatchIntersections(grid_h)
 
 		pts0 = grid_h[0]
-
 		for gy in range(grid_h.shape[0] - 1):
 			grid_hv[gy, :, :] = pts0
 
 			pts1 = pts0 + field_v(pts0) * grid_res * 2
-			row = self.make_row(gy + 1)
-
-			for i, (p0, p1) in enumerate(zip(pts0, pts1)):
-				ray = ls([p0, p1])
-				inter_pts = []
-				for candidate in row.query(ray):
-					inter = ray.intersection(candidate)
-					if inter and not inter.is_empty:
-						geom_type = inter.geom_type
-						if geom_type == "Point":
-							inter_pts.append(np.asarray(inter))
-						elif geom_type == "MultiPoint":
-							inter_pts.extend(np.asarray(inter))
-						else:
-							raise RuntimeError(
-								"unexpected geom_type %s" % geom_type)
-
-				if not inter_pts:
-					logging.info("failed to find intersection.")
-				elif len(inter_pts) == 1:
-					pts1[i] = inter_pts[0]
-				else:
-					dist = norm(np.array(inter_pts) - p0, axis=1)
-					pts1[i] = inter_pts[np.argmin(dist)]
-
+			intersections(pts0, pts1, gy)
 			pts0 = pts1
 
 		grid_hv[-1, :, :] = pts0
