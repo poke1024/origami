@@ -4,6 +4,7 @@ import click
 import json
 import collections
 import numpy as np
+import pandas as pd
 
 from pathlib import Path
 from tabulate import tabulate
@@ -17,17 +18,21 @@ class StatsProcessor(Processor):
 		options["nolock"] = True
 		super().__init__(options)
 
-		self._list_names = options["list"]
+		self._list_names = options["list_names"]
 		if self._list_names:
 			self._names = []
 		else:
 			self._names = None
 
+		self._list_errors = options["list_errors"]
+		self._tracebacks = collections.defaultdict(
+			lambda: collections.defaultdict(list))
+
 		self._num_pages = 0
 		self._artifacts = collections.defaultdict(int)
 		self._times = collections.defaultdict(list)
 
-	def add_runtimes(self, path):
+	def parse_runtime_data(self, page_path, path):
 		with open(path, "r") as f:
 			runtime_data = json.loads(f.read())
 			for batch, data in runtime_data.items():
@@ -36,6 +41,10 @@ class StatsProcessor(Processor):
 					t = data.get("total_time")  # legacy
 				if t is not None:
 					self._times[batch].append(t)
+
+				if self._list_errors:
+					if data.get("status") == "FAILED":
+						self._tracebacks[batch][data.get("traceback")].append(page_path)
 
 	def artifacts(self):
 		return []
@@ -54,7 +63,7 @@ class StatsProcessor(Processor):
 			if not p.name.startswith("."):
 				self._artifacts[p.name] += 1
 			if p.name == "runtime.json":
-				self.add_runtimes(p)
+				self.parse_runtime_data(page_path, p)
 
 	def print_artifacts(self):
 		data = []
@@ -63,7 +72,7 @@ class StatsProcessor(Processor):
 			data.append([name, str(n)])
 		print(tabulate(data, tablefmt="psql"))
 
-	def print_runtimes(self):
+	def print_elapsed(self):
 		data = []
 		for k in sorted(list(self._times.keys())):
 			v = self._times[k]
@@ -77,6 +86,37 @@ class StatsProcessor(Processor):
 			tablefmt="psql",
 			headers=["batch", "min", "median", "max"]))
 
+	def print_errors(self):
+		full_data = dict(
+			frequency=[],
+			batch=[],
+			traceback=[],
+			pages=[])
+
+		data = []
+		for batch in sorted(list(self._tracebacks.keys())):
+			tracebacks = self._tracebacks[batch]
+			for k in sorted(list(tracebacks.keys())):
+				paths = tracebacks[k]
+				pages = "%d: %s" % (len(paths), paths[0].name)
+				if len(paths) > 1:
+					pages += ", ..."
+				data.append((batch, k[-30:], pages))
+
+				full_data["frequency"].append(len(paths))
+				full_data["batch"].append(batch)
+				full_data["traceback"].append(k)
+				full_data["pages"].append(", ".join(map(str, paths)))
+
+		print(tabulate(
+			data,
+			tablefmt="psql",
+			headers=["batch", "traceback", "pages"]))
+
+		df = pd.DataFrame.from_dict(full_data)
+		with pd.ExcelWriter('errors.xlsx') as writer:
+			df.to_excel(writer)
+
 	def print(self):
 		if self._artifacts:
 			print("artifacts.")
@@ -84,14 +124,19 @@ class StatsProcessor(Processor):
 
 		if self._times:
 			print("")
-			print("runtimes.")
-			self.print_runtimes()
+			print("elapsed.")
+			self.print_elapsed()
 
 		if self._list_names:
 			print("")
 			print("names.")
 			for name in self._names:
 				print(name)
+
+		if self._list_errors:
+			print("")
+			print("errors.")
+			self.print_errors()
 
 
 @click.command()
@@ -100,10 +145,14 @@ class StatsProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-l', '--list',
+	'--list-names',
 	is_flag=True,
 	default=False,
 	help="List found page names.")
+@click.option(
+	'--list-errors',
+	is_flag=True,
+	default=False)
 @click.option(
 	'--name',
 	type=str,
