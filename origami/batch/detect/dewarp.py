@@ -23,6 +23,10 @@ def dewarped_contours(input, transformer):
 					if geom.geom_type not in ("Polygon", "LineString"):
 						logging.error("dewarped contour %s is %s" % (
 							name, geom.geom_type))
+					if not geom.is_valid:
+						geom = geom.buffer(0)
+						if not geom.is_valid:
+							logging.error("invalid geom %s", geom)
 					yield name, geom.wkt.encode("utf8")
 
 
