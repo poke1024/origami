@@ -378,11 +378,15 @@ class Overlap:
 		for path, polygon in contours.items():
 			if path[:2] in active:
 				polygons.append(polygon)
-		self._shape = shapely.ops.cascaded_union(polygons)
+		self._tree = shapely.strtree.STRtree(polygons)
 
 	def __call__(self, shape):
-		error_area = self._shape.intersection(shape).area
-		return error_area / shape.area
+		t_areas = [0]
+		for t in self._tree.query(shape):
+			intersection = t.intersection(shape)
+			if not intersection.is_empty:
+				t_areas.append(intersection.area / t.area)
+		return max(t_areas)
 
 
 class FunctionProxy:
@@ -854,9 +858,7 @@ class LayoutDetectionProcessor(Processor):
 				cohesion=(0.5, 0.8),
 				max_error=0.05,
 				fringe=self._options["fringe"],
-				obstacles=[
-					"separators/H",
-					"separators/V"]),
+				obstacles=["separators/V"]),
 			AdjacencyMerger(
 				"regions/TABULAR", IsBelow()),
 			OverlapMerger(self._options["maximum_overlap"]),
