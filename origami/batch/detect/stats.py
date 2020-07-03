@@ -32,7 +32,9 @@ class StatsProcessor(Processor):
 		with open(path, "r") as f:
 			runtime_data = json.loads(f.read())
 			for batch, data in runtime_data.items():
-				t = data.get("total_time")
+				t = data.get("elapsed")
+				if t is None:
+					t = data.get("total_time")  # legacy
 				if t is not None:
 					self._times[batch].append(t)
 

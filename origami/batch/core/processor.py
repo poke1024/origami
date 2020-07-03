@@ -95,7 +95,8 @@ class Processor:
 
 						if runtime_info is None:
 							runtime_info = dict()
-						runtime_info["total_time"] = round(elapsed(), 2)
+						runtime_info["status"] = "COMPLETED"
+						runtime_info["elapsed"] = round(elapsed(), 2)
 
 						self._update_runtime_info(
 							p, {self.processor_name: runtime_info})
@@ -105,6 +106,11 @@ class Processor:
 					break
 				except:
 					logging.exception("Failed to process %s." % p)
+					runtime_info = dict(
+						status="FAILED",
+						traceback=traceback.format_exc())
+					self._update_runtime_info(p, {
+						self.processor_name: runtime_info})
 
 		if self._profiler:
 			self._profiler.run_viewer()
@@ -124,10 +130,11 @@ class Processor:
 		else:
 			return contextlib.nullcontext()
 
-	def _update_runtime_info(self, page_path, updates):
+	def _update_json(self, page_path, artifact, updates):
 		try:
 			data_path = find_data_path(page_path)
-			json_path = data_path / Artifact.RUNTIME.filename()
+			json_path = data_path / artifact.filename()
+
 			if not json_path.exists():
 				mode = "w+"
 			else:
@@ -148,6 +155,9 @@ class Processor:
 				f.truncate()
 		except:
 			logging.error(traceback.format_exc())
+
+	def _update_runtime_info(self, page_path, updates):
+		self._update_json(page_path, Artifact.RUNTIME, updates)
 
 	@property
 	def compression(self):
