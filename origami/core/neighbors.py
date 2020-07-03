@@ -23,8 +23,13 @@ def non_overlapping_shapes(shapes):
 	tree = shapely.strtree.STRtree(shapes)
 	for shape in shapes:
 		for t in tree.query(shape):
-			if t is not shape and t.intersects(shape):
-				graph.add_edge(id(shape), id(t))
+			if t is shape:
+				continue
+			if not t.intersects(shape):
+				continue
+			if t.touches(shape):
+				continue
+			graph.add_edge(id(shape), id(t))
 
 	safe_shapes = []
 	mapping = []
@@ -32,8 +37,10 @@ def non_overlapping_shapes(shapes):
 		if len(xs) == 1:
 			safe_shapes.append(lookup[list(xs)[0]])
 		else:
-			safe_shapes.append(shapely.ops.cascaded_union([
-				lookup[x] for x in xs]))
+			u = shapely.ops.cascaded_union([
+				lookup[x] for x in xs])
+			assert u.geom_type == "Polygon"
+			safe_shapes.append(u)
 		mapping.append([index[x] for x in xs])
 
 	return safe_shapes, mapping
