@@ -47,6 +47,11 @@ class SegmentationProcessor(Processor):
 	default="",
 	help="Only process paths that conform to the given pattern.")
 @click.option(
+	'--overwrite',
+	is_flag=True,
+	default=False,
+	help="Recompute and overwrite existing result files.")
+@click.option(
 	'--nolock',
 	is_flag=True,
 	default=False,
