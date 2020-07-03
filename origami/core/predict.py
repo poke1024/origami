@@ -234,7 +234,11 @@ class NetPredictor(Predictor):
 	def tile_size(self):
 		return self._tile_size
 
-	def _predict(self, page, labels=None, verbose=False):
+	@property
+	def model(self):
+		return self._model
+
+	def predict_for_models(self, page, models, labels=None, verbose=False):
 		if labels is None:
 			im = page.warped.convert("RGB")
 			pixels = np.array(im)
@@ -253,7 +257,10 @@ class NetPredictor(Predictor):
 			for tile in tiles:
 				tile_pixels = tile.read_outer(net_input)
 				tile_pixels = np.expand_dims(tile_pixels, axis=0)
-				pr_mask = self._model.predict(tile_pixels)
+
+				pr_masks = [model.predict(tile_pixels) for model in models]
+				pr_mask = np.sum(pr_masks, axis=0)
+
 				tile_labels = np.argmax(pr_mask.squeeze(), axis=-1).astype(np.uint8)
 				tile.write_inner(labels, tile_labels)
 
@@ -261,6 +268,10 @@ class NetPredictor(Predictor):
 			self.type, self.name,
 			labels,
 			self._classes)
+
+	def _predict(self, page, **kwargs):
+		return self.predict_for_models(
+			page=page, models=[self._model], **kwargs)
 
 	@property
 	def background(self):
@@ -293,7 +304,7 @@ def _majority_vote(data, undecided=0):
 	return most_freq
 
 
-class VotingPredictor(Predictor):
+class AbstractVotingPredictor(Predictor):
 	def __init__(self, *predictors, name=None):
 		if not all(p.type == predictors[0].type for p in predictors):
 			raise ValueError("predictor need to have same predictor types")
@@ -305,13 +316,6 @@ class VotingPredictor(Predictor):
 		self._name = name
 		_check_predictor_name(self._name)
 
-	def __call__(self, pixels):
-		predictions = [p(pixels) for p in self._predictors]
-		return Prediction(
-			self.type, self.name,
-			_majority_vote([p.labels for p in predictions], self._undecided),
-			self._predictors[0].classes)
-
 	@property
 	def name(self):
 		return self._name
@@ -319,6 +323,29 @@ class VotingPredictor(Predictor):
 	@property
 	def type(self):
 		return self._predictors[0].type
+
+
+class CountedVotingPredictor(AbstractVotingPredictor):
+	def __call__(self, page):
+		predictions = [p(page) for p in self._predictors]
+		return Prediction(
+			self.type, self.name,
+			_majority_vote([p.labels for p in predictions], self._undecided),
+			self._predictors[0].classes)
+
+
+class ConfidenceVotingPredictor(AbstractVotingPredictor):
+	def __call__(self, page):
+		prediction = self._predictors[0].predict_for_models(
+			page,
+			models=[p.model for p in self._predictors])
+		return Prediction(
+			self.type, self.name,
+			prediction.labels,
+			self._predictors[0].classes)
+
+
+VotingPredictor = ConfidenceVotingPredictor
 
 
 class Prediction:
