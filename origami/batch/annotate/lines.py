@@ -76,6 +76,11 @@ class DebugLinesProcessor(Processor):
 	default=False,
 	help="Do not lock files while processing. Breaks concurrent batches, "
 	"but is necessary on some network file systems.")
+@click.option(
+	'--overwrite',
+	is_flag=True,
+	default=False,
+	help="Recompute and overwrite existing result files.")
 def debug_lines(data_path, **kwargs):
 	""" Export annotate information on lines for all document images in DATA_PATH. """
 	processor = DebugLinesProcessor(kwargs)
