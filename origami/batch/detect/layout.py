@@ -728,7 +728,10 @@ def divide(shape, dividers, axis):
 		p1[axis] = divider
 
 		line = shapely.geometry.LineString([p0, p1])
-		items = shapely.ops.split(rest, line)
+		if not rest.is_empty:
+			items = shapely.ops.split(rest, line)
+		else:
+			items = []
 
 		bins = [[], []]
 		for geom in items:
