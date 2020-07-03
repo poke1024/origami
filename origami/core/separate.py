@@ -52,8 +52,8 @@ class Separators:
 		obstacles = set([self.label(o) for o in obstacles])
 		box = shapely.geometry.box(*bounds)
 		for sep in self.query(box):
-			if box.intersects(sep):
-				if self.label(sep.name) in obstacles:
+			if self.label(sep.name) in obstacles:
+				if box.intersects(sep):
 					return True
 		return False
 
