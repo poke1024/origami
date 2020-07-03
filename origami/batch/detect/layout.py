@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import numpy as np
+import scipy
+import scipy.spatial
 import click
 import shapely.ops
 import shapely.wkt
@@ -9,7 +11,6 @@ import shapely.geometry
 import shapely.ops
 import sklearn.cluster
 import skimage.filters
-import scipy.spatial
 import networkx as nx
 import collections
 import portion
@@ -47,6 +48,10 @@ def fixed_point(func, x0, reduce):
 
 def _cohesion(shapes, union):
 	return sum([shape.area for shape in shapes]) / union.area
+
+
+def kernel(*s):
+	return np.ones(s) / np.prod(s)
 
 
 class LineCounts:
@@ -545,14 +550,15 @@ class Shrinker:
 class FixSpillOver:
 	def __init__(
 			self, filters,
-			band=0.01, peak=0.9, whratio=1.5, min_line_count=3,
-			min_area=0.2, window_size=15):
+			level=0.1, band=0.01, peak=0.8, whratio=1.5,
+			min_line_count=3, min_area=0.2, window_size=15):
 
 		# "whratio" is measured in line height (lh). examples:
 		# good split: w=90, lh=35, whratio=2.5
 		# bad split: w=30, lh=40, whratio=0.75
 
 		self._filter = create_filter(filters)
+		self._level = level
 		self._band = band
 		self._peak = peak
 		self._whratio = whratio
@@ -588,6 +594,7 @@ class FixSpillOver:
 				continue
 
 			line_height = np.median(regions.line_heights(k))
+			int_line_height = max(6, int(line_height))
 
 			minx, miny, maxx, maxy = contour.bounds
 
@@ -600,16 +607,21 @@ class FixSpillOver:
 
 			thresh_sauvola = skimage.filters.threshold_sauvola(
 				crop, window_size=self._window_size)
-			crop = (crop > thresh_sauvola).astype(np.uint8)
+			crop = (crop > thresh_sauvola).astype(np.float32)
 
-			whitespace = np.mean(crop.astype(np.float32), axis=0)
-			whitespace = np.convolve(
-				whitespace, np.ones((kernel_w,)) / kernel_w, mode="same")
+			ink_v = scipy.ndimage.convolve(
+				crop, kernel(int_line_height, 1), mode="constant")
+
+			ink_h = np.quantile(ink_v, self._level, axis=0)
+
+			ink_h = np.convolve(
+				ink_h, kernel(kernel_w), mode="same")
 
 			peaks, info = scipy.signal.find_peaks(
-				whitespace,
+				ink_h,
 				height=self._peak,
-				width=line_height * self._whratio)
+				width=line_height * self._whratio,
+				rel_height=1)
 
 			if len(peaks) > 0:
 				i = np.argmax(info["peak_heights"])
