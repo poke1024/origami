@@ -105,6 +105,10 @@ class Regions:
 	def page(self):
 		return self._page
 
+	@cached_property
+	def magnitude(self):
+		return self.page.magnitude(dewarped=True)
+
 	def union(self, shapes):
 		return self._union(self._page, shapes)
 
@@ -233,11 +237,15 @@ def _alignment(a0, a1, b0, b1):
 
 
 class IsOnSameLine:
-	def __init__(self, max_line_count=3, cohesion=0.8, alignment=0.8, fringe=0):
+	def __init__(
+		self, max_line_count=3, cohesion=0.8,
+		alignment=0.8, fringe=0, max_distance=0.006):
+
 		self._max_line_count = max_line_count
 		self._cohesion = cohesion
 		self._min_alignment = alignment
 		self._fringe = fringe
+		self._max_distance = max_distance
 
 	def for_regions(self, regions):
 		return partial(self.check, regions=regions)
@@ -255,6 +263,9 @@ class IsOnSameLine:
 		_, by0, _, by1 = b.bounds
 
 		if _alignment(ay0, ay1, by0, by1) < self._min_alignment:
+			return False
+
+		if a.distance(b) > self._max_distance * regions.magnitude:
 			return False
 
 		u = regions.union([a, b])
@@ -468,8 +479,7 @@ class SequentialMerger:
 		contours = regions.contours
 		shapes = [contours[x] for x in names]
 
-		mag = regions.page.magnitude(dewarped=True)
-		fringe = self._fringe * mag
+		fringe = self._fringe * regions.magnitude
 		label = names[0][:2]
 		assert(all(x[:2] == label for x in names))
 
@@ -505,8 +515,7 @@ class SequentialMerger:
 		regions.combine_from_graph(graph)
 
 	def _compute_order(self, regions, contours):
-		mag = regions.page.magnitude(dewarped=True)
-		fringe = self._fringe * mag
+		fringe = self._fringe * regions.magnitude
 		contours = [(tuple(c.name.split("/")), c) for c in contours]
 		return polygon_order(contours, fringe=fringe)
 
@@ -586,7 +595,7 @@ class FixSpillOver:
 		# since we dewarped, we know columns are unskewed.
 		page = regions.page
 		pixels = np.array(page.dewarped.convert("L"))
-		mag = page.magnitude(False)
+		mag = regions.magnitude
 
 		kernel_w = max(
 			10,  # pixels in warped image space
