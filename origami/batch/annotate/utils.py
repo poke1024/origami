@@ -241,6 +241,31 @@ def render_contours(
 	return pixmap
 
 
+def render_arrows(qp, path, pos="center"):
+	theta = 45
+	d = 25
+	for (x1, y1), (x2, y2) in zip(path, path[1:]):
+		dx = x2 - x1
+		dy = y2 - y1
+		phi = math.atan2(dy, dx)
+		phi1 = phi + (90 + theta) * (math.pi / 180)
+		phi2 = phi - (90 + theta) * (math.pi / 180)
+		if pos == "begin":
+			ax, ay = x1, x2
+		elif pos == "end":
+			ax, ay = x2, y2
+		elif pos == "center":
+			ax = (x1 + x2) / 2
+			ay = (y1 + y2) / 2
+		else:
+			raise ValueError(pos)
+		qp.drawPolyline([
+			QtCore.QPointF(ax + d * math.cos(phi1), ay + d * math.sin(phi1)),
+			QtCore.QPointF(ax, ay),
+			QtCore.QPointF(ax + d * math.cos(phi2), ay + d * math.sin(phi2))
+	])
+
+
 def render_lines(pixmap, lines, get_label):
 	classes = sorted(list(set(x[:2] for x in lines.keys())))
 	brushes = dict()
@@ -276,7 +301,10 @@ def render_lines(pixmap, lines, get_label):
 			qp.setOpacity(0.9)
 			qp.setPen(red_pen)
 			qp.drawPolyline([QtCore.QPointF(*p), QtCore.QPointF(*(p + right))])
-			qp.drawPolyline([QtCore.QPointF(*p), QtCore.QPointF(*(p + up))])
+
+			m = p + (right / 2)
+			qp.drawPolyline([QtCore.QPointF(*m), QtCore.QPointF(*(m + up))])
+			render_arrows(qp, [m, m + up], "end")
 
 	finally:
 		qp.end()
@@ -364,21 +392,7 @@ def render_paths(
 			qp.drawPolyline(poly)
 
 			if show_dir:
-				theta = 45
-				d = 25
-				for (x1, y1), (x2, y2) in zip(path, path[1:]):
-					dx = x2 - x1
-					dy = y2 - y1
-					phi = math.atan2(dy, dx)
-					phi1 = phi + (90 + theta) * (math.pi / 180)
-					phi2 = phi - (90 + theta) * (math.pi / 180)
-					mx = (x1 + x2) / 2
-					my = (y1 + y2) / 2
-					qp.drawPolyline([
-						QtCore.QPointF(mx + d * math.cos(phi1), my + d * math.sin(phi1)),
-						QtCore.QPointF(mx, my),
-						QtCore.QPointF(mx + d * math.cos(phi2), my + d * math.sin(phi2))
-					])
+				render_arrows(qp, path, "center")
 
 	finally:
 		qp.end()
