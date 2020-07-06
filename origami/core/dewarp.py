@@ -299,10 +299,15 @@ class Samples:
 		return coords, phis
 
 	def add_line_skew_hq(self, blocks, lines, max_phi, delta=0):
+		n_skipped = 0
 		for line in lines.values():
 			if abs(line.angle) < max_phi:
 				self._points.append(line.center)
 				self._values.append(line.angle + delta)
+			else:
+				n_skipped += 1
+		if n_skipped > 0:
+			logging.warning("skipped %d lines." % n_skipped)
 
 	def add_line_skew_lq(self, blocks, lines, max_phi):
 		estimator = LineSkewEstimator(
@@ -480,14 +485,11 @@ class GridFactory:
 		self._grid_res = grid_res
 		self._max_grid_size = max_grid_size
 
-		if separators is not None:
-			if rescale_separators:  # legacy mode
-				sx = self._width / 1280
-				sy = self._height / 2400
-				separators = dict((k, shapely.affinity.scale(
-					s, sx, sy, origin=(0, 0))) for k, s in separators.items())
-		else:
-			separators = None
+		if separators is not None and rescale_separators:  # legacy mode
+			sx = self._width / 1280
+			sy = self._height / 2400
+			separators = dict((k, shapely.affinity.scale(
+				s, sx, sy, origin=(0, 0))) for k, s in separators.items())
 
 		self._samples_h = Samples()
 		self._samples_v = Samples()
