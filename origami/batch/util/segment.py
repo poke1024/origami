@@ -27,12 +27,12 @@ class SegmentationConverter(Processor):
 		]
 
 	def process(self, p: Path, output):
-		# convert old segmentation filename.
+		# util old segmentation filename.
 		old_zip_path = p.with_suffix(".segment.zip")
 		if old_zip_path.exists():
 			shutil.move(old_zip_path, output.paths[0])
 		else:
-			# convert very old segmentation pickle file format.
+			# util very old segmentation pickle file format.
 			pickle_path = p.with_suffix(".sgm.pickle")
 			if pickle_path.exists():
 				segmentation = Segmentation.open_pickle(pickle_path)
