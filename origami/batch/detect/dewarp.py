@@ -30,6 +30,8 @@ def dewarped_contours(input, transformer):
 			for name in zf.namelist():
 				if name.endswith(".wkt"):
 					geom = shapely.wkt.loads(zf.read(name).decode("utf8"))
+					warped_geom = geom
+					assert not warped_geom.is_empty
 					geom = shapely.ops.transform(transformer, geom)
 					if geom.geom_type not in ("Polygon", "LineString"):
 						logging.error("dewarped contour %s is %s" % (
@@ -38,7 +40,12 @@ def dewarped_contours(input, transformer):
 						geom = geom.buffer(0)
 						if not geom.is_valid:
 							logging.error("invalid geom %s", geom)
-					yield name, geom.wkt.encode("utf8")
+					if geom.is_empty:
+						logging.warning(
+							"lost contour %s (A=%.1f) during dewarping." % (
+								name, warped_geom.area))
+					else:
+						yield name, geom.wkt.encode("utf8")
 
 
 class DewarpProcessor(Processor):
@@ -121,7 +128,7 @@ class DewarpProcessor(Processor):
 @click.option(
 	'--regions',
 	type=str,
-	default="regions.TEXT, regions.TABULAR",
+	default="regions/TEXT, regions/TABULAR",
 	help="which regions to consider for warping estimation")
 @click.option(
 	'--name',
