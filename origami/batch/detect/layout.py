@@ -76,11 +76,20 @@ class LineCounts:
 		return self._num_lines[block_path]
 
 
+def non_empty_contours(contours):
+	for k, contour in contours:
+		if not contour.is_empty:
+			if not contour.is_valid:
+				# this should have happened in the dewarp stage.
+				contour = contour.buffer(0)
+			yield k, contour
+
+
 class Regions:
 	def __init__(self, page, warped_lines, contours, separators, union):
 		self._page = page
 
-		self._contours = dict(contours)
+		self._contours = dict(non_empty_contours(contours))
 		self._unmodified_contours = self._contours.copy()
 		for k, contour in contours:
 			contour.name = "/".join(k)
@@ -98,8 +107,11 @@ class Regions:
 
 	def check_geometries(self, allowed):
 		for k, contour in self._contours.items():
-			assert contour.is_valid
-			assert contour.geom_type in allowed
+			if not contour.is_valid:
+				raise ValueError("invalid contour")
+			if contour.geom_type not in allowed:
+				raise ValueError("%s not in %s" % (
+					contour.geom_type, allowed))
 
 	@property
 	def page(self):
@@ -416,7 +428,7 @@ class DilationOperator:
 
 	@staticmethod
 	def _none(page, shape):
-		if shape.geom_type == "MultiPolygon":
+		if shape.geom_type != "Polygon":
 			return shape.convex_hull
 		else:
 			return shape
