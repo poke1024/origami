@@ -157,6 +157,10 @@ class Reader:
 	def is_ready(self):
 		return all(p.exists() for p in self.paths)
 
+	@property
+	def missing(self):
+		return [p for p in self.paths if not p.exists()]
+
 	def load_json(self, artifact):
 		with open(self.path(artifact), "r") as f:
 			return json.loads(f.read())
@@ -260,6 +264,10 @@ class Writer:
 
 	def is_ready(self):
 		return self._overwrite or not any(p.exists() for p in self.paths)
+
+	@property
+	def missing(self):
+		return []
 
 	def write_json(self, artifact, data):
 		path = self.path(artifact)

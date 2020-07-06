@@ -25,6 +25,7 @@ class Processor:
 		self._lock_files = not options.get("nolock", True)
 		self._overwrite = options.get("overwrite", False)
 		self._name = options.get("name", "")
+		self._verbose = False
 
 		if options.get("profile"):
 			from profiling.sampling import SamplingProfiler
@@ -51,6 +52,8 @@ class Processor:
 				overwrite=self._overwrite)
 
 			if not f.is_ready():
+				if self._verbose:
+					print("skipping %s: missing " % (page_path, f.missing))
 				return False
 
 			kwargs[arg] = f
@@ -74,9 +77,13 @@ class Processor:
 				if self._name and not re.search(self._name, str(p)):
 					continue
 				if imghdr.what(p) is None:
+					if self._verbose:
+						print("skipping %s: not an image." % p)
 					continue
 
 				if not self.should_process(p):
+					if self._verbose:
+						print("skipping %s: should_process is False" % p)
 					continue
 
 				kwargs = self.prepare_process(p)
