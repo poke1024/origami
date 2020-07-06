@@ -8,8 +8,9 @@ from pathlib import Path
 from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
-from origami.batch.core.block_processor import Processor
+from origami.batch.core.processor import Processor
 from origami.batch.annotate.utils import render_lines, qt_app
+from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 
 
 class DebugWarpProcessor(Processor):
@@ -21,13 +22,14 @@ class DebugWarpProcessor(Processor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".warped.lines.zip").exists()
+	def artifacts(self):
+		return [
+			("warped", Input(Artifact.CONTOURS, Artifact.LINES, stage=Stage.WARPED)),
+			("output", Output(Annotation("warp"))),
+		]
 
-	def process(self, page_path: Path):
-		blocks = self.read_blocks(page_path)
-		lines = self.read_lines(page_path, blocks)
+	def process(self, page_path: Path, warped, output):
+		lines = warped.lines
 
 		def get_label(lines_path):
 			classifier, segmentation_label, block_id, line_id = lines_path
@@ -36,7 +38,7 @@ class DebugWarpProcessor(Processor):
 		qt_im = ImageQt(PIL.Image.open(page_path))
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 		pixmap = render_lines(pixmap, lines, get_label)
-		pixmap.toImage().save(str(page_path.with_suffix(".annotate.warp.jpg")))
+		output.annotation(pixmap.toImage())
 
 
 @click.command()
