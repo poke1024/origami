@@ -100,7 +100,9 @@ class DewarpProcessor(Processor):
 		grid = Grid.create(
 			page,
 			blocks, lines, separators,
-			grid_res=self._options["grid_cell_size"])
+			grid_res=self._options["grid_cell_size"],
+			max_phi=self._options["max_phi"],
+			max_std=self._options["max_phi_std"])
 
 		with output.contours(copy_meta_from=input) as zf:
 			for name, data in dewarped_contours(input, grid.transformer):
@@ -120,6 +122,16 @@ class DewarpProcessor(Processor):
 	type=int,
 	default=25,
 	help="grid cell size used for dewarping (smaller is better, but takes longer).")
+@click.option(
+	'--max-phi',
+	type=float,
+	default=30,
+	help="maximum allowed skewing angle.")
+@click.option(
+	'--max-phi-std',
+	type=float,
+	default=0.1,
+	help="maximum allowed standard deviation inside angle set.")
 @click.option(
 	'--min-line-length',
 	type=float,

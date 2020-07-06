@@ -332,10 +332,22 @@ class Samples:
 				im, pos = block.extract_image()
 				add(im, pos)
 
-	def add_separator_skew(self, separators, sep_types):
+	def add_separator_skew(self, separators, sep_types, max_std=0.1):
 		for path, polyline in separators.items():
 			if path[1] in sep_types:
 				sep_points, sep_values = self._angles(polyline.coords)
+
+				# in rare cases, separator detection goes wrong and will
+				# produce separators with mixed up coordinate order, e.g.
+				#  ----><-----. we sort out these cases by assuming some
+				#  maximum variance for the good ones.
+				std = np.std(sep_values)
+				if std > max_std:
+					logging.warning(
+						"ignored suspicious separator %s with std=%.1f" % (
+							str(path), std))
+					continue
+
 				self._points.extend(sep_points)
 				self._values.extend(sep_values)
 
@@ -474,7 +486,7 @@ BatchIntersections = ShapelyBatchIntersections
 class GridFactory:
 	def __init__(
 			self, page, blocks, lines, separators,
-			grid_res=25, max_phi=30,
+			grid_res=25, max_phi=30, max_std=0.1,
 			rescale_separators=False,
 			max_grid_size=1000):
 
@@ -496,14 +508,15 @@ class GridFactory:
 
 		if separators:
 			self._samples_h.add_separator_skew(
-				separators, Samples.horizontal_separators)
+				separators, Samples.horizontal_separators, max_std=max_std)
 			self._samples_v.add_separator_skew(
-				separators, Samples.vertical_separators)
+				separators, Samples.vertical_separators, max_std=max_std)
 
-		self._samples_h.add_line_skew_hq(
-			blocks, lines, max_phi=max_phi, delta=0)
-		self._samples_v.add_line_skew_hq(
-			blocks, lines, max_phi=max_phi, delta=math.pi / 2)
+		if lines:
+			self._samples_h.add_line_skew_hq(
+				blocks, lines, max_phi=max_phi, delta=0)
+			self._samples_v.add_line_skew_hq(
+				blocks, lines, max_phi=max_phi, delta=math.pi / 2)
 
 		#self._samples_v.add_border_skew(page, blocks, separators)
 
