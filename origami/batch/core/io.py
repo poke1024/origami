@@ -233,6 +233,13 @@ class Reader:
 				texts[k] = zf.read(k).decode("utf8")
 		return texts
 
+	@property
+	def annotation(self):
+		assert len(self._artifacts) == 1
+		annotation = list(self._artifacts)[0]
+		assert isinstance(annotation, Annotation)
+		return self.path(annotation)
+
 
 class Input:
 	def __init__(self, *artifacts, stage=None):
