@@ -587,17 +587,17 @@ class GridFactory:
 			def cond(x):
 				return np.any(x[:, 0, 0] > 0)
 
-			def reorder(x):
-				return list(reversed(x))
+			def concat(x):
+				return list(reversed(x)) + [grid_hv]
 
 			step = grid_res * -1
 			borders = [grid_hv[:, :1]]
 		elif side == "right":
 			def cond(x):
-				return np.any(x[:, 0, 0] < self._width)
+				return np.any(x[:, -1, 0] < self._width)
 
-			def reorder(x):
-				return x
+			def concat(x):
+				return [grid_hv] + x
 
 			step = grid_res * 1
 			borders = [grid_hv[:, -1:]]
@@ -614,7 +614,47 @@ class GridFactory:
 			borders.append(new_pts.reshape((grid_hv.shape[0], 1, 2)))
 
 		if len(borders) > 1:
-			return np.hstack(reorder(borders[1:]) + [grid_hv])
+			return np.hstack(concat(borders[1:]))
+		else:
+			return grid_hv
+
+	def extend_border_v(self, grid_hv, side):
+		field_v = self.field_v.get
+		grid_res = self._grid_res
+		max_borders = self._max_grid_size // 2
+
+		if side == "top":
+			def cond(x):
+				return np.any(x[0, :, 1] > 0)
+
+			def concat(x):
+				return list(reversed(x)) + [grid_hv]
+
+			step = grid_res * -1
+			borders = [grid_hv[:1, :]]
+		elif side == "bottom":
+			def cond(x):
+				return np.any(x[-1, :, 1] < self._height)
+
+			def concat(x):
+				return [grid_hv] + x
+
+			step = grid_res * 1
+			borders = [grid_hv[-1:, :]]
+		else:
+			raise ValueError(side)
+
+		while cond(borders[-1]):
+			if len(borders) >= max_borders:
+				raise RuntimeError("border extension not terminating")
+
+			pts = borders[-1][0, :]
+			new_pts = pts + field_v(pts) * step
+
+			borders.append(new_pts.reshape((1, grid_hv.shape[1], 2)))
+
+		if len(borders) > 1:
+			return np.vstack(concat(borders[1:]))
 		else:
 			return grid_hv
 
@@ -666,6 +706,9 @@ class GridFactory:
 
 		grid_hv = self.extend_border_h(grid_hv, "left")
 		grid_hv = self.extend_border_h(grid_hv, "right")
+
+		grid_hv = self.extend_border_v(grid_hv, "top")
+		grid_hv = self.extend_border_v(grid_hv, "bottom")
 
 		assert not np.any(np.isnan(grid_hv))
 
