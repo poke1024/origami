@@ -566,6 +566,46 @@ class GridFactory:
 				"estimated grid too big: (%d, %d)" % (est_height, est_width))
 		return est_height, est_width
 
+	def extend_border_h(self, grid_hv, side):
+		field_h = self.field_h.get
+		grid_res = self._grid_res
+		max_borders = self._max_grid_size // 2
+
+		if side == "left":
+			def cond(x):
+				return np.any(x[:, 0, 0] > 0)
+
+			def reorder(x):
+				return list(reversed(x))
+
+			step = grid_res * -1
+			borders = [grid_hv[:, :1]]
+		elif side == "right":
+			def cond(x):
+				return np.any(x[:, 0, 0] < self._width)
+
+			def reorder(x):
+				return x
+
+			step = grid_res * 1
+			borders = [grid_hv[:, -1:]]
+		else:
+			raise ValueError(side)
+
+		while cond(borders[-1]):
+			if len(borders) >= max_borders:
+				raise RuntimeError("border extension not terminating")
+
+			pts = borders[-1][:, 0]
+			new_pts = pts + field_h(pts) * step
+
+			borders.append(new_pts.reshape((grid_hv.shape[0], 1, 2)))
+
+		if len(borders) > 1:
+			return np.hstack(reorder(borders[1:]) + [grid_hv])
+		else:
+			return grid_hv
+
 	@cached_property
 	def grid_h(self):
 		grid_shape = self.grid_shape
@@ -604,6 +644,9 @@ class GridFactory:
 			pts0 = pts1
 
 		grid_hv[-1, :, :] = pts0
+
+		grid_hv = self.extend_border_h(grid_hv, "left")
+		grid_hv = self.extend_border_h(grid_hv, "right")
 
 		assert not np.any(np.isnan(grid_hv))
 
