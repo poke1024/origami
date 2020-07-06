@@ -13,6 +13,17 @@ from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.dewarp import Grid
 
 
+class RegionsFilter:
+	def __init__(self, spec):
+		self._paths = set()
+		for s in spec.split(","):
+			self._paths.add(
+				tuple(s.strip().split("/")))
+
+	def __call__(self, path):
+		return tuple(path[:2]) in self._paths
+
+
 def dewarped_contours(input, transformer):
 	with open(input.path(Artifact.CONTOURS), "rb") as f:
 		with zipfile.ZipFile(f, "r") as zf:
@@ -73,6 +84,12 @@ class DewarpProcessor(Processor):
 		lines = filter_geoms(lines, lambda l: l.unextended_length)
 		separators = filter_geoms(separators, lambda g: g.length)
 
+		r_filter = RegionsFilter(self._options["regions"])
+		lines = dict(
+			(k, g)
+			for k, g in lines.items()
+			if r_filter(k))
+
 		grid = Grid.create(
 			page,
 			blocks, lines, separators,
@@ -92,7 +109,7 @@ class DewarpProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-c', '--grid-cell-size',
+	'--grid-cell-size',
 	type=int,
 	default=25,
 	help="grid cell size used for dewarping (smaller is better, but takes longer).")
@@ -101,6 +118,11 @@ class DewarpProcessor(Processor):
 	type=float,
 	default=0.05,
 	help="detect warp using baselines that are above this relative length.")
+@click.option(
+	'--regions',
+	type=str,
+	default="regions.TEXT, regions.TABULAR",
+	help="which regions to consider for warping estimation")
 @click.option(
 	'--name',
 	type=str,
