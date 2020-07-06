@@ -9,7 +9,7 @@ from PySide2 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.processor import Processor
-from origami.batch.annotate.utils import render_lines, qt_app
+from origami.batch.annotate.utils import render_lines, render_paths, qt_app
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 
 
@@ -38,6 +38,13 @@ class DebugWarpProcessor(Processor):
 		qt_im = ImageQt(PIL.Image.open(page_path))
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 		pixmap = render_lines(pixmap, lines, get_label)
+
+		for k, v in warped.separators.items():
+			colors = dict(T="yellow", H="blue", V="red")
+			path = list(v.coords)
+			pixmap = render_paths(
+				pixmap, [path], colors[k[1]], opacity=0.9, show_dir=True)
+
 		output.annotation(pixmap.toImage())
 
 

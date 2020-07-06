@@ -5,6 +5,7 @@ import networkx as nx
 import logging
 import collections
 import os
+import math
 
 from PySide2 import QtGui, QtCore
 from functools import lru_cache
@@ -336,12 +337,15 @@ def render_warped_line_confidence(pixmap, lines):
 	return pixmap
 
 
-def render_paths(pixmap, columns, color="blue"):
+def render_paths(
+	pixmap, columns,
+	color="blue", opacity=0.5, show_dir=False):
+
 	qp = QtGui.QPainter()
 	qp.begin(pixmap)
 
 	try:
-		qp.setOpacity(0.5)
+		qp.setOpacity(opacity)
 		qp.setPen(default_pen(color, 10))
 
 		for path in columns:
@@ -349,6 +353,23 @@ def render_paths(pixmap, columns, color="blue"):
 			for x, y in path:
 				poly.append(QtCore.QPointF(x, y))
 			qp.drawPolyline(poly)
+
+			if show_dir:
+				theta = 45
+				d = 25
+				for (x1, y1), (x2, y2) in zip(path, path[1:]):
+					dx = x2 - x1
+					dy = y2 - y1
+					phi = math.atan2(dy, dx)
+					phi1 = phi + (90 + theta) * (math.pi / 180)
+					phi2 = phi - (90 + theta) * (math.pi / 180)
+					mx = (x1 + x2) / 2
+					my = (y1 + y2) / 2
+					qp.drawPolyline([
+						QtCore.QPointF(mx + d * math.cos(phi1), my + d * math.sin(phi1)),
+						QtCore.QPointF(mx, my),
+						QtCore.QPointF(mx + d * math.cos(phi2), my + d * math.sin(phi2))
+					])
 
 	finally:
 		qp.end()
