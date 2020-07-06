@@ -244,13 +244,15 @@ def render_lines(pixmap, lines, get_label):
 	qp.begin(pixmap)
 
 	try:
-		qp.setOpacity(0.5)
-		qp.setPen(default_pen())
+		black_pen = default_pen()
+		red_pen = default_pen("#FFA500", 7)
 
 		for i, (line_path, line) in enumerate(lines.items()):
 			classifier, label, block_id, line_id = line_path
 			qp.setBrush(brushes[(classifier, label, i % 2)])
+			qp.setPen(black_pen)
 
+			qp.setOpacity(0.5)
 			poly = QtGui.QPolygonF()
 			for x, y in line.image_space_polygon.exterior.coords:
 				poly.append(QtCore.QPointF(x, y))
@@ -261,6 +263,8 @@ def render_lines(pixmap, lines, get_label):
 			right = np.array(line_info["right"])
 			up = np.array(line_info["up"])
 
+			qp.setOpacity(0.9)
+			qp.setPen(red_pen)
 			qp.drawPolyline([QtCore.QPointF(*p), QtCore.QPointF(*(p + right))])
 			qp.drawPolyline([QtCore.QPointF(*p), QtCore.QPointF(*(p + up))])
 
