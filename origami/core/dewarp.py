@@ -24,6 +24,7 @@ import io
 import zipfile
 import json
 import logging
+import multiprocessing
 
 from cached_property import cached_property
 from functools import lru_cache
@@ -419,10 +420,19 @@ def extrapolate(a, b, x):
 	return b + x * v
 
 
+def make_slices(n, k):
+	for i in range(0, n, k):
+		yield slice(i, i + k)
+
+
 class ShapelyBatchIntersections:
 	def __init__(self, grid_h, grid_res):
 		self.grid_h = grid_h
 		self.grid_res = grid_res
+
+		self._rows = [
+			self.make_row(gy + 1)
+			for gy in range(grid_h.shape[0] - 1)]
 
 	def make_row(self, gy, k=3):
 		grid_h = self.grid_h
@@ -443,7 +453,7 @@ class ShapelyBatchIntersections:
 		return shapely.strtree.STRtree(lines)
 
 	def __call__(self, pts0, pts1, gy):
-		row = self.make_row(gy + 1)
+		row = self._rows[gy]
 		ls = shapely.geometry.LineString
 		norm = np.linalg.norm
 
@@ -504,6 +514,8 @@ class GridFactory:
 			grid_res=25, max_phi=30, max_std=0.1,
 			rescale_separators=False,
 			max_grid_size=1000):
+
+		self._pool = multiprocessing.pool.ThreadPool(processes=8)
 
 		size = page.warped.size
 
@@ -635,15 +647,22 @@ class GridFactory:
 		grid_hv = np.zeros(grid_h.shape, dtype=np.float32)
 		intersections = BatchIntersections(grid_h, grid_res)
 
-		pts0 = grid_h[0]
-		for gy in range(grid_h.shape[0] - 1):
-			grid_hv[gy, :, :] = pts0
+		def compute_slice(sel):
+			pts0 = grid_h[0][sel]
+			for gy in range(grid_h.shape[0] - 1):
+				grid_hv[gy, sel, :] = pts0
 
-			pts1 = pts0 + field_v(pts0) * grid_res * 2
-			intersections(pts0, pts1, gy)
-			pts0 = pts1
+				pts1 = pts0 + field_v(pts0) * grid_res * 2
+				intersections(pts0, pts1, gy)
+				pts0 = pts1
 
-		grid_hv[-1, :, :] = pts0
+			grid_hv[-1, sel, :] = pts0
+
+		if self._pool is None:
+			compute_slice(slice(0, grid_h.shape[1]))
+		else:
+			slices = make_slices(n=grid_h.shape[1], k=128)
+			self._pool.map(compute_slice, slices)
 
 		grid_hv = self.extend_border_h(grid_hv, "left")
 		grid_hv = self.extend_border_h(grid_hv, "right")
