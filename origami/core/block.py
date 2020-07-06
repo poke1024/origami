@@ -423,6 +423,7 @@ class LineDetector:
 		force_lines=False,
 		extra_height=0.05,
 		extra_descent=0,
+		block_size_minimum=4,
 		text_area_factory=TextAreaFactory(),
 		binarizer=Binarizer()):
 
@@ -434,6 +435,7 @@ class LineDetector:
 
 		self._text_area_factory = text_area_factory
 		self._binarizer = binarizer
+		self._block_size_minimum = block_size_minimum
 
 	def create_fake_line(self, block, text_area):
 		minx, miny, maxx, maxy = block.image_space_polygon.bounds
@@ -475,6 +477,8 @@ class LineDetector:
 
 			pad = 32
 			im, pos = block.image(text_area)
+			if min(im.width, im.height) < self._block_size_minimum:
+				return []
 			im = padded(im, pad=pad, background_color=bg)
 
 			if self._binarizer is not None:
