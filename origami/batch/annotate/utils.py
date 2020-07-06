@@ -53,6 +53,12 @@ def render_separators(pixmap, separators):
 		for line_path, separator in separators.items():
 			qp.setPen(pens.get(line_path[:2]))
 
+			if separator.geom_type != "LineString":
+				logging.error(
+					"encountered %s while rendering separator %s" % (
+						separator.geom_type, line_path))
+				continue
+
 			pts = [QtCore.QPointF(x, y) for x, y in separator.coords]
 			qp.drawPolyline(pts)
 
