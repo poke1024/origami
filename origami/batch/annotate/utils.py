@@ -161,12 +161,18 @@ def render_contours(
 			sorted_contours[k] = [(x[1], contours[x[1]]) for x in sorted(
 				label_path[k], key=lambda x: x[0])]
 
+		def render_contour(coords):
+			poly = QtGui.QPolygonF()
+			for x, y in coords:
+				poly.append(point(x, y))
+			qp.drawPolygon(poly)
+
 		for k in sorted_contours.keys():
 			for i, (block_path, contour) in enumerate(sorted_contours[k]):
 				if contour.is_empty:
 					continue
 
-				if contour.geom_type != "Polygon":
+				if contour.geom_type not in ("Polygon", "MultiPolygon"):
 					logging.error(
 						"encountered %s while rendering contour %s" % (
 							contour.geom_type, block_path))
@@ -180,10 +186,13 @@ def render_contours(
 				qp.setBrush(brushes.get_brush(
 					block_path, style=style))
 
-				poly = QtGui.QPolygonF()
-				for x, y in contour.exterior.coords:
-					poly.append(point(x, y))
-				qp.drawPolygon(poly)
+				if contour.geom_type == "Polygon":
+					render_contour(contour.exterior.coords)
+				elif contour.geom_type == "MultiPolygon":
+					for geom in contour.geoms:
+						render_contour(geom.exterior.coords)
+				else:
+					raise ValueError(contour.geom_type)
 
 		qp.setBrush(QtGui.QBrush(QtGui.QColor("white")))
 
