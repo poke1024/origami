@@ -413,16 +413,29 @@ class Transformer:
 		return pts[:, 0], pts[:, 1]
 
 
+def extrapolate(a, b, x):
+	v = b - a
+	v /= np.linalg.norm(v)
+	return b + x * v
+
+
 class ShapelyBatchIntersections:
-	def __init__(self, grid_h):
+	def __init__(self, grid_h, grid_res):
 		self.grid_h = grid_h
+		self.grid_res = grid_res
 
 	def make_row(self, gy, k=3):
 		grid_h = self.grid_h
 		grid_w = grid_h.shape[1]
+		large = grid_w * self.grid_res
 
 		def ls_for_i(i):
-			return grid_h[gy, min(i, grid_w - k):i + k]
+			pts = grid_h[gy, min(i, grid_w - k):i + k]
+			if i == 0:
+				pts[0] = extrapolate(pts[1], pts[0], large)
+			elif i + k >= grid_w:
+				pts[-1] = extrapolate(pts[-2], pts[-1], large)
+			return pts
 
 		lines = shapely.geometry.MultiLineString([
 			ls_for_i(i)
@@ -450,7 +463,8 @@ class ShapelyBatchIntersections:
 							"unexpected geom_type %s" % geom_type)
 
 			if not inter_pts:
-				logging.info("failed to find intersection.")
+				logging.warning(
+					"failed to find intersection for i=%d, n=%d." % (i, len(pts0)))
 			elif len(inter_pts) == 1:
 				pts1[i] = inter_pts[0]
 			else:
@@ -459,7 +473,7 @@ class ShapelyBatchIntersections:
 
 
 class BentleyOttmanBatchIntersections:
-	def __init__(self, grid_h):
+	def __init__(self, grid_h, grid_res):
 		from bentley_ottmann.planar import segments_intersections
 
 		self.grid_h = grid_h
@@ -579,7 +593,7 @@ class GridFactory:
 		field_v = self.field_v.get
 
 		grid_hv = np.zeros(grid_h.shape, dtype=np.float32)
-		intersections = BatchIntersections(grid_h)
+		intersections = BatchIntersections(grid_h, grid_res)
 
 		pts0 = grid_h[0]
 		for gy in range(grid_h.shape[0] - 1):
