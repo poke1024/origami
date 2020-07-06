@@ -118,8 +118,8 @@ class Regions:
 		return self._page
 
 	@cached_property
-	def magnitude(self):
-		return self.page.magnitude(dewarped=True)
+	def geometry(self):
+		return self.page.geometry(dewarped=True)
 
 	def union(self, shapes):
 		return self._union(self._page, shapes)
@@ -277,7 +277,7 @@ class IsOnSameLine:
 		if _alignment(ay0, ay1, by0, by1) < self._min_alignment:
 			return False
 
-		if a.distance(b) > self._max_distance * regions.magnitude:
+		if a.distance(b) > regions.geometry.rel_length(self._max_distance):
 			return False
 
 		u = regions.union([a, b])
@@ -455,12 +455,12 @@ class DilationOperator:
 			raise RuntimeError(
 				"unexpected geom_type %s" % shape.geom_type)
 
-		mag = page.magnitude(dewarped=True)
+		detail = page.geometry(dewarped=True).rel_length(detail)
 		pts = concaveman2d(
 			coords,
 			scipy.spatial.ConvexHull(coords).vertices,
 			concavity=concavity,
-			lengthThreshold=mag * detail)
+			lengthThreshold=detail)
 
 		shape1 = shapely.geometry.Polygon(pts)
 		shape1 = shape1.union(shape)
@@ -495,7 +495,7 @@ class SequentialMerger:
 		contours = regions.contours
 		shapes = [contours[x] for x in names]
 
-		fringe = self._fringe * regions.magnitude
+		fringe = regions.geometry.rel_length(self._fringe)
 		label = names[0][:2]
 		assert(all(x[:2] == label for x in names))
 
@@ -531,7 +531,7 @@ class SequentialMerger:
 		regions.combine_from_graph(graph)
 
 	def _compute_order(self, regions, contours):
-		fringe = self._fringe * regions.magnitude
+		fringe = regions.geometry.rel_length(self._fringe)
 		contours = [(tuple(c.name.split("/")), c) for c in contours]
 		return polygon_order(contours, fringe=fringe)
 
@@ -556,17 +556,18 @@ class SequentialMerger:
 
 
 class Shrinker:
-	def __init__(self):
-		pass
+	def __init__(self, min_area):
+		self._min_area = min_area
 
 	def __call__(self, regions):
 		by_labels_nomod = collections.defaultdict(list)
 		for k, contour in regions.unmodified_contours.items():
 			by_labels_nomod[k[:2]].append(contour)
 
+		min_area = regions.geometry.rel_area(self._min_area)
 		for k0, v0 in by_labels_nomod.items():
 			tree = shapely.strtree.STRtree(v0)
-			for k, contour in regions.contours.items():
+			for k, contour in list(regions.contours.items()):
 				if k[:2] != k0[:2]:
 					continue
 				try:
@@ -575,9 +576,12 @@ class Shrinker:
 						bounds = shapely.ops.cascaded_union(q).bounds
 						box = shapely.geometry.box(*bounds)
 						modified = box.intersection(contour)
-						regions.modify_contour(k, modified)
+						if modified.area >= min_area:
+							regions.modify_contour(k, modified)
+						else:
+							regions.remove_contour(k)
 				except ValueError:
-					pass  # deformed geometry errors
+					logging.exception("deformed geometry errors")
 
 
 class FixSpillOver:
@@ -611,11 +615,10 @@ class FixSpillOver:
 		# since we dewarped, we know columns are unskewed.
 		page = regions.page
 		pixels = np.array(page.dewarped.convert("L"))
-		mag = regions.magnitude
 
 		kernel_w = max(
 			10,  # pixels in warped image space
-			int(np.ceil(mag * self._band)))
+			int(np.ceil(regions.geometry.rel_length(self._band))))
 
 		splits = []
 
@@ -864,7 +867,7 @@ class LayoutDetectionProcessor(Processor):
 					max_line_count=3,
 					fringe=self._options["fringe"])),
 			OverlapMerger(self._options["maximum_overlap"]),
-			Shrinker(),
+			Shrinker(self._options["region_area"]),
 			SequentialMerger(
 				filters="regions/TABULAR",
 				cohesion=(0.5, 0.8),
@@ -956,6 +959,11 @@ class LayoutDetectionProcessor(Processor):
 	'--fringe',
 	type=float,
 	default=0.001)
+@click.option(
+	'--region-area',
+	type=float,
+	default=0,
+	help="Ignore regions below this relative size.")
 @click.option(
 	'--name',
 	type=str,

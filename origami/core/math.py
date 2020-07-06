@@ -64,3 +64,28 @@ def outset_bounds(bounds, margin):
 	assert margin >= 0
 	minx, miny, maxx, maxy = bounds
 	return minx - margin, miny - margin, maxx + margin, maxy + margin
+
+
+class Geometry:
+	def __init__(self, w, h):
+		self._size = (w, h)
+
+	@property
+	def size(self):
+		return self._size
+
+	@property
+	def area(self):
+		w, h = self.size
+		return w * h
+
+	@property
+	def diameter(self):
+		w, h = self.size
+		return np.sqrt(w * w + h * h)
+
+	def rel_length(self, x):
+		return self.diameter * x
+
+	def rel_area(self, a):
+		return (self.diameter * a) ** 2

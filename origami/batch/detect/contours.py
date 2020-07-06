@@ -28,7 +28,7 @@ class ContoursProcessor(Processor):
 		pipeline = [
 			contours.Contours(),
 			contours.Decompose(),
-			contours.FilterByArea(annotations.magnitude * self._options["region_minsize"])
+			contours.FilterByArea(annotations.geometry.rel_area(self._options["region_area"]))
 		]
 
 		region_contours = annotations.create_multi_class_contours(
@@ -64,7 +64,7 @@ class ContoursProcessor(Processor):
 				contours.Contours(),
 				contours.Simplify(0),
 				contours.EstimatePolyline(label_class.orientation.direction),
-				contours.Simplify(annotations.magnitude * self._options["sep_threshold"])
+				contours.Simplify(annotations.geometry.rel_length(self._options["sep_threshold"]))
 			]
 
 		region_separators = annotations.create_multi_class_contours(
@@ -119,7 +119,7 @@ class ContoursProcessor(Processor):
 	default=False,
 	help="Export region images (larger files).")
 @click.option(
-	'-r', '--region-minsize',
+	'--region-area',
 	type=float,
 	default=0.01,  # might be a single word.
 	help="Ignore regions below this relative size.")

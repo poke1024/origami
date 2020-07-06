@@ -397,8 +397,9 @@ class TextAreaFactory:
 		])
 
 	def __call__(self, block):
-		mag = block.page.magnitude(block.stage.is_dewarped)
-		polygon = block.image_space_polygon.buffer(mag * self._buffer)
+		buffer = block.page.geometry(
+			block.stage.is_dewarped).rel_length(self._buffer)
+		polygon = block.image_space_polygon.buffer(buffer)
 		for other in self._tree.query(polygon):
 			if other is not block.image_space_polygon:
 				polygon = polygon.difference(other)

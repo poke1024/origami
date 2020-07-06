@@ -79,8 +79,7 @@ class ReadingOrderProcessor(Processor):
 		return __loader__.name
 
 	def compute_order(self, page, contours, sampler):
-		mag = page.magnitude(dewarped=True)
-		fringe = self._options["fringe"] * mag
+		fringe = page.geometry(dewarped=True).rel_length(self._options["fringe"])
 		return polygon_order(contours, fringe=fringe, score=sampler)
 
 	def xycut_orders(self, page, contours, separators):
@@ -120,6 +119,12 @@ class ReadingOrderProcessor(Processor):
 		lines = combinator.lines(aggregate.lines)
 		reliable = reliable_contours(contours, lines)
 
+		min_area = page.geometry(True).rel_area(self._options["region_area"])
+		reliable = dict(
+			(k, v)
+			for k, v in reliable.items()
+			if v.area >= min_area)
+
 		separators = Separators(
 			warped.segmentation, dewarped.separators)
 
@@ -153,6 +158,11 @@ class ReadingOrderProcessor(Processor):
 	'--fringe',
 	type=float,
 	default=0.001)
+@click.option(
+	'--region-area',
+	type=float,
+	default=0.01,
+	help="Ignore regions below this relative size.")
 @click.option(
 	'--name',
 	type=str,

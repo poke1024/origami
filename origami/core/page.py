@@ -9,7 +9,7 @@ import imghdr
 from cached_property import cached_property
 from pathlib import Path
 
-from origami.core.math import resize_transform, to_shapely_matrix
+from origami.core.math import resize_transform, to_shapely_matrix, Geometry
 from origami.core.dewarp import Dewarper
 from origami.core.binarize import Binarizer
 
@@ -32,9 +32,8 @@ class Annotations:
 		return self.segmentation.size
 
 	@property
-	def magnitude(self):
-		w, h = self.size
-		return math.sqrt(w * h)
+	def geometry(self):
+		return Geometry(*self.size)
 
 	@property
 	def scale(self):
@@ -107,9 +106,8 @@ class Page:
 	def size(self, dewarped):
 		return (self._dewarped if dewarped else self._warped).size
 
-	def magnitude(self, dewarped):
-		w, h = self.size(dewarped)
-		return np.sqrt(w * w + h * h)
+	def geometry(self, dewarped):
+		return Geometry(*self.size(dewarped))
 
 	def pixels(self, dewarped):
 		return np.array(self._dewarped if dewarped else self._warped)

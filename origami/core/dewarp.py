@@ -31,6 +31,7 @@ from sklearn.decomposition import PCA
 
 from origami.core.lingrid import lininterp
 from origami.core.mask import Mask
+from origami.core.math import Geometry
 
 
 class LineDetector:
@@ -599,6 +600,12 @@ class Grid:
 	def __init__(self, hv, res):
 		self._grid_hv = hv
 		self._grid_res = res
+
+	@property
+	def geometry(self):
+		h, w = self._grid_hv.shape[:2]
+		r = self._grid_res
+		return Geometry(w * r, h * r)
 
 	@cached_property
 	def warping(self):

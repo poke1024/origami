@@ -24,28 +24,30 @@ class RegionsFilter:
 		return tuple(path[:2]) in self._paths
 
 
-def dewarped_contours(input, transformer):
-	with open(input.path(Artifact.CONTOURS), "rb") as f:
+def dewarped_contours(warped, transformer, min_areas):
+	with open(warped.path(Artifact.CONTOURS), "rb") as f:
 		with zipfile.ZipFile(f, "r") as zf:
 			for name in zf.namelist():
-				if name.endswith(".wkt"):
-					geom = shapely.wkt.loads(zf.read(name).decode("utf8"))
-					warped_geom = geom
-					assert not warped_geom.is_empty
-					geom = shapely.ops.transform(transformer, geom)
-					if geom.geom_type not in ("Polygon", "LineString"):
-						logging.error("dewarped contour %s is %s" % (
-							name, geom.geom_type))
+				if not name.endswith(".wkt"):
+					continue
+				path = tuple(name.rsplit(".", 1)[0].split("/"))
+				geom = shapely.wkt.loads(zf.read(name).decode("utf8"))
+				warped_geom = geom
+				assert not warped_geom.is_empty
+				geom = shapely.ops.transform(transformer, geom)
+				if geom.is_empty or geom.area < min_areas.get(path[0], 0):
+					logging.warning(
+						"lost contour %s (A=%.1f) during dewarping." % (
+							path, warped_geom.area))
+					continue
+				if geom.geom_type not in ("Polygon", "LineString"):
+					logging.error("dewarped contour %s is %s" % (
+						name, geom.geom_type))
+				if not geom.is_valid:
+					geom = geom.buffer(0)
 					if not geom.is_valid:
-						geom = geom.buffer(0)
-						if not geom.is_valid:
-							logging.error("invalid geom %s", geom)
-					if geom.is_empty:
-						logging.warning(
-							"lost contour %s (A=%.1f) during dewarping." % (
-								name, warped_geom.area))
-					else:
-						yield name, geom.wkt.encode("utf8")
+						logging.error("invalid geom %s", geom)
+				yield name, geom.wkt.encode("utf8")
 
 
 class DewarpProcessor(Processor):
@@ -59,7 +61,7 @@ class DewarpProcessor(Processor):
 
 	def artifacts(self):
 		return [
-			("input", Input(
+			("warped", Input(
 				Artifact.CONTOURS,
 				Artifact.LINES,
 				stage=Stage.WARPED)),
@@ -69,19 +71,19 @@ class DewarpProcessor(Processor):
 				stage=Stage.DEWARPED))
 		]
 
-	def process(self, page_path: Path, input, output):
-		blocks = input.blocks
+	def process(self, page_path: Path, warped, output):
+		blocks = warped.blocks
 
 		if not blocks:
 			return
 
-		lines = input.lines
-		separators = input.separators
+		lines = warped.lines
+		separators = warped.separators
 
 		page = list(blocks.values())[0].page
 
-		mag = page.magnitude(dewarped=False)
-		min_length = mag * self._options["min_line_length"]
+		min_length = page.geometry(dewarped=False).rel_length(
+			self._options["min_line_length"])
 
 		def filter_geoms(geoms, length):
 			return dict(
@@ -104,8 +106,14 @@ class DewarpProcessor(Processor):
 			max_phi=self._options["max_phi"],
 			max_std=self._options["max_phi_std"])
 
-		with output.contours(copy_meta_from=input) as zf:
-			for name, data in dewarped_contours(input, grid.transformer):
+		min_areas = dict(
+			regions=grid.geometry.rel_area(
+				self._options["region_area"]),
+			separators=0)
+
+		with output.contours(copy_meta_from=warped) as zf:
+			for name, data in dewarped_contours(
+				warped, grid.transformer, min_areas=min_areas):
 				zf.writestr(name, data)
 
 		with output.dewarping_transform() as f:
@@ -142,6 +150,11 @@ class DewarpProcessor(Processor):
 	type=str,
 	default="regions/TEXT, regions/TABULAR",
 	help="which regions to consider for warping estimation")
+@click.option(
+	'--region-area',
+	type=float,
+	default=0,
+	help="Ignore regions below this relative size.")
 @click.option(
 	'--name',
 	type=str,
