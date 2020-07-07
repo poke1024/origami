@@ -570,7 +570,7 @@ class LineDetector:
 class ConcurrentLineDetector:
 	def __init__(self, processes=8, **kwargs):
 		self._detector = LineDetector(**kwargs)
-		self._pool = multiprocessing.pool.ThreadPool(processes=processes)
+		self._processes = processes
 
 	def _detect_lines(self, item):
 		block_path, block = item
@@ -583,4 +583,5 @@ class ConcurrentLineDetector:
 			raise
 
 	def __call__(self, blocks):
-		return dict(self._pool.map(self._detect_lines, blocks.items()))
+		with multiprocessing.pool.ThreadPool(processes=self._processes) as pool:
+			return dict(pool.map(self._detect_lines, blocks.items()))
