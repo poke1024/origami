@@ -421,8 +421,9 @@ def extrapolate(a, b, x):
 
 
 def make_slices(n, k):
-	for i in range(0, n, k):
-		yield slice(i, i + k)
+	s = math.ceil(n / k)
+	for i in range(0, n, s):
+		yield slice(i, i + s)
 
 
 class ShapelyBatchIntersections:
@@ -513,9 +514,8 @@ class GridFactory:
 			self, page, blocks, lines, separators,
 			grid_res=25, max_phi=30, max_std=0.1,
 			rescale_separators=False,
-			max_grid_size=1000):
-
-		self._pool = multiprocessing.pool.ThreadPool(processes=8)
+			max_grid_size=1000,
+			num_threads=2):
 
 		size = page.warped.size
 
@@ -523,6 +523,7 @@ class GridFactory:
 		self._height = size[1]
 		self._grid_res = grid_res
 		self._max_grid_size = max_grid_size
+		self._num_threads = num_threads
 
 		if separators is not None and rescale_separators:  # legacy mode
 			sx = self._width / 1280
@@ -698,11 +699,16 @@ class GridFactory:
 
 			grid_hv[-1, sel, :] = pts0
 
-		if self._pool is None:
+		if self._num_threads < 2:
 			compute_slice(slice(0, grid_h.shape[1]))
 		else:
-			slices = make_slices(n=grid_h.shape[1], k=128)
-			self._pool.map(compute_slice, slices)
+			slices = make_slices(
+				n=grid_h.shape[1],
+				k=self._num_threads)
+
+			with multiprocessing.pool.ThreadPool(
+				processes=self._num_threads) as pool:
+				pool.map(compute_slice, slices)
 
 		grid_hv = self.extend_border_h(grid_hv, "left")
 		grid_hv = self.extend_border_h(grid_hv, "right")
