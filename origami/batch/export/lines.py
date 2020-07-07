@@ -76,41 +76,18 @@ class LineExtractionProcessor(Processor):
 
 
 @click.command()
+@Processor.options
+@LineExtractor.options
 @click.option(
 	'-h', '--line-height',
 	default=48,
 	type=int,
 	help='height of line images in pixels')
 @click.option(
-	'-w', '--do-not-dewarp',
-	default=False,
-	is_flag=True,
-	help='do not dewarp line images')
-@click.option(
-	'-s', '--do-not-deskew',
-	default=False,
-	is_flag=True,
-	help='do not deskew line images')
-@click.option(
-	'--binarize',
-	default=False,
-	is_flag=True,
-	help='binarize line images')
-@click.option(
-	'--binarize-window-size',
-	type=int,
-	default=0,
-	help="binarization window size for Sauvola or 0 for Otsu.")
-@click.option(
 	'-t', '--export-transcriptions',
 	default=False,
 	is_flag=True,
 	help='also export transcriptions from matching PageXMLs')
-@click.option(
-	'-o', '--overwrite',
-	default=False,
-	is_flag=True,
-	help='overwrite line image data from previous runs')
 @click.option(
 	'-f', '--flat',
 	default=False,
@@ -120,12 +97,6 @@ class LineExtractionProcessor(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
 def export_lines(data_path, **kwargs):
 	""" Export line images from all document images in DATA_PATH. Needs
 	information from previous batches. """
@@ -135,4 +106,3 @@ def export_lines(data_path, **kwargs):
 
 if __name__ == "__main__":
 	export_lines()
-

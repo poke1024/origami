@@ -64,7 +64,8 @@ class ContoursProcessor(Processor):
 				contours.Contours(),
 				contours.Simplify(0),
 				contours.EstimatePolyline(label_class.orientation.direction),
-				contours.Simplify(annotations.geometry.rel_length(self._options["sep_threshold"]))
+				contours.Simplify(annotations.geometry.rel_length(
+					self._options["separator_threshold"]))
 			]
 
 		region_separators = annotations.create_multi_class_contours(
@@ -114,7 +115,7 @@ class ContoursProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-x', '--export-images',
+	'--export-images',
 	is_flag=True,
 	default=False,
 	help="Export region images (larger files).")
@@ -124,12 +125,12 @@ class ContoursProcessor(Processor):
 	default=0.01,  # might be a single word.
 	help="Ignore regions below this relative size.")
 @click.option(
-	'-m', '--margin-noise',
+	'--margin-noise',
 	type=float,
 	default=0.075,
 	help="Max. relative width of margin noise.")
 @click.option(
-	'-s', '--sep-threshold',
+	'--separator-threshold',
 	type=float,
 	default=4 / 1000,
 	help="Simplification of separator polylines.")

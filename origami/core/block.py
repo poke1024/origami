@@ -17,7 +17,7 @@ from functools import lru_cache
 
 from origami.core.mask import Mask
 from origami.core.math import to_shapely_matrix
-from origami.core.binarize import Binarizer
+from origami.core.binarize import sauvola
 
 
 BACKGROUND = 0.8
@@ -426,7 +426,7 @@ class LineDetector:
 		extra_descent=0,
 		block_size_minimum=4,
 		text_area_factory=TextAreaFactory(),
-		binarizer=Binarizer()):
+		binarizer=sauvola()):
 
 		self._force_parallel_baselines = force_parallel_lines
 		self._force_lines = force_lines

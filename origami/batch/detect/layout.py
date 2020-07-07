@@ -25,6 +25,7 @@ from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.separate import Separators
 from origami.core.xycut import polygon_order
 from origami.core.neighbors import neighbors
+from origami.core.utils import build_func_from_string
 
 
 def overlap_ratio(a, b):
@@ -401,30 +402,15 @@ class Overlap:
 		return max(t_areas)
 
 
-class FunctionProxy:
-	def __init__(self):
-		self.kwargs = dict()
-
-	def __call__(self, **kwargs):
-		self.kwargs = kwargs
-		return self
-
-
 class DilationOperator:
 	def __init__(self, spec):
 		names = ("none", "rect", "convex", "concave")
-		locals = dict((x, FunctionProxy()) for x in names)
 
-		funcs = dict()
-		for x in names:
-			funcs[id(locals[x])] = getattr(DilationOperator, "_" + x)
+		funcs = dict(
+			(x, getattr(DilationOperator, "_" + x))
+			for x in names)
 
-		data = eval(spec, locals)
-
-		if not isinstance(data, FunctionProxy):
-			raise ValueError(data)
-
-		self._f = partial(funcs[id(data)], **data.kwargs)
+		self._f = build_func_from_string(spec, funcs)
 
 	@staticmethod
 	def _none(page, shape):

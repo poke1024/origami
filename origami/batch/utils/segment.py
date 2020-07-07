@@ -44,6 +44,7 @@ class SegmentationConverter(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@Processor.options
 def segment(data_path, **kwargs):
 	""" Convert page segmentation data from old to new format. """
 	processor = SegmentationConverter(kwargs)

@@ -4,12 +4,14 @@ import numpy as np
 import multiprocessing.pool
 import collections
 import json
+import click
 import shapely.ops
+import functools
 
 from pathlib import Path
 from functools import partial
 
-from origami.core.binarize import Binarizer
+import origami.core.binarize
 
 
 def reliable_contours(all_contours, all_lines, min_confidence=0.5):
@@ -41,9 +43,9 @@ class LineExtractor:
 		self._line_height = line_height
 		assert self._line_height is not None
 
-		if self._options["binarize"]:
-			self._binarizer = Binarizer(
-				self._options["binarize_window_size"])
+		if self._options["binarize"].strip():
+			self._binarizer = origami.core.binarize.from_string(
+				self._options["binarize"])
 		else:
 			self._binarizer = None
 
@@ -52,6 +54,27 @@ class LineExtractor:
 		self._columns = dict(
 			(tuple(k.split("/")), xs)
 			for k, xs in tables["columns"].items())
+
+	@staticmethod
+	def options(f):
+		options = [
+			click.option(
+				'--binarize',
+				type=str,
+				default="",
+				help="binarization algorithm to use (e.g. otsu), or empty if none"),
+			click.option(
+				'--do-not-dewarp',
+				default=False,
+				is_flag=True,
+				help='do not dewarp line images'),
+			click.option(
+				'--do-not-deskew',
+				default=False,
+				is_flag=True,
+				help='do not deskew line images')
+		]
+		return functools.reduce(lambda x, opt: opt(x), options, f)
 
 	def _extract_line_image(self, item):
 		line_path, line, column = item
@@ -74,10 +97,11 @@ class LineExtractor:
 		grid = ".".join(map(str, (block, division, line, column)))
 		return predictor, label, grid, str(0)
 
-	def __call__(self, lines, ignored=[]):
-		lines = dict(
-			(k, v) for k, v in lines.items()
-			if tuple(k[:2]) not in ignored)
+	def __call__(self, lines, ignored=None):
+		if ignored is not None:
+			lines = dict(
+				(k, v) for k, v in lines.items()
+				if not ignored(tuple(k[:2])))
 
 		# this logic is intertwined with the logic in subdivide_table_blocks(). we
 		# split table rows, if our table data says so.

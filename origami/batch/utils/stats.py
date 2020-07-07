@@ -153,11 +153,7 @@ class StatsProcessor(Processor):
 	'--list-errors',
 	is_flag=True,
 	default=False)
-@click.option(
-	'--name',
-	type=str,
-	default="",
-	help="Only process paths that conform to the given pattern.")
+@Processor.options
 def stats(data_path, **kwargs):
 	""" List stats of pages in DATA_PATH. """
 	processor = StatsProcessor(kwargs)

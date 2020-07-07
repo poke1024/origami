@@ -9,6 +9,7 @@ from tabulate import tabulate
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
+from origami.batch.core.utils import RegionsFilter
 
 
 def sorted_by_keys(x):
@@ -68,15 +69,15 @@ class ComposeProcessor(Processor):
 		super().__init__(options)
 		self._options = options
 
-		if options["filter"]:
-			self._block_filter = [tuple(options["filter"].split("."))]
+		if options["regions"]:
+			self._block_filter = RegionsFilter(options["regions"])
 		else:
 			self._block_filter = None
 
 		# see https://stackoverflow.com/questions/4020539/
 		# process-escape-sequences-in-a-string-in-python
 		self._block_separator = codecs.escape_decode(bytes(
-			self._options["block_separator"], "utf-8"))[0].decode("utf-8")
+			self._options["paragraph"], "utf-8"))[0].decode("utf-8")
 
 	@property
 	def processor_name(self):
@@ -138,6 +139,8 @@ class ComposeProcessor(Processor):
 			texts_by_block[k] = table.to_text()
 
 		for path in map(lambda x: tuple(x.split("/")), order):
+			if self._block_filter is not None and not self._block_filter(path):
+				continue
 			block_text = texts_by_block.get(path, [])
 			if block_text:
 				page_texts.append(block_text)
@@ -152,15 +155,15 @@ class ComposeProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-b', '--block-separator',
+	'--paragraph',
 	type=str,
 	default="\n\n",
-	help="Character sequence used to separate different blocks.")
+	help="Character sequence used to separate paragraphs.")
 @click.option(
-	'-f', '--filter',
+	'--regions',
 	type=str,
 	default=None,
-	help="Only export text from given block path, e.g. -f \"regions.TEXT\".")
+	help="Only export text from given regions path, e.g. -f \"regions/TEXT\".")
 @click.option(
 	'--fringe',
 	type=float,

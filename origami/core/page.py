@@ -11,7 +11,7 @@ from pathlib import Path
 
 from origami.core.math import resize_transform, to_shapely_matrix, Geometry
 from origami.core.dewarp import Dewarper
-from origami.core.binarize import Binarizer
+from origami.core.binarize import sauvola
 
 
 class Annotations:
@@ -100,7 +100,7 @@ class Page:
 
 	@cached_property
 	def binarized(self):
-		binarizer = Binarizer()
+		binarizer = sauvola()
 		return binarizer(self.warped)
 
 	def size(self, dewarped):

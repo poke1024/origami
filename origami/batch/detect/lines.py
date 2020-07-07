@@ -106,17 +106,17 @@ class LineDetectionProcessor(Processor):
 	'--extra-height',
 	default=0.075,
 	type=float,
-	help='compensate low Tesseract height estimation')
+	help='compensate underestimated line height')
 @click.option(
 	'--extra-descent',
 	default=0.025,
 	type=float,
-	help='compensate low Tesseract descent estimation')
+	help='compensate underestimated line descent')
 @click.option(
 	'--contours-buffer',
 	default=0.0015,
 	type=float,
-	help='contour expansion')
+	help='expand contours by specified relative amount')
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),

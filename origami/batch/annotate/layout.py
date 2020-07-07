@@ -146,17 +146,7 @@ class DebugLayoutProcessor(Processor):
 	type=str,
 	default="order",
 	help="How to label the block nodes.")
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
-@click.option(
-	'--overwrite',
-	is_flag=True,
-	default=False,
-	help="Recompute and overwrite existing annotation files.")
+@Processor.options
 def debug_layout(data_path, **kwargs):
 	""" Export annotate information on xycuts for all document images in DATA_PATH. """
 	processor = DebugLayoutProcessor(kwargs)

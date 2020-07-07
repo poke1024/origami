@@ -64,17 +64,7 @@ class AnnotateContoursProcessor(Processor):
 	'--stage',
 	type=str,
 	default="warped")
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
-@click.option(
-	'--overwrite',
-	is_flag=True,
-	default=False,
-	help="Recompute and overwrite existing result files.")
+@Processor.options
 def debug_contours(data_path, **kwargs):
 	""" Export annotate information on vectors for all document images in DATA_PATH. """
 	processor = AnnotateContoursProcessor(kwargs)

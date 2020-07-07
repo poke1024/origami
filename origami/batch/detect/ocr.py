@@ -11,6 +11,7 @@ from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.batch.core.lines import LineExtractor
+from origami.batch.core.utils import RegionsFilter
 
 
 class OCRProcessor(Processor):
@@ -30,8 +31,7 @@ class OCRProcessor(Processor):
 		self._voter = None
 		self._line_height = None
 
-		# bbz specific.
-		self._ignored = set([("regions", "ILLUSTRATION")])
+		self._ignored = RegionsFilter(options["ignore"])
 
 	@property
 	def processor_name(self):
@@ -98,6 +98,8 @@ class OCRProcessor(Processor):
 
 
 @click.command()
+@Processor.options
+@LineExtractor.options
 @click.option(
 	'-m', '--model',
 	required=True,
@@ -113,26 +115,9 @@ class OCRProcessor(Processor):
 	default=-1,
 	required=False)
 @click.option(
-	'--binarize',
-	is_flag=True,
-	default=False,
-	help="binarize line images (important if your model expects this).")
-@click.option(
-	'--binarize-window-size',
-	type=int,
-	default=0,
-	help="binarization window size for Sauvola or 0 for Otsu.")
-@click.option(
-	'-w', '--do-not-dewarp',
-	default=False,
-	is_flag=True,
-	help='do not dewarp line images')
-@click.option(
-	'-s', '--do-not-deskew',
-	default=False,
-	is_flag=True,
-	help='do not deskew line images')
-@Processor.options
+	'--ignore',
+	type=str,
+	default="regions/ILLUSTRATION")
 def segment(data_path, **kwargs):
 	""" Perform OCR on all recognized lines in DATA_PATH. """
 	processor = OCRProcessor(kwargs)

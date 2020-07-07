@@ -79,11 +79,7 @@ class SampleProcessor(Processor):
 	type=click.Choice(['page', 'path'], case_sensitive=False),
 	default="page",
 	help="How to name the sampled file.")
-@click.option(
-	'--name',
-	type=str,
-	default="",
-	help="Only process paths that conform to the given pattern.")
+@Processor.options
 def sample(data_path, **kwargs):
 	""" Get a sample of page results in DATA_PATH. """
 	processor = SampleProcessor(kwargs)

@@ -40,12 +40,7 @@ class PDFConverter(Processor):
 	'-d', '--dpi',
 	type=int,
 	default=300)
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
+@Processor.options
 def convert_pdfs(data_path, **kwargs):
 	""" Convert PDFs in data_path to images for further processing. """
 	processor = PDFConverter(kwargs)

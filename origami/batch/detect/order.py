@@ -11,19 +11,9 @@ from itertools import chain
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.batch.core.lines import reliable_contours
+from origami.batch.core.utils import RegionsFilter
 from origami.core.xycut import polygon_order
 from origami.core.separate import Separators, ObstacleSampler
-
-
-class RegionsFilter:
-	def __init__(self, spec):
-		self._paths = set()
-		for s in spec.split(","):
-			self._paths.add(
-				tuple(s.strip().split("/")))
-
-	def __call__(self, path):
-		return tuple(path[:2]) in self._paths
 
 
 class Combinator:

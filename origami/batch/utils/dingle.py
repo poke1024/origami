@@ -10,6 +10,7 @@ from pathlib import Path
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output, DebuggingArtifact
+from origami.batch.core.utils import RegionsFilter
 from origami.pagexml import pagexml
 
 
@@ -36,8 +37,8 @@ class DinglehopperProcessor(Processor):
 		self._options = options
 		self._use_xy_cut = True
 
-		if options["filter"]:
-			self._block_filter = tuple(options["filter"].split("."))
+		if options["regions"]:
+			self._block_filter = RegionsFilter(options["regions"])
 		else:
 			self._block_filter = None
 
@@ -65,8 +66,8 @@ class DinglehopperProcessor(Processor):
 			xycut_data = input.order
 
 			orders = xycut_data["orders"]
-			if self._block_filter:
-				order = orders["/".join(self._block_filter)]
+			if self._block_filter and len(self._block_filter.paths) == 1:
+				order = orders["/".join(self._block_filter.paths[0])]
 			else:
 				order = orders["*"]
 
@@ -83,7 +84,7 @@ class DinglehopperProcessor(Processor):
 			if block_path not in lines:
 				continue
 
-			if self._block_filter and block_path[:2] != self._block_filter:
+			if self._block_filter and not self._block_filter(block_path[:2]):
 				continue
 
 			region = pagexml.TextRegion(text_region_name(block_path))
@@ -105,16 +106,11 @@ class DinglehopperProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'-f', '--filter',
+	'--regions',
 	type=str,
-	default="regions.TEXT",
-	help="Only export text from given block path, e.g. -f \"regions.TEXT\".")
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
+	default="regions/TEXT",
+	help="Only export text from given block path, e.g. -f \"regions/TEXT\".")
+@Processor.options
 def export_for_dinglehopper(data_path, **kwargs):
 	""" Export PageXML for use in Dinglehopper for all document images in DATA_PATH. """
 	processor = DinglehopperProcessor(kwargs)

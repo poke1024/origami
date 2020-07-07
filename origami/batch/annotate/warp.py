@@ -53,17 +53,7 @@ class DebugWarpProcessor(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
-@click.option(
-	'--overwrite',
-	is_flag=True,
-	default=False,
-	help="Recompute and overwrite existing result files.")
+@Processor.options
 def debug_warp(data_path, **kwargs):
 	""" Export annotate information on lines for all document images in DATA_PATH. """
 	processor = DebugWarpProcessor(kwargs)
