@@ -26,17 +26,13 @@ from origami.core.separate import Separators
 from origami.core.xycut import polygon_order
 from origami.core.neighbors import neighbors
 from origami.core.utils import build_func_from_string
+from origami.batch.core.utils import RegionsFilter
 
 
 def overlap_ratio(a, b):
 	if a.area > b.area:
 		a, b = b, a
 	return a.intersection(b).area / a.area
-
-
-def create_filter(s):
-	good = set([tuple(s.split("/"))])
-	return lambda k: k[:2] in good
 
 
 def fixed_point(func, x0, reduce):
@@ -336,7 +332,7 @@ class Dilation:
 
 class AdjacencyMerger:
 	def __init__(self, filters, criterion):
-		self._filter = create_filter(filters)
+		self._filter = RegionsFilter(filters)
 		self._criterion = criterion
 
 	def __call__(self, regions):
@@ -472,7 +468,7 @@ class UnionOperator:
 
 class SequentialMerger:
 	def __init__(self, filters, cohesion, max_distance, max_error, fringe, obstacles):
-		self._filter = create_filter(filters)
+		self._filter = RegionsFilter(filters)
 		self._cohesion = cohesion
 		self._max_distance = max_distance
 		self._max_error = max_error
@@ -615,7 +611,7 @@ class FixSpillOver:
 		# good split: w=90, lh=35, whratio=2.5
 		# bad split: w=30, lh=40, whratio=0.75
 
-		self._filter = create_filter(filters)
+		self._filter = RegionsFilter(filters)
 		self._level = level
 		self._band = band
 		self._peak = peak
@@ -704,7 +700,7 @@ class FixSpillOver:
 
 class TableLayoutDetector:
 	def __init__(self, filters, label, axis, min_distance=20):
-		self._filter = create_filter(filters)
+		self._filter = RegionsFilter(filters)
 		self._label = label
 		self._axis = axis
 		self._min_distance = min_distance
@@ -820,7 +816,7 @@ def subdivide_table_blocks(filters, regions, columns, dividers):
 	split_contours = dict()
 
 	contours = regions.contours
-	filter_ = create_filter(filters)
+	filter_ = RegionsFilter(filters)
 
 	for k, contour in contours.items():
 		if not filter_(k):
