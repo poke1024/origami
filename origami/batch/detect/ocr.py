@@ -132,21 +132,7 @@ class OCRProcessor(Processor):
 	default=False,
 	is_flag=True,
 	help='do not deskew line images')
-@click.option(
-	'--name',
-	type=str,
-	default="",
-	help="Only process paths that conform to the given pattern.")
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
-@click.option(
-	'--profile',
-	is_flag=True,
-	default=False)
+@Processor.options
 def segment(data_path, **kwargs):
 	""" Perform OCR on all recognized lines in DATA_PATH. """
 	processor = OCRProcessor(kwargs)

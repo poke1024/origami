@@ -133,26 +133,7 @@ class ContoursProcessor(Processor):
 	type=float,
 	default=4 / 1000,
 	help="Simplification of separator polylines.")
-@click.option(
-	'--name',
-	type=str,
-	default="",
-	help="Only process paths that conform to the given pattern.")
-@click.option(
-	'--overwrite',
-	is_flag=True,
-	default=False,
-	help="Recompute and overwrite existing result files.")
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
-@click.option(
-	'--profile',
-	is_flag=True,
-	default=False)
+@Processor.options
 def extract_contours(data_path, **kwargs):
 	""" Extract contours from all document images in DATA_PATH.
 	Information from segmentation and binarize batch needs to be present. """

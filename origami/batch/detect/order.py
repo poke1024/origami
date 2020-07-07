@@ -163,26 +163,7 @@ class ReadingOrderProcessor(Processor):
 	type=float,
 	default=0.01,
 	help="Ignore regions below this relative size.")
-@click.option(
-	'--name',
-	type=str,
-	default="",
-	help="Only process paths that conform to the given pattern.")
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
-@click.option(
-	'--overwrite',
-	is_flag=True,
-	default=False,
-	help="Recompute and overwrite existing result files.")
-@click.option(
-	'--profile',
-	is_flag=True,
-	default=False)
+@Processor.options
 def reading_order(data_path, **kwargs):
 	""" Detect reading order on all document images in DATA_PATH. """
 	processor = ReadingOrderProcessor(kwargs)

@@ -2,6 +2,7 @@
 
 import os
 import re
+import click
 import json
 import logging
 import zipfile
@@ -9,6 +10,8 @@ import portalocker
 import contextlib
 import traceback
 import imghdr
+import multiprocessing
+import functools
 
 from pathlib import Path
 from functools import partial
@@ -24,6 +27,7 @@ class Processor:
 	def __init__(self, options):
 		self._lock_files = not options.get("nolock", True)
 		self._overwrite = options.get("overwrite", False)
+		self._processes = options.get("processes", 1)
 		self._name = options.get("name", "")
 		self._verbose = False
 
@@ -33,6 +37,39 @@ class Processor:
 			self._overwrite = True  # profile implies overwrite
 		else:
 			self._profiler = None
+
+	@staticmethod
+	def options(f):
+		options = [
+			click.option(
+				'--processes',
+				type=int,
+				default=1,
+				help="Number of parallel processes to employ."),
+			click.option(
+				'--name',
+				type=str,
+				default="",
+				help="Only process paths that conform to the given pattern."),
+			click.option(
+				'--nolock',
+				is_flag=True,
+				default=False,
+				help=
+				"Do not lock files while processing. Breaks concurrent batches, "
+				"but is necessary on some network file systems."),
+			click.option(
+				'--overwrite',
+				is_flag=True,
+				default=False,
+				help="Recompute and overwrite existing result files."),
+			click.option(
+				'--profile',
+				is_flag=True,
+				default=False,
+				help="Enable profiling and show results.")
+		]
+		return functools.reduce(lambda x, opt: opt(x), options, f)
 
 	@property
 	def processor_name(self):
@@ -60,11 +97,61 @@ class Processor:
 
 		return kwargs
 
-	def traverse(self, path: Path):
+	def _trigger_process(self, p, kwargs):
+		try:
+			with self.page_lock(p) as _:
+				with elapsed_timer() as elapsed:
+					data_path = find_data_path(p)
+					data_path.mkdir(exist_ok=True)
+
+					runtime_info = self.process(p, **kwargs)
+
+				if runtime_info is None:
+					runtime_info = dict()
+				runtime_info["status"] = "COMPLETED"
+				runtime_info["elapsed"] = round(elapsed(), 2)
+
+				self._update_runtime_info(
+					p, {self.processor_name: runtime_info})
+
+		except KeyboardInterrupt:
+			logging.exception("Interrupted at %s." % p)
+			raise
+		except:
+			logging.exception("Failed to process %s." % p)
+			runtime_info = dict(
+				status="FAILED",
+				traceback=traceback.format_exc())
+			self._update_runtime_info(p, {
+				self.processor_name: runtime_info})
+		finally:
+			# free memory allocated in cached io.Reader
+			# attributes. this can get substantial for
+			# long runs.
+			kwargs.clear()
+
+	def _trigger_process_star(self, item):
+		self._trigger_process(*item)
+
+	def _process_queue(self, queued):
+		with self._profiler or nullcontext():
+			squeue = sorted(queued)
+
+			if self._processes > 1:
+				with multiprocessing.Pool(self._processes) as pool:
+					with tqdm(total=len(squeue)) as progress:
+						for _ in pool.imap_unordered(
+							self._trigger_process_star, squeue):
+							progress.update(1)
+			else:
+				for p, kwargs in tqdm(squeue):
+					self._trigger_process(p, kwargs)
+
+	def _build_queue(self, path):
+		queued = []
+
 		if not Path(path).is_dir():
 			raise FileNotFoundError("%s is not a valid path." % path)
-
-		queued = []
 
 		for folder, _, filenames in os.walk(path):
 			folder = Path(folder)
@@ -90,39 +177,12 @@ class Processor:
 				if kwargs is not False:
 					queued.append((p, kwargs))
 
-		with self._profiler or nullcontext():
-			for p, kwargs in tqdm(sorted(queued)):
-				try:
-					with self.page_lock(p) as _:
-						with elapsed_timer() as elapsed:
-							data_path = find_data_path(p)
-							data_path.mkdir(exist_ok=True)
+		return queued
 
-							runtime_info = self.process(p, **kwargs)
+	def traverse(self, path: Path):
+		queued = self._build_queue(path)
 
-						if runtime_info is None:
-							runtime_info = dict()
-						runtime_info["status"] = "COMPLETED"
-						runtime_info["elapsed"] = round(elapsed(), 2)
-
-						self._update_runtime_info(
-							p, {self.processor_name: runtime_info})
-
-				except KeyboardInterrupt:
-					logging.exception("Interrupted at %s." % p)
-					break
-				except:
-					logging.exception("Failed to process %s." % p)
-					runtime_info = dict(
-						status="FAILED",
-						traceback=traceback.format_exc())
-					self._update_runtime_info(p, {
-						self.processor_name: runtime_info})
-				finally:
-					# free memory allocated in cached io.Reader
-					# attributes. this can get substantial for
-					# long runs.
-					kwargs.clear()
+		self._process_queue(queued)
 
 		if self._profiler:
 			self._profiler.run_viewer()

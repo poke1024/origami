@@ -121,26 +121,7 @@ class LineDetectionProcessor(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
-@click.option(
-	'--name',
-	type=str,
-	default="",
-	help="Only process paths that conform to the given pattern.")
-@click.option(
-	'--nolock',
-	is_flag=True,
-	default=False,
-	help="Do not lock files while processing. Breaks concurrent batches, "
-	"but is necessary on some network file systems.")
-@click.option(
-	'--overwrite',
-	is_flag=True,
-	default=False,
-	help="Recompute and overwrite existing result files.")
-@click.option(
-	'--profile',
-	is_flag=True,
-	default=False)
+@Processor.options
 def detect_lines(data_path, **kwargs):
 	""" Perform line detection on all document images in DATA_PATH. Needs
 	information from contours batch. """
