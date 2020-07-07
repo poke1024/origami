@@ -18,7 +18,11 @@ class AnnotateContoursProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options, needs_qt=True)
 		self._options = options
-		self._stage = Stage[options["stage"].upper()]
+		try:
+			self._stage = Stage[options["stage"].upper()]
+		except KeyError:
+			raise click.BadParameter(
+				"illegal stage name %s" % options["stage"], param_hint="stage")
 
 	@property
 	def processor_name(self):

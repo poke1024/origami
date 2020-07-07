@@ -55,7 +55,7 @@ class SampleProcessor(Processor):
 				self._options["sample"])
 		except:
 			raise click.BadParameter(
-				"expected region:count syntax.", param="sample")
+				"expected region:count syntax.", param_hint="sample")
 
 		random.seed(self._options["seed"])
 
