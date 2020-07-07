@@ -180,6 +180,9 @@ class Regions:
 		if graph.number_of_edges() > 0:
 			for nodes in nx.connected_components(graph):
 				self.combine(nodes)
+			return True
+		else:
+			return False
 
 	def modify_contour(self, path, contour):
 		self._contours[path] = contour
@@ -370,9 +373,7 @@ class OverlapMerger:
 						tuple(contour.name.split("/")),
 						tuple(other.name.split("/")))
 
-		regions.combine_from_graph(graph)
-
-		return graph.number_of_edges() > 0
+		return regions.combine_from_graph(graph)
 
 	def __call__(self, regions):
 		modify = set(regions.by_labels.keys())
@@ -470,9 +471,10 @@ class UnionOperator:
 
 
 class SequentialMerger:
-	def __init__(self, filters, cohesion, max_error, fringe, obstacles):
+	def __init__(self, filters, cohesion, max_distance, max_error, fringe, obstacles):
 		self._filter = create_filter(filters)
 		self._cohesion = cohesion
+		self._max_distance = max_distance
 		self._max_error = max_error
 		self._fringe = fringe
 		self._obstacles = obstacles
@@ -488,11 +490,22 @@ class SequentialMerger:
 		graph = nx.Graph()
 		graph.add_nodes_from(names)
 
+		max_distance = regions.geometry.rel_length(
+			self._max_distance)
+
+		def union(i, j):
+			return regions.union(shapes[i:j])
+
 		i = 0
 		while i < len(shapes):
 			good = False
 			for j in range(i + 1, len(shapes)):
-				u = regions.union(shapes[i:j + 1])
+				d = union(i, j).distance(shapes[j])
+
+				if d > max_distance:
+					break
+
+				u = union(i, j + 1)
 
 				if regions.separators.check_obstacles(
 					u.bounds, self._obstacles, fringe):
@@ -514,31 +527,53 @@ class SequentialMerger:
 			if not good:
 				i += 1
 
-		regions.combine_from_graph(graph)
+		return regions.combine_from_graph(graph)
 
 	def _compute_order(self, regions, contours):
 		fringe = regions.geometry.rel_length(self._fringe)
-		contours = [(tuple(c.name.split("/")), c) for c in contours]
-		return polygon_order(contours, fringe=fringe)
+		order = polygon_order(list(regions.contours.items()), fringe=fringe)
+		selection = set(tuple(c.name.split("/")) for c in contours)
+		return [x for x in order if x in selection]
 
-	def __call__(self, regions):
-		by_labels = regions.by_labels
-		labels = set(by_labels.keys())
+	def _merge_pass(self, regions, by_labels):
+		merged = set()
 
 		for path, contours in by_labels.items():
 			if not self._filter(path):
 				continue
 
-			order = self._compute_order(regions, contours)
+			order = self._compute_order(
+				regions, contours)
 
+			labels = set(by_labels.keys())
 			error_overlap = Overlap(
 				regions.unmodified_contours,
 				labels - set([path[:2]]))
 
-			self._merge(
+			if self._merge(
 				regions,
 				order,
-				error_overlap)
+				error_overlap):
+				merged.add(path)
+
+		return merged
+
+	def __call__(self, regions):
+		by_labels = regions.by_labels
+
+		while by_labels:
+			dirty = self._merge_pass(
+				regions, by_labels)
+
+			if not dirty:
+				break
+
+			by_labels = regions.by_labels
+			keep = set(by_labels.keys()) & dirty
+			by_labels = dict(
+				(k, v)
+				for k, v in by_labels.items()
+				if k in keep)
 
 
 class Shrinker:
@@ -857,6 +892,7 @@ class LayoutDetectionProcessor(Processor):
 			SequentialMerger(
 				filters="regions/TABULAR",
 				cohesion=(0.5, 0.8),
+				max_distance=0.02,
 				max_error=0.05,
 				fringe=self._options["fringe"],
 				obstacles=["separators/V"]),
