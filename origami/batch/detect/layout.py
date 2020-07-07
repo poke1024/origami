@@ -880,6 +880,14 @@ class LayoutDetectionProcessor(Processor):
 
 		# bbz specific settings.
 
+		seq_merger = SequentialMerger(
+			filters="regions/TABULAR",
+			cohesion=(0.5, 0.8),
+			max_distance=0.01,
+			max_error=0.05,
+			fringe=self._options["fringe"],
+			obstacles=["separators/V"])
+
 		self._transformer = Transformer([
 			Dilation(self._options["dilation"]),
 			AdjacencyMerger(
@@ -889,15 +897,10 @@ class LayoutDetectionProcessor(Processor):
 					fringe=self._options["fringe"])),
 			OverlapMerger(self._options["maximum_overlap"]),
 			Shrinker(self._options["region_area"]),
-			SequentialMerger(
-				filters="regions/TABULAR",
-				cohesion=(0.5, 0.8),
-				max_distance=0.02,
-				max_error=0.05,
-				fringe=self._options["fringe"],
-				obstacles=["separators/V"]),
+			seq_merger,
 			AdjacencyMerger(
 				"regions/TABULAR", IsBelow()),
+			seq_merger,
 			OverlapMerger(self._options["maximum_overlap"]),
 			FixSpillOver("regions/TEXT")
 		])
