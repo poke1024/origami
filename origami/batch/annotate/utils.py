@@ -404,9 +404,3 @@ def render_paths(
 		qp.end()
 
 	return pixmap
-
-
-def qt_app():
-	os.environ["QT_QPA_PLATFORM"] = "offscreen"
-	# export =offscreen
-	return QtGui.QGuiApplication()

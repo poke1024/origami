@@ -18,7 +18,7 @@ from PIL.ImageQt import ImageQt
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 from origami.core.page import Page
-from origami.batch.annotate.utils import render_contours, render_paths, qt_app
+from origami.batch.annotate.utils import render_contours, render_paths
 from origami.batch.core.lines import reliable_contours
 
 
@@ -66,7 +66,7 @@ def divider_paths(shape, y):
 
 class DebugLayoutProcessor(Processor):
 	def __init__(self, options):
-		super().__init__(options)
+		super().__init__(options, needs_qt=True)
 		self._options = options
 		self._overwrite = self._options["overwrite"]
 
@@ -154,5 +154,4 @@ def debug_layout(data_path, **kwargs):
 
 
 if __name__ == "__main__":
-	app = qt_app()
 	debug_layout()

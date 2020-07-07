@@ -11,12 +11,12 @@ from PIL.ImageQt import ImageQt
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
-from origami.batch.annotate.utils import render_blocks, render_separators, qt_app
+from origami.batch.annotate.utils import render_blocks, render_separators
 
 
 class AnnotateContoursProcessor(Processor):
 	def __init__(self, options):
-		super().__init__(options)
+		super().__init__(options, needs_qt=True)
 		self._options = options
 		self._stage = Stage[options["stage"].upper()]
 
@@ -72,5 +72,4 @@ def debug_contours(data_path, **kwargs):
 
 
 if __name__ == "__main__":
-	app = qt_app()
 	debug_contours()

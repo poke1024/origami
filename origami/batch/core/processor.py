@@ -23,13 +23,28 @@ from origami.core.time import elapsed_timer
 from origami.batch.core.io import *
 
 
+def qt_app():
+	from PySide2 import QtGui
+	os.environ["QT_QPA_PLATFORM"] = "offscreen"
+	return QtGui.QGuiApplication()
+
+
 class Processor:
-	def __init__(self, options):
+	def __init__(self, options, needs_qt=False):
 		self._lock_files = not options.get("nolock", True)
 		self._overwrite = options.get("overwrite", False)
 		self._processes = options.get("processes", 1)
 		self._name = options.get("name", "")
 		self._verbose = False
+
+		if needs_qt:
+			self._qt_app = qt_app()
+			if self._processes > 1:
+				logging.warning(
+					"this batch does not support multiple processes.")
+				self._processes = 1  # cannot safely fork here.
+		else:
+			self._qt_app = None
 
 		if options.get("profile"):
 			from profiling.sampling import SamplingProfiler
