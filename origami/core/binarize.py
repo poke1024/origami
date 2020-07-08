@@ -40,4 +40,4 @@ def from_string(spec):
 		otsu=otsu,
 		sauvola=sauvola)
 
-	return build_func_from_string(spec, funcs)
+	return build_func_from_string(spec, funcs)()
