@@ -2,6 +2,7 @@
 
 import click
 import numpy as np
+import logging
 
 from pathlib import Path
 
@@ -46,6 +47,7 @@ class OCRProcessor(Processor):
 			batch_size_kwargs = dict(batch_size=batch_size)
 		else:
 			batch_size_kwargs = dict()
+		self._chunk_size = batch_size
 
 		if len(self._models) == 1:
 			self._predictor = Predictor(
@@ -54,7 +56,7 @@ class OCRProcessor(Processor):
 			self._voter = None
 			self._line_height = int(self._predictor.model_params.line_height)
 		else:
-			print("using Calamari voting with %d models." % len(self._models))
+			logging.info("using Calamari voting with %d models." % len(self._models))
 			self._predictor = MultiPredictor(
 				checkpoints=[str(p) for p in self._models],
 				**batch_size_kwargs)
@@ -85,12 +87,14 @@ class OCRProcessor(Processor):
 			images.append(np.array(im))
 
 		texts = []
-		for prediction in self._predictor.predict_raw(
-			images, progress_bar=False, **self._predict_kwargs):
+		chunk_size = self._chunk_size
+		for i in range(0, len(images), chunk_size):
+			for prediction in self._predictor.predict_raw(
+				images[i:i + chunk_size], progress_bar=False, **self._predict_kwargs):
 
-			if self._voter is not None:
-				prediction = self._voter.vote_prediction_result(prediction)
-			texts.append(prediction.sentence)
+				if self._voter is not None:
+					prediction = self._voter.vote_prediction_result(prediction)
+				texts.append(prediction.sentence)
 
 		with output.ocr() as zf:
 			for name, text in zip(names, texts):
