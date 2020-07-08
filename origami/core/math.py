@@ -89,3 +89,38 @@ class Geometry:
 
 	def rel_area(self, a):
 		return (self.diameter * a) ** 2
+
+
+def partition_path(path, split_length):
+	path = np.array(path)
+
+	accumulated_length = 0
+	accumulated = [path[0]]
+	for b in path[1:]:
+		while True:
+			a = accumulated[-1]
+			r = np.linalg.norm(b - a)
+			if accumulated_length + r < split_length:
+				accumulated.append(b)
+				accumulated_length += r
+				break
+			else:
+				x = split_length - accumulated_length
+				c = a + ((b - a) / r) * x
+				accumulated.append(c)
+				yield np.array(accumulated)
+
+				accumulated_length = 0
+				accumulated = [c]
+
+	if accumulated:
+		yield np.array(accumulated)
+
+
+def divide_path(path, max_length):
+	coords = []
+	i = 0
+	for s in partition_path(path, max_length):
+		coords.extend(s[i:])
+		i = 1
+	return np.array(coords)

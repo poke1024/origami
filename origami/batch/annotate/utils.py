@@ -12,6 +12,7 @@ from functools import lru_cache
 
 from origami.core.predict import PredictorType
 from origami.core.neighbors import neighbors
+from origami.core.math import partition_path
 
 
 class Pens:
@@ -398,7 +399,8 @@ def render_paths(
 			qp.drawPolyline(poly)
 
 			if show_dir:
-				render_arrows(qp, path, "center")
+				for part in partition_path(path, 200):
+					render_arrows(qp, part, "center")
 
 	finally:
 		qp.end()

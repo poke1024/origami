@@ -32,7 +32,7 @@ from sklearn.decomposition import PCA
 
 from origami.core.lingrid import lininterp
 from origami.core.mask import Mask
-from origami.core.math import Geometry
+from origami.core.math import Geometry, divide_path
 
 
 class LineDetector:
@@ -254,9 +254,10 @@ class Samples:
 	horizontal_separators = ["H"]
 	vertical_separators = ["V", "T"]
 
-	def __init__(self):
+	def __init__(self, geometry):
 		self._points = []
 		self._values = []
+		self._geometry = geometry
 
 	def __len__(self):
 		return len(self._points)
@@ -279,18 +280,22 @@ class Samples:
 	def print_stats(self):
 		print(np.min(self._values), np.max(self._values))
 
-	def _angles(self, coords):
+	def _angles(self, coords, max_segment=0.05):
 		coords = np.array(coords)
 
 		# normalize. need to check against direction here.
 		# if coords[0, 1] > coords[-1, 1]:
 		#	coords = coords[::-1]
 
+		coords = divide_path(
+			coords, self._geometry.rel_length(max_segment))
+
 		# generate more coords since many steps further down
 		# in our processing pipeline will get confused if there
 		# are less than 4 or 5 points.
-		coords = np.array(list(subdivide(coords)))
-		coords = np.array(list(subdivide(coords)))
+
+		while len(coords) < 6:
+			coords = np.array(list(subdivide(coords)))
 
 		v = coords[1:] - coords[:-1]
 		phis = np.arctan2(v[:, 1], v[:, 0])
@@ -531,8 +536,8 @@ class GridFactory:
 			separators = dict((k, shapely.affinity.scale(
 				s, sx, sy, origin=(0, 0))) for k, s in separators.items())
 
-		self._samples_h = Samples()
-		self._samples_v = Samples()
+		self._samples_h = Samples(page.geometry(False))
+		self._samples_v = Samples(page.geometry(False))
 
 		if separators:
 			self._samples_h.add_separator_skew(
