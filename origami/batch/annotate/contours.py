@@ -53,8 +53,11 @@ class AnnotateContoursProcessor(Processor):
 			classifier, segmentation_label, block_id = block_path
 			return (classifier, segmentation_label), int(block_id.split(".")[0])
 
-		pixmap = render_blocks(pixmap, blocks, get_label, predictors)
-		pixmap = render_separators(pixmap, separators)
+		if not self._options["omit_blocks"]:
+			pixmap = render_blocks(pixmap, blocks, get_label, predictors)
+
+		if not self._options["omit_separators"]:
+			pixmap = render_separators(pixmap, separators)
 
 		output.annotation(pixmap.toImage())
 
@@ -68,6 +71,14 @@ class AnnotateContoursProcessor(Processor):
 	'--stage',
 	type=str,
 	default="warped")
+@click.option(
+	'--omit-blocks',
+	is_flag=True,
+	default=False)
+@click.option(
+	'--omit-separators',
+	is_flag=True,
+	default=False)
 @Processor.options
 def debug_contours(data_path, **kwargs):
 	""" Export annotate information on vectors for all document images in DATA_PATH. """
