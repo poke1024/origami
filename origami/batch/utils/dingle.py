@@ -50,6 +50,7 @@ class DinglehopperProcessor(Processor):
 
 	def process(self, page_path: Path, input, output):
 		texts = input.ocr
+		texts = dict((k, normalize_text(v)) for k, v in texts.items())
 
 		paths = list(map(parse_line_path, list(texts.keys())))
 		path_to_name = dict(zip(paths, texts.keys()))
@@ -97,7 +98,10 @@ class DinglehopperProcessor(Processor):
 
 			region.append_text_equiv("\n".join(line_text))
 
-		doc.write(output.paths[0], validate=False)
+		doc.write(
+			output.paths[0],
+			validate=False,
+			overwrite=self._options["overwrite"])
 
 
 @click.command()

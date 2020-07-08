@@ -40,9 +40,9 @@ class Document:
 	def append(self, element):
 		self._page.append(element._node)
 
-	def write(self, path, validate=True):
-		if Path(path).exists():
-			raise ValueError("xml file already exists")
+	def write(self, path, validate=True, overwrite=False):
+		if not overwrite and Path(path).exists():
+			raise ValueError("xml file at %s already exists" % path)
 		ET.ElementTree(self._root).write(
 			path, encoding='utf-8', xml_declaration=True)
 		if validate:
