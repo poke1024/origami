@@ -206,16 +206,13 @@ class Processor:
 		pass
 
 	def page_lock(self, path):
-		if self._lock_files:
-			return portalocker.Lock(path, "r", flags=portalocker.LOCK_EX, timeout=1)
-		else:
-			return contextlib.nullcontext()
+		return self.lock_or_open(path, "r")
 
-	def lock(self, path, mode):
+	def lock_or_open(self, path, mode):
 		if self._lock_files:
 			return portalocker.Lock(path, mode, flags=portalocker.LOCK_EX, timeout=1)
 		else:
-			return contextlib.nullcontext()
+			return open(path, mode)
 
 	def _update_json(self, page_path, artifact, updates):
 		try:

@@ -248,7 +248,7 @@ class Input:
 		self._stage = stage
 
 	def instantiate(self, processor, overwrite, **kwargs):
-		return Reader(self._artifacts, self._stage, open=processor.lock, **kwargs)
+		return Reader(self._artifacts, self._stage, open=processor.lock_or_open, **kwargs)
 
 
 class Writer:
