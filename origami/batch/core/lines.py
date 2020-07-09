@@ -117,5 +117,5 @@ class LineExtractor:
 					for i, (x0, x1) in enumerate(zip(line_columns, line_columns[1:])):
 						line_parts.append((self._column_path(path, 1 + i), line, (x0, x1)))
 
-		pool = multiprocessing.pool.ThreadPool(processes=8)
-		return pool.map(self._extract_line_image, line_parts)
+		with multiprocessing.pool.ThreadPool(processes=8) as pool:
+			return pool.map(self._extract_line_image, line_parts)
