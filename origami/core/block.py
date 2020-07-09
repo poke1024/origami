@@ -431,7 +431,7 @@ class LineDetector:
 		extra_descent=0,
 		block_size_minimum=4,
 		text_area_factory=TextAreaFactory(),
-		binarizer=sauvola()):
+		binarizer=sauvola(31)):
 
 		self._force_parallel_baselines = force_parallel_lines
 		self._force_lines = force_lines
