@@ -17,7 +17,14 @@ from origami.core.math import inset_bounds
 
 
 Candidate = collections.namedtuple(
-	'Candidate', ['axis', 'x', 'score'])
+	'Candidate', ['axis', 'x', 'score', 'overlap'])
+
+
+class Partition(collections.namedtuple(
+	'Partition', ['a', 'b', 'overlap'])):
+
+	def __iter__(self):
+		return iter([self.a, self.b])
 
 
 class Gap(collections.namedtuple(
@@ -157,7 +164,7 @@ class Coordinates:
 						maxu=x1,
 						maxv=self._ext_max)
 					yield Candidate(
-						self, x0, score(gap))
+						self, x0, score(gap), overlap=False)
 				elif n >= 1:  # overlaps.
 					err = 0
 					for j in active_set.keys():
@@ -165,7 +172,7 @@ class Coordinates:
 							abs(x0 - self._min_by_label[j]),
 							abs(x0 - self._max_by_label[j]))
 					yield Candidate(
-						self, x0, -err)
+						self, x0, -err, overlap=True)
 
 
 default_scores = dict(
@@ -200,6 +207,7 @@ class XYCut:
 
 			self._axis = lcs.index(best.axis)
 			self._x = best.x
+			self._overlap = best.overlap
 
 	@property
 	def valid(self):
@@ -225,52 +233,75 @@ class XYCut:
 		coords = self._coords[:, :, a]
 		return np.min(coords), np.max(coords)
 
+	@property
+	def overlap(self):
+		return self._overlap
+
 
 def _rxy_cut(boxes, **kwargs):
 	if len(boxes) <= 1:
-		return [*boxes], []
+		return Partition([*boxes], [], False)
 
 	cut = XYCut(boxes, **kwargs)
 	if not cut.valid:
-		return [*boxes], []
+		return Partition([*boxes], [], len(boxes) > 1)
 
 	if max(len(cut[0]), len(cut[1])) < len(boxes):
-		return list(map(partial(_rxy_cut, **kwargs), cut))
+		a, b = map(partial(_rxy_cut, **kwargs), cut)
+		return Partition(a, b, cut.overlap)
 	else:
 		logging.info("aborting _rxy_cut (%d elements)." % len(boxes))
-		return [*boxes], []
+		return Partition([*boxes], [], cut.overlap)
 
 
-def _flatten(boxes, leafs):
-	if isinstance(boxes, Box):
-		leafs.append(boxes)
+def _flatten(partition, leafs, rename):
+	if isinstance(partition, Box):
+		leafs.append(rename(partition))
 	else:
-		for x in boxes:
-			_flatten(x, leafs)
+		for x in partition:
+			_flatten(x, leafs, rename)
 
 
-def reading_order(bounds, **kwargs):
+def _groups(partition, groups, rename):
+	if isinstance(partition, list) or partition.overlap:
+		leafs = []
+		_flatten(partition, leafs, rename)
+		if leafs:
+			groups.append(leafs)
+	else:
+		for x in partition:
+			_groups(x, groups, rename)
+
+
+_modes = dict(flat=_flatten, grouped=_groups)
+
+
+def _reading_order(boxes, mode="flat", **kwargs):
+	results = []
+	_modes[mode](
+		_rxy_cut(boxes, **kwargs),
+		results,
+		lambda box: box.name)
+	return results
+
+
+def sort_bounds(bounds, **kwargs):
 	boxes = [Box(i, *args) for i, args in enumerate(bounds)]
-	leafs = []
-	_flatten(_rxy_cut(boxes, **kwargs), leafs)
-	return [box.name for box in leafs]
+	return _reading_order(boxes, **kwargs)
 
 
 def sort_blocks(blocks, **kwargs):
-	order = reading_order([
-		block.polygon.bounds for block in blocks], **kwargs)
-	return [blocks[i] for i in order]
+	return _reading_order([
+		Box(block, *block.polygon.bounds) for block in blocks],
+		**kwargs)
 
 
 def polygon_order(polygons, fringe, **kwargs):
-	names = []
-	bounds = []
+	boxes = []
 
 	for name, polygon in polygons:
 		minx, miny, maxx, maxy = inset_bounds(
 			polygon.bounds, fringe)
+		boxes.append(Box(name, minx, miny, maxx, maxy))
 
-		bounds.append((minx, miny, maxx, maxy))
-		names.append(name)
-
-	return [names[i] for i in reading_order(bounds, **kwargs)]
+	return _reading_order(boxes, **kwargs)
