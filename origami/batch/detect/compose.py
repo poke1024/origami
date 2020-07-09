@@ -64,6 +64,29 @@ def sortable_path(line_name):
 	return line_path[:-1] + (int(line_path[-1]),)
 
 
+class Composition:
+	def __init__(self, line_separator, block_separator):
+		self._line_separator = line_separator
+		self._block_separator = block_separator
+		self._texts = []
+		self._path = None
+
+	def append_text(self, path, text):
+		text = text.strip()
+		if not text:
+			return
+		assert isinstance(path, tuple)
+		if self._path is not None:
+			if path[:3] != self._path[:3]:
+				self._texts.append(self._block_separator)
+		self._path = path
+		self._texts.append(text + "\n")
+
+	@property
+	def text(self):
+		return "".join(self._texts)
+
+
 class ComposeProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
@@ -103,25 +126,15 @@ class ComposeProcessor(Processor):
 		order_data = input.order
 		order = order_data["orders"]["*"]
 
-		line_separator = "\n"
-		block_separator = self._block_separator
-
-		page_texts = []
-
 		ocr_data = input.ocr
 
 		def to_text_name(path):
 			return "/".join(map(str, path)) + ".txt"
 
-		regular = collections.defaultdict(list)
+		non_tables = collections.defaultdict(dict)
 		tables = collections.defaultdict(Table)
 		for line_path in sorted(map(sortable_path, ocr_data.keys())):
 			block_path = line_path[:3]
-
-			# if we cut multiple column images from one line, we will see
-			# paths here that are not in "lines".
-			# block, division, line, column
-			#line = lines[tuple(map(str, line_path))]
 
 			ocr_text = ocr_data[to_text_name(line_path)]
 
@@ -129,24 +142,40 @@ class ComposeProcessor(Processor):
 			if len(table_path) > 1:
 				tables[block_path[:2] + (table_path[0], )].append_cell_text(
 					table_path[1:], ocr_text)
-			else:  #if line.confidence > 0.5:
-				regular[block_path].append(ocr_text)
+			else:
+				str_line_path = tuple(map(str, line_path))
+				non_tables[str_line_path[:3]][str_line_path] = ocr_text
 
-		texts_by_block = dict()
-		for k, texts in regular.items():
-			texts_by_block[k] = line_separator.join(texts).strip()
-		for k, table in tables.items():
-			texts_by_block[k] = table.to_text()
+		composition = Composition(
+			line_separator="\n",
+			block_separator=self._block_separator)
+
+		def append_text_for_block(block_path):
+			table = tables.get(block_path)
+			if table is not None:
+				composition.append_text(
+					block_path, tables[block_path].to_text())
+			else:
+				non_table_data = non_tables.get(block_path)
+				sorted_lines = sorted(
+					list(non_table_data.items()), key=lambda x: x[0])
+				for p, text in sorted_lines:
+					composition.append_text(p, text)
 
 		for path in map(lambda x: tuple(x.split("/")), order):
 			if self._block_filter is not None and not self._block_filter(path):
 				continue
-			block_text = texts_by_block.get(path, [])
-			if block_text:
-				page_texts.append(block_text)
+			if len(path) == 3:  # is this a block path?
+				append_text_for_block(path)
+			elif len(path) == 4:  # is this a line path?
+				line_texts = non_tables.get(path[:3])
+				if line_texts:
+					composition.append_text(path, line_texts[path])
+			else:
+				raise RuntimeError("illegal path %s in reading order" % path)
 
 		with output.compose() as zf:
-			zf.writestr("page.txt", block_separator.join(page_texts))
+			zf.writestr("page.txt", composition.text)
 
 
 @click.command()

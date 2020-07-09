@@ -14,7 +14,7 @@ from functools import partial
 import origami.core.binarize
 
 
-def reliable_contours(all_contours, all_lines, min_confidence=0.5):
+def reliable_contours(all_contours, all_lines, min_confidence):
 	block_lines = collections.defaultdict(list)
 	for path, line in all_lines.items():
 		if line.confidence > min_confidence:
