@@ -263,6 +263,10 @@ class Line:
 		return self._polygon
 
 	@property
+	def baseline(self):
+		return self._tesseract_data['baseline']
+
+	@property
 	def info(self):
 		return dict(
 			p=self._p.tolist(),
@@ -301,13 +305,14 @@ class Line:
 
 def _extended_baseline(text_area, p, right, up, max_ext=3):
 	coords = []
+	midpoint = p + right / 2
 
 	for retry in range(2):
 		minx, miny, maxx, maxy = text_area.bounds
 		magnitude = max(maxx - minx, maxy - miny)
 		u = (right / np.linalg.norm(right)) * 2 * magnitude
 		line = shapely.geometry.LineString(
-			[p - u, p + u]).intersection(text_area)
+			[midpoint - u, midpoint + u]).intersection(text_area)
 		if line.geom_type == "LineString":
 			coords = list(line.coords)
 			break
