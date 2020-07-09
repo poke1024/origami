@@ -176,13 +176,13 @@ class Coordinates:
 
 
 default_scores = dict(
-	area=lambda gap: gap.du * gap.dv,
-	u=lambda gap: gap.du,
-	v=lambda gap: gap.dv)
+	largest_area=lambda gap: gap.du * gap.dv,
+	widest_gap=lambda gap: gap.du,
+	longest_cut=lambda gap: gap.dv)
 
 
 class XYCut:
-	def __init__(self, objs, score="v", eps=0):
+	def __init__(self, objs, score="widest_gap", eps=0):
 		if isinstance(score, str):
 			score = default_scores[score]
 
@@ -294,6 +294,15 @@ def sort_blocks(blocks, **kwargs):
 	return _reading_order([
 		Box(block, *block.polygon.bounds) for block in blocks],
 		**kwargs)
+
+
+def bounds_order(bounds, **kwargs):
+	boxes = []
+
+	for name, (minx, miny, maxx, maxy) in bounds:
+		boxes.append(Box(name, minx, miny, maxx, maxy))
+
+	return _reading_order(boxes, **kwargs)
 
 
 def polygon_order(polygons, fringe, **kwargs):
