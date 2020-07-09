@@ -190,7 +190,7 @@ class ReadingOrderProcessor(Processor):
 @click.option(
 	'--region-area',
 	type=float,
-	default=0.01,
+	default=0.0025,
 	help="Ignore regions below this relative size.")
 @click.option(
 	'--splittable',

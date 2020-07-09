@@ -122,7 +122,7 @@ class ContoursProcessor(Processor):
 @click.option(
 	'--region-area',
 	type=float,
-	default=0.01,  # might be a single word.
+	default=0.0025,  # might be a single word.
 	help="Ignore regions below this relative size.")
 @click.option(
 	'--margin-noise',
