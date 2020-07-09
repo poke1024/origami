@@ -22,36 +22,54 @@ class SampleProcessor(Processor):
 		self._out_path = Path(self._options["output_path"])
 		self._out_path.mkdir(exist_ok=True)
 
+		artifact = options["artifact"]
+		if ":" in artifact:
+			parts = map(lambda s: s.strip(), artifact.split(":"))
+			if len(parts) != 2:
+				raise ValueError(artifact)
+			t, name = parts
+			if t != "annotation":
+				raise ValueError(artifact)
+			self._artifact = Annotation(name)
+		else:
+			self._artifact = Artifact[artifact.upper()]
+
 	def artifacts(self):
 		return [
-			("data", Input(Annotation(self._options["annotation"])))
+			("data", Input(self._artifact))
 		]
 
 	def should_process(self, p: Path) -> bool:
 		return True
 
 	def process(self, page_path: Path, data):
-		self._paths.append(data.annotation)
+		paths = data.paths
+		assert len(paths) == 1
+		self._paths.append(paths[0])
 
 	def output(self):
-		k = self._options["number"]
-		if k > len(self._paths):
-			logging.error("not enough data to sample %d pages." % k)
-			k = len(self._paths)
-		paths = random.sample(self._paths, k)
+		if self._options["all"]:  # take all?
+			paths = self._paths
+		else:
+			k = self._options["number"]
+			if k > len(self._paths):
+				logging.error("not enough data to sample %d pages." % k)
+				k = len(self._paths)
+			paths = random.sample(self._paths, k)
 
-		filename = self._options["filename"]
-		for p in tqdm(paths, desc="copying"):
-			if filename == "page":
-				name = p.parent.with_suffix(p.suffix).name
-			elif filename == "path":
-				name = p.parent.with_suffix(p.suffix)
-				sep = "--"
-				name = str(name).replace("/", sep)
-				name = name.strip(sep)
-			else:
-				raise ValueError(filename)
-			shutil.copy(p, self._out_path / name)
+		if paths:
+			filename = self._options["filename"]
+			for p in tqdm(paths, desc="copying"):
+				if filename == "page":
+					name = p.parent.with_suffix(p.suffix).name
+				elif filename == "path":
+					name = p.parent.with_suffix(p.suffix)
+					sep = "--"
+					name = str(name).replace("/", sep)
+					name = name.strip(sep)
+				else:
+					raise ValueError(filename)
+				shutil.copy(p, self._out_path / name)
 
 
 @click.command()
@@ -70,10 +88,15 @@ class SampleProcessor(Processor):
 	default=10,
 	help="Number of page results to sample.")
 @click.option(
-	'--annotation',
+	'--all',
+	is_flag=True,
+	default=False,
+	help="Ignore --n and take all.")
+@click.option(
+	'--artifact',
 	type=str,
-	default="layout",
-	help="Type of annotation to sample.")
+	default="annotation:layout",
+	help="Artifact to sample.")
 @click.option(
 	'--filename',
 	type=click.Choice(['page', 'path'], case_sensitive=False),
