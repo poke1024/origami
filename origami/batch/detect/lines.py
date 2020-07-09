@@ -10,6 +10,7 @@ from pathlib import Path
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.block import ConcurrentLineDetector, TextAreaFactory
+from origami.batch.core.utils import RegionsFilter
 
 
 def scale_grid(s0, s1, grid):
@@ -51,6 +52,7 @@ class LineDetectionProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._allow_conflicts = RegionsFilter(options["allow_conflicts"])
 
 	@property
 	def processor_name(self):
@@ -70,9 +72,13 @@ class LineDetectionProcessor(Processor):
 
 		sampler = ConfidenceSampler(blocks, warped.segmentation)
 
+		conflicting_blocks = [
+			block for path, block in blocks.items()
+			if not self._allow_conflicts(path)]
+
 		detector = ConcurrentLineDetector(
 			text_area_factory=TextAreaFactory(
-				list(blocks.values()),
+				conflicting_blocks,
 				buffer=self._options["contours_buffer"]),
 			force_parallel_lines=False,
 			force_lines=True,
@@ -117,6 +123,11 @@ class LineDetectionProcessor(Processor):
 	default=0.0015,
 	type=float,
 	help='expand contours by specified relative amount')
+@click.option(
+	'--allow-conflicts',
+	default="regions/ILLUSTRATION",
+	type=str,
+	help='regions types that may overlap without being resolved')
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),
