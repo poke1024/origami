@@ -54,7 +54,8 @@ class AnnotateContoursProcessor(Processor):
 			return (classifier, segmentation_label), int(block_id.split(".")[0])
 
 		if not self._options["omit_blocks"]:
-			pixmap = render_blocks(pixmap, blocks, get_label, predictors)
+			pixmap = render_blocks(
+				pixmap, blocks, predictors, get_label=get_label)
 
 		if not self._options["omit_separators"]:
 			pixmap = render_separators(pixmap, separators)

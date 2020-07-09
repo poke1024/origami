@@ -24,20 +24,19 @@ class DebugWarpProcessor(Processor):
 
 	def artifacts(self):
 		return [
-			("warped", Input(Artifact.CONTOURS, Artifact.LINES, stage=Stage.WARPED)),
+			("warped", Input(
+				Artifact.SEGMENTATION,
+				Artifact.CONTOURS, Artifact.LINES, stage=Stage.WARPED)),
 			("output", Output(Annotation("warp"))),
 		]
 
 	def process(self, page_path: Path, warped, output):
 		lines = warped.lines
 
-		def get_label(lines_path):
-			classifier, segmentation_label, block_id, line_id = lines_path
-			return (classifier, segmentation_label), line_id
-
 		qt_im = ImageQt(PIL.Image.open(page_path))
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
-		pixmap = render_lines(pixmap, lines, get_label)
+		pixmap = render_lines(
+			pixmap, lines, predictors=warped.predictors, show_vectors=True)
 
 		for k, v in warped.separators.items():
 			colors = dict(T="yellow", H="blue", V="red")

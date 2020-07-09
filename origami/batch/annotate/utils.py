@@ -134,9 +134,12 @@ def contour_patterns(contours, buffer=-5, threshold=10):
 
 
 def render_contours(
-	pixmap, contours, get_label,
-	predictors=None, brushes=None, matrix=None,
-	alternate=False, edges=None):
+	pixmap, contours, predictors,
+	brushes=None, matrix=None,
+	get_label=None, alternate=False, edges=None):
+
+	if not contours:
+		return pixmap
 
 	if brushes is None:
 		brushes = LabelBrushes(predictors)
@@ -273,14 +276,11 @@ def render_arrows(qp, path, pos="center"):
 	])
 
 
-def render_lines(pixmap, lines, get_label):
-	classes = sorted(list(set(x[:2] for x in lines.keys())))
-	brushes = dict()
-	for c, (h, s, v) in block_hsv(classes):
-		brushes[c + (0,)] = QtGui.QBrush(
-			QtGui.QColor.fromHsv(h, s, v))
-		brushes[c + (1,)] = QtGui.QBrush(
-			QtGui.QColor.fromHsv(h, s // 2, v))
+def render_lines(pixmap, lines, predictors, get_label=None, show_vectors=False):
+	if not lines:
+		return pixmap
+
+	brushes = LabelBrushes(predictors)
 
 	qp = QtGui.QPainter()
 	qp.begin(pixmap)
@@ -290,8 +290,7 @@ def render_lines(pixmap, lines, get_label):
 		red_pen = default_pen("#FFA500", 7)
 
 		for i, (line_path, line) in enumerate(lines.items()):
-			classifier, label, block_id, line_id = line_path
-			qp.setBrush(brushes[(classifier, label, i % 2)])
+			qp.setBrush(brushes.get_brush(line_path[:3], value=(i % 2) * 50))
 			qp.setPen(black_pen)
 
 			qp.setOpacity(0.5)
@@ -300,18 +299,48 @@ def render_lines(pixmap, lines, get_label):
 				poly.append(QtCore.QPointF(x, y))
 			qp.drawPolygon(poly)
 
-			line_info = line.info
-			p = np.array(line_info["p"])
-			right = np.array(line_info["right"])
-			up = np.array(line_info["up"])
+			if show_vectors:
+				p1, p2 = line.baseline
 
-			qp.setOpacity(0.9)
-			qp.setPen(red_pen)
-			qp.drawPolyline([QtCore.QPointF(*p), QtCore.QPointF(*(p + right))])
+				line_info = line.info
+				tess_data = line_info["tesseract_data"]
 
-			m = p + (right / 2)
-			qp.drawPolyline([QtCore.QPointF(*m), QtCore.QPointF(*(m + up))])
-			render_arrows(qp, [m, m + up], "end")
+				up = np.array(line_info["up"])
+				lh = abs(tess_data["height"]) - abs(tess_data["ascent"])
+				up = up * (lh / np.linalg.norm(up))
+
+				qp.setOpacity(0.9)
+				qp.setPen(red_pen)
+				qp.drawPolyline([QtCore.QPointF(*p1), QtCore.QPointF(*p2)])
+
+				m = (np.array(p1) + np.array(p2)) / 2
+				qp.drawPolyline([QtCore.QPointF(*m), QtCore.QPointF(*(m + up))])
+				render_arrows(qp, [m, m + up], "end")
+
+		if get_label:
+			font = QtGui.QFont("Arial Narrow", 24, QtGui.QFont.Bold)
+			qp.setFont(font)
+			fm = QtGui.QFontMetrics(font)
+
+			qp.setPen(default_pen())
+			node_r = 25
+
+			for i, (line_path, line) in enumerate(lines.items()):
+				x, y = line.image_space_polygon.centroid.coords[0]
+				p = QtCore.QPointF(x, y)
+
+				path, label = get_label(line_path)
+				qp.setBrush(brushes.get_brush(line_path[:3], value=50))
+
+				qp.setOpacity(0.8)
+				qp.drawEllipse(p, node_r, node_r)
+
+				qp.setOpacity(1)
+				# flags=QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter does
+				# not work. fix it manually.
+				label_str = label if isinstance(label, str) else str(label)
+				w = fm.horizontalAdvance(label_str)
+				qp.drawText(p.x() - w / 2, p.y() + fm.descent(), label_str)
 
 	finally:
 		qp.end()
@@ -384,6 +413,9 @@ def render_warped_line_confidence(pixmap, lines):
 def render_paths(
 	pixmap, columns,
 	color="blue", opacity=0.5, show_dir=False):
+
+	if not columns:
+		return pixmap
 
 	qp = QtGui.QPainter()
 	qp.begin(pixmap)

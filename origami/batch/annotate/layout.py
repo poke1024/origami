@@ -18,8 +18,7 @@ from PIL.ImageQt import ImageQt
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 from origami.core.page import Page
-from origami.batch.annotate.utils import render_contours, render_paths
-from origami.batch.core.lines import reliable_contours
+from origami.batch.annotate.utils import render_contours, render_lines, render_paths
 
 
 def linestrings(geom):
@@ -77,35 +76,65 @@ class DebugLayoutProcessor(Processor):
 	def artifacts(self):
 		return [
 			("warped", Input(Artifact.SEGMENTATION)),
+			("aggregate", Input(
+				Artifact.LINES, stage=Stage.AGGREGATE)),
 			("reliable", Input(
-				Artifact.CONTOURS, Artifact.LINES,
+				Artifact.CONTOURS,
 				Artifact.TABLES, Artifact.ORDER,
 				stage=Stage.RELIABLE)),
 			("output", Output(Annotation("layout"))),
 		]
 
-	def process(self, page_path: Path, warped, reliable, output):
+	def process(self, page_path: Path, warped, aggregate, reliable, output):
 		contours = dict([
 			(k, b.image_space_polygon)
 			for k, b in reliable.blocks.items()])
+		rendered_contours = contours
+		rendered_lines = []
 
 		table_data = reliable.tables
 
 		if self._options["label"] == "order":
 			xycut_data = reliable.order
+			order = [tuple(p.split("/")) for p in xycut_data["orders"]["*"]]
+
+			unsplit_contour_paths = set([x for x in order if len(x) == 3])
+			rendered_contours = dict(
+				(k, v) for k, v in contours.items()
+				if k in unsplit_contour_paths)
+
+			rendered_line_paths = set([x for x in order if len(x) == 4])
+			rendered_lines = dict(
+				(k, v) for k, v in aggregate.lines.items()
+				if k in rendered_line_paths)
 
 			order = dict(
-				(tuple(path.split("/")), i)
-				for i, path in enumerate(xycut_data["orders"]["*"]))
+				(path, i)
+				for i, path in enumerate(order))
 
-			labels = dict((x, 1 + order.get(x, -1)) for x in contours.keys())
+			def get_label(path):
+				i = order.get(path)
+				if i is not None:
+					return path[:2], i + 1
+				else:
+					return path[:2], None
+
+			def get_contour_label(block_path):
+				return get_label(block_path)
+
+			def get_line_label(line_path):
+				return get_label(line_path)
+
 		elif self._options["label"] == "id":
 			labels = dict((x, int(x[2])) for x in contours.keys())
+
+			def get_contour_label(block_path):
+				return block_path[:2], labels.get(block_path)
+
+			def get_line_label(x):
+				return None
 		else:
 			raise ValueError(self._options["label"])
-
-		def get_label(block_path):
-			return block_path[:2], labels.get(block_path)
 
 		page = reliable.page
 		predictors = warped.predictors
@@ -114,8 +143,12 @@ class DebugLayoutProcessor(Processor):
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 		pixmap = render_contours(
-			pixmap, contours,
-			get_label, predictors, alternate=True)
+			pixmap, rendered_contours, predictors,
+			get_label=get_contour_label, alternate=False)
+
+		pixmap = render_lines(
+			pixmap, rendered_lines, predictors,
+			get_label=get_line_label, show_vectors=True)
 
 		columns = []
 		for path, xs in cond_table_data(table_data["columns"]).items():
