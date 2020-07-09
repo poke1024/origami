@@ -123,7 +123,7 @@ class ObstacleSampler:
 		flow_score = sum(i.length() for i in flow) / gap.dv
 		obst_score = sum(i.length() for i in obst) / gap.du
 
-		score = gap.dv
+		score = gap.du * gap.dv  # i.e. largest whitespace area
 		score = (score * (1 - obst_score)) * (1 + flow_score)
 
 		return score
