@@ -336,8 +336,10 @@ def _longest_path(G, orientation):
 		d = np.linalg.norm(va - vb)
 		if xa < xb:
 			digraph.add_edge(a, b, distance=d)
-		else:
+		elif xa > xb:
 			digraph.add_edge(b, a, distance=d)
+		else:
+			pass  # do not break DAG by adding edge
 
 	return nx.algorithms.dag.dag_longest_path(
 		digraph, weight="distance")
