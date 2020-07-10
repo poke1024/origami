@@ -555,7 +555,7 @@ class LineDetector:
 			spec = dict(
 				p=np.array(p1, dtype=np.float64),
 				right=right,
-				up=up)
+				up=up * height)
 
 			if self._extend_baselines:
 				spec = _extended_baseline(text_area, **spec)
