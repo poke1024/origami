@@ -21,6 +21,7 @@ from contextlib import contextmanager, nullcontext
 
 from origami.core.time import elapsed_timer
 from origami.batch.core.io import *
+from origami.batch.core.utils import Spinner
 
 
 def qt_app():
@@ -168,29 +169,34 @@ class Processor:
 		if not Path(path).is_dir():
 			raise FileNotFoundError("%s is not a valid path." % path)
 
-		for folder, _, filenames in os.walk(path):
-			folder = Path(folder)
-			if folder.name.endswith(".out"):
-				continue
+		print("scanning data path... ", flush=True, end="")
 
-			for filename in filenames:
-				p = folder / filename
-
-				if self._name and not re.search(self._name, str(p)):
-					continue
-				if imghdr.what(p) is None:
-					if self._verbose:
-						print("skipping %s: not an image." % p)
+		with Spinner():
+			for folder, _, filenames in os.walk(path):
+				folder = Path(folder)
+				if folder.name.endswith(".out"):
 					continue
 
-				if not self.should_process(p):
-					if self._verbose:
-						print("skipping %s: should_process is False" % p)
-					continue
+				for filename in filenames:
+					p = folder / filename
 
-				kwargs = self.prepare_process(p)
-				if kwargs is not False:
-					queued.append((p, kwargs))
+					if self._name and not re.search(self._name, str(p)):
+						continue
+					if imghdr.what(p) is None:
+						if self._verbose:
+							print("skipping %s: not an image." % p)
+						continue
+
+					if not self.should_process(p):
+						if self._verbose:
+							print("skipping %s: should_process is False" % p)
+						continue
+
+					kwargs = self.prepare_process(p)
+					if kwargs is not False:
+						queued.append((p, kwargs))
+
+		print("done.", flush=True)
 
 		return queued
 
