@@ -69,7 +69,7 @@ class ReadingOrderProcessor(Processor):
 		self._ignore = RegionsFilter(options["ignore"])
 		self._splittable = RegionsFilter(options["splittable"])
 		self._min_confidence = options["min_line_confidence"]
-		self._enable_splitting = False
+		self._enable_region_splitting = not options["disable_region_splitting"]
 
 	@property
 	def processor_name(self):
@@ -82,7 +82,7 @@ class ReadingOrderProcessor(Processor):
 		order = []
 		for group in polygon_order(
 			contours.items(), fringe=fringe, score=sampler, mode="grouped"):
-			if len(group) <= 1 or not self._enable_splitting:
+			if len(group) <= 1 or not self._enable_region_splitting:
 				order.extend(group)
 			else:
 				items = []
@@ -94,7 +94,12 @@ class ReadingOrderProcessor(Processor):
 							minx = min(p1[0], p2[0])
 							maxx = max(p1[0], p2[0])
 							y = (p1[1] + p2[1]) / 2
-							items.append((line_path, (minx, y, maxx, y)))
+							tess_data = line.info["tesseract_data"]
+							ascent = abs(tess_data['ascent'])
+							descent = abs(tess_data['descent'])
+							ratio = 0.5  # reduce height
+							items.append((line_path, (
+								minx, y - ascent * ratio, maxx, y + descent * ratio)))
 					else:
 						items.append((g, contours[g].bounds))
 
@@ -145,7 +150,10 @@ class ReadingOrderProcessor(Processor):
 			(k, v.image_space_polygon) for k, v in blocks.items()))
 		combined_lines = combinator.lines(aggregate.lines)
 		reliable = reliable_contours(
-			contours, combined_lines, min_confidence=self._min_confidence)
+			contours,
+			combined_lines,
+			min_confidence=self._min_confidence,
+			ignore=self._ignore)
 
 		min_area = page.geometry(True).rel_area(self._options["region_area"])
 		reliable = dict(
@@ -196,6 +204,10 @@ class ReadingOrderProcessor(Processor):
 	'--splittable',
 	type=str,
 	default="regions/TEXT")
+@click.option(
+	'--disable-region-splitting',
+	is_flag=True,
+	default=False)
 @click.option(
 	'--min-line-confidence',
 	type=float,

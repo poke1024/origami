@@ -93,12 +93,15 @@ class Box:
 
 
 class Coordinates:
-	def __init__(self, objs, axis):
+	def __init__(self, objs, axis, min_extent=0.1):
 		self._objs = objs
 		self._axis = axis
 
 		xs = np.array([coords[:, axis] for coords in objs])
 		ys = np.array([coords[:, 1 - axis] for coords in objs])
+
+		xs[xs[:, 0] == xs[:, 1], 1] += min_extent
+		ys[ys[:, 0] == ys[:, 1], 1] += min_extent
 
 		self._min_by_label = np.min(xs, axis=-1)
 		self._max_by_label = np.max(xs, axis=-1)
@@ -182,13 +185,13 @@ default_scores = dict(
 
 
 class XYCut:
-	def __init__(self, objs, score="widest_gap", eps=0):
+	def __init__(self, objs, score="widest_gap", eps=0, min_extent=0.1):
 		if isinstance(score, str):
 			score = default_scores[score]
 
 		if len(objs) >= 2:
 			coords = [np.array(o.coords, dtype=np.float64) for o in objs]
-			lcs = [Coordinates(coords, axis) for axis in (0, 1)]
+			lcs = [Coordinates(coords, axis, min_extent=min_extent) for axis in (0, 1)]
 			splits = list(chain(*[lc.candidate_splits(score=score, eps=eps) for lc in lcs]))
 			self._coords = np.array(coords)
 		else:
