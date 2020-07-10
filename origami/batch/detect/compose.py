@@ -3,6 +3,7 @@
 import click
 import collections
 import codecs
+import logging
 
 from pathlib import Path
 from tabulate import tabulate
@@ -157,10 +158,13 @@ class ComposeProcessor(Processor):
 					block_path, tables[block_path].to_text())
 			else:
 				non_table_data = non_tables.get(block_path)
-				sorted_lines = sorted(
-					list(non_table_data.items()), key=lambda x: x[0])
-				for p, text in sorted_lines:
-					composition.append_text(p, text)
+				if non_table_data:
+					sorted_lines = sorted(
+						list(non_table_data.items()), key=lambda x: x[0])
+					for p, text in sorted_lines:
+						composition.append_text(p, text)
+				else:
+					raise RuntimeError("no text found for %s" % block_path)
 
 		for path in map(lambda x: tuple(x.split("/")), order):
 			if self._block_filter is not None and not self._block_filter(path):
