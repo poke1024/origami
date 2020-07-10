@@ -4,12 +4,27 @@ import click
 import random
 import logging
 import shutil
+import zipfile
 
 from pathlib import Path
 from tqdm import tqdm
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Annotation
+
+
+def _default_copy(src, dst):
+	shutil.copy(src, dst)
+
+
+def _unpack_zip(src, dst):
+	parent = dst.parent
+	basename = dst.name.rsplit(".", 1)[0]
+
+	with zipfile.ZipFile(src, "r") as zf:
+		for name in zf.namelist():
+			with open(parent / (basename + "_" + name), "wb") as f:
+				f.write(zf.read(name))
 
 
 class SampleProcessor(Processor):
@@ -23,8 +38,8 @@ class SampleProcessor(Processor):
 		self._out_path.mkdir(exist_ok=True)
 
 		artifact = options["artifact"]
-		if ":" in artifact:
-			parts = map(lambda s: s.strip(), artifact.split(":"))
+		if "/" in artifact:
+			parts = map(lambda s: s.strip(), artifact.split("/"))
 			if len(parts) != 2:
 				raise ValueError(artifact)
 			t, name = parts
@@ -33,6 +48,13 @@ class SampleProcessor(Processor):
 			self._artifact = Annotation(name)
 		else:
 			self._artifact = Artifact[artifact.upper()]
+
+		if self._options["do_not_unpack"]:
+			self._copy = _default_copy
+		elif self._artifact == Artifact.COMPOSE:
+			self._copy = _unpack_zip
+		else:
+			self._copy = _default_copy
 
 	def artifacts(self):
 		return [
@@ -69,7 +91,7 @@ class SampleProcessor(Processor):
 					name = name.strip(sep)
 				else:
 					raise ValueError(filename)
-				shutil.copy(p, self._out_path / name)
+				self._copy(p, self._out_path / name)
 
 
 @click.command()
@@ -93,10 +115,15 @@ class SampleProcessor(Processor):
 	default=False,
 	help="Ignore --n and take all.")
 @click.option(
-	'--artifact',
+	'-a', '--artifact',
 	type=str,
-	default="annotation:layout",
+	default="annotation/layout",
 	help="Artifact to sample.")
+@click.option(
+	'--do-not-unpack',
+	is_flag=False,
+	default=False,
+	help="Do not unpack zip files.")
 @click.option(
 	'--filename',
 	type=click.Choice(['page', 'path'], case_sensitive=False),
