@@ -290,6 +290,11 @@ def render_lines(pixmap, lines, predictors, get_label=None, show_vectors=False):
 		red_pen = default_pen("#FFA500", 7)
 
 		for i, (line_path, line) in enumerate(lines.items()):
+			geom_type = line.image_space_polygon.geom_type
+			if geom_type != "Polygon":
+				logging.error("encountered %s as line geometry" % geom_type)
+				continue
+
 			qp.setBrush(brushes.get_brush(line_path[:3], value=(i % 2) * 50))
 			qp.setPen(black_pen)
 
