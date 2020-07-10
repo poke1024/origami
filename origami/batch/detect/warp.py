@@ -27,7 +27,8 @@ class WarpDetectionProcessor(Processor):
 
 	def process(self, page_path: Path, input, output):
 		detector = ConcurrentLineDetector(
-			force_parallel_lines=False)
+			force_parallel_lines=False,
+			extend_baselines=False)
 
 		block_lines = detector(input.blocks)
 

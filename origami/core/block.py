@@ -431,6 +431,7 @@ class LineDetector:
 		extra_descent=0,
 		block_size_minimum=4,
 		text_area_factory=TextAreaFactory(),
+		extend_baselines=True,
 		binarizer=sauvola(31)):
 
 		self._force_parallel_baselines = force_parallel_lines
@@ -440,6 +441,7 @@ class LineDetector:
 		self._extra_descent = extra_descent
 
 		self._text_area_factory = text_area_factory
+		self._extend_baselines = extend_baselines
 		self._binarizer = binarizer
 		self._block_size_minimum = block_size_minimum
 
@@ -550,11 +552,13 @@ class LineDetector:
 			up /= np.linalg.norm(up)
 			down = -up
 
-			spec = _extended_baseline(
-				text_area,
+			spec = dict(
 				p=np.array(p1, dtype=np.float64),
 				right=right,
-				up=up * height)
+				up=up)
+
+			if self._extend_baselines:
+				spec = _extended_baseline(text_area, **spec)
 
 			x_descent = abs(descent * (1 + self._extra_descent))
 			spec["p"] += x_descent * down.astype(np.float64)
