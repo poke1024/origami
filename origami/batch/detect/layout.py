@@ -897,7 +897,7 @@ class LayoutDetectionProcessor(Processor):
 			AdjacencyMerger(
 				"regions/TABULAR", IsBelow()),
 			seq_merger,
-			OverlapMerger(self._options["maximum_overlap"]),
+			OverlapMerger(0),
 			FixSpillOver("regions/TEXT")
 		])
 
