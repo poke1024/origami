@@ -74,13 +74,16 @@ class StatsProcessor(Processor):
 
 	def print_elapsed(self):
 		data = []
+		# as max times will be distorted by long setup
+		# times for GPU related stuff, we actually use
+		# a quantile here.
 		for k in sorted(list(self._times.keys())):
 			v = self._times[k]
 			data.append((
 				k,
 				"%.1f" % np.min(v),
 				"%.1f" % np.median(v),
-				"%.1f" % np.max(v)))
+				"%.1f" % np.quantile(v, 0.9)))
 		print(tabulate(
 			data,
 			tablefmt="psql",
