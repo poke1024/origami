@@ -3,6 +3,9 @@
 import sys
 import time
 import threading
+import collections
+import shapely
+from itertools import chain
 
 
 class RegionsFilter:
@@ -18,6 +21,52 @@ class RegionsFilter:
 	@property
 	def paths(self):
 		return list(self._paths)
+
+
+class TableRegionCombinator:
+	def __init__(self, paths):
+		mapping = collections.defaultdict(list)
+		for k in paths:
+			parts = k[-1].split(".")
+			if len(parts) > 1:
+				mapping[k[:-1] + (parts[0], )].append(k)
+			else:
+				mapping[k].append(k)
+		self._mapping = mapping
+
+	@property
+	def mapping(self):
+		return self._mapping
+
+	def contours(self, contours):
+		combined = dict()
+		for k, v in self._mapping.items():
+			if len(v) == 1:
+				combined[k] = contours[v[0]]
+			else:
+				geom = shapely.ops.cascaded_union([
+					contours[x] for x in v])
+				if geom.geom_type != "Polygon":
+					geom = geom.convex_hull
+				combined[k] = geom
+		return combined
+
+	def lines(self, lines):
+		lines_by_block = collections.defaultdict(list)
+		for k, line in lines.items():
+			lines_by_block[k[:3]].append(line)
+
+		combined = dict()
+		for k, v in self._mapping.items():
+			combined[k] = list(chain(
+				*[lines_by_block[x] for x in v]))
+
+		new_lines = dict()
+		for k, v in combined.items():
+			for i, line in enumerate(v):
+				new_lines[k + (1 + i,)] = line
+
+		return new_lines
 
 
 # this nice Spinner class is taken from:

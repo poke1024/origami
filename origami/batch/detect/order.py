@@ -11,51 +11,9 @@ from itertools import chain
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.batch.core.lines import reliable_contours
-from origami.batch.core.utils import RegionsFilter
+from origami.batch.core.utils import RegionsFilter, TableRegionCombinator
 from origami.core.xycut import polygon_order, bounds_order
 from origami.core.separate import Separators, ObstacleSampler
-
-
-class Combinator:
-	def __init__(self, paths):
-		mapping = collections.defaultdict(list)
-		for k in paths:
-			parts = k[-1].split(".")
-			if len(parts) > 1:
-				mapping[k[:-1] + (parts[0], )].append(k)
-			else:
-				mapping[k].append(k)
-		self._mapping = mapping
-
-	def contours(self, contours):
-		combined = dict()
-		for k, v in self._mapping.items():
-			if len(v) == 1:
-				combined[k] = contours[v[0]]
-			else:
-				geom = shapely.ops.cascaded_union([
-					contours[x] for x in v])
-				if geom.geom_type != "Polygon":
-					geom = geom.convex_hull
-				combined[k] = geom
-		return combined
-
-	def lines(self, lines):
-		lines_by_block = collections.defaultdict(list)
-		for k, line in lines.items():
-			lines_by_block[k[:3]].append(line)
-
-		combined = dict()
-		for k, v in self._mapping.items():
-			combined[k] = list(chain(
-				*[lines_by_block[x] for x in v]))
-
-		new_lines = dict()
-		for k, v in combined.items():
-			for i, line in enumerate(v):
-				new_lines[k + (1 + i,)] = line
-
-		return new_lines
 
 
 def _is_table_path(path):

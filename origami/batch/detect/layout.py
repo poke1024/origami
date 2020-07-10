@@ -941,6 +941,11 @@ class LayoutDetectionProcessor(Processor):
 			self._union)
 		self._transformer(regions)
 
+		# we split table cells into separate regions so that the
+		# next stage (baseline detection) runs on isolated cells.
+		# in fact, each region is now one cell that may contain one
+		# or more lines.
+
 		split_contours, columns, dividers = subdivide_table_blocks(
 			"regions/TABULAR",
 			regions,

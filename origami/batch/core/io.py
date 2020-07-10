@@ -234,6 +234,17 @@ class Reader:
 				texts[k] = zf.read(k).decode("utf8")
 		return texts
 
+	@cached_property
+	def sorted_ocr(self):
+		def sortable_path(line_name):
+			line_path = tuple(line_name.rsplit(".", 1)[0].split("/"))
+			return line_path[:-1] + (int(line_path[-1]),)
+
+		keys = sorted(map(sortable_path, self.ocr.keys()))
+		for path in keys:
+			filename = "/".join(map(str, path)) + ".txt"
+			yield tuple(map(str, path)), self.ocr[filename]
+
 	@property
 	def annotation(self):
 		assert len(self._artifacts) == 1
