@@ -14,7 +14,7 @@ from functools import partial
 import origami.core.binarize
 
 
-def reliable_contours(all_contours, all_lines, min_confidence):
+def reliable_contours(all_contours, all_lines, min_confidence, ignore=None):
 	block_lines = collections.defaultdict(list)
 	for path, line in all_lines.items():
 		if line.confidence > min_confidence:
@@ -22,12 +22,13 @@ def reliable_contours(all_contours, all_lines, min_confidence):
 
 	reliable = dict()
 	for path, lines in block_lines.items():
-		hull = shapely.ops.cascaded_union([
-			line.image_space_polygon for line in lines]).convex_hull
-		geom = hull.intersection(all_contours[path])
-		if geom.geom_type != "Polygon":
-			geom = geom.convex_hull
-		reliable[path] = geom
+		if ignore is None or not ignore(path):
+			hull = shapely.ops.cascaded_union([
+				line.image_space_polygon for line in lines]).convex_hull
+			geom = hull.intersection(all_contours[path])
+			if geom.geom_type != "Polygon":
+				geom = geom.convex_hull
+			reliable[path] = geom
 
 	# for contours, for which we have to lines at all, we keep
 	# the contour as is.
