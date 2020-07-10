@@ -324,45 +324,23 @@ def _point_to_tuple(p):
 	return float(p.x()), float(p.y())
 
 
-def _traceback(source, backward, node):
-	yield node
+def _longest_path(G, orientation):
+	digraph = nx.DiGraph()
+	digraph.add_nodes_from(G.nodes)
 
-	while node != source:
-		node = backward[node]
-		yield node
+	for a, b in G.edges:
+		va = np.array(a)
+		vb = np.array(b)
+		xa = np.dot(va, orientation)
+		xb = np.dot(vb, orientation)
+		d = np.linalg.norm(va - vb)
+		if xa < xb:
+			digraph.add_edge(a, b, distance=d)
+		else:
+			digraph.add_edge(b, a, distance=d)
 
-
-def _farthest(G, source):
-	farthest = (0, None)
-
-	len_up_to = dict(((source, 0),))
-	backward = dict()
-	for u, v, t in nx.dfs_labeled_edges(G, source=source):
-		if t == 'forward':
-			if u == v:
-				u_v_len = 0
-			else:
-				u_v_len = G[u][v]["distance"]
-			path_len = len_up_to[u] + u_v_len
-			len_up_to[v] = path_len
-
-			backward[v] = u
-
-			if path_len > farthest[0]:
-				farthest = (path_len, v)
-
-	_, node = farthest
-	return list(reversed(list(_traceback(source, backward, node))))
-
-
-def _leaf_nodes(G):
-	degrees = np.array(list(G.degree(G.nodes)))
-	return degrees[degrees[:, 1] == 1][:, 0]
-
-
-def _longest_path(G):
-	u = _farthest(G, _leaf_nodes(G)[0])[-1]
-	return _farthest(G, u)
+	return nx.algorithms.dag.dag_longest_path(
+		digraph, weight="distance")
 
 
 def _clip_path(origin, radius, path):
@@ -459,11 +437,11 @@ class Polyline:
 			yield (m[tuple(a)], m[tuple(b)])
 
 	def oriented(self, v):
-	    u = self._coords[-1] - self._coords[0]
-	    if np.dot(u, np.array(v)) < 0:
-	        return Polyline(list(reversed(self._coords)), self._width)
-	    else:
-	        return self
+		u = self._coords[-1] - self._coords[0]
+		if np.dot(u, np.array(v)) < 0:
+			return Polyline(list(reversed(self._coords)), self._width)
+		else:
+			return self
 
 	def simplify(self, tolerance):
 		if len(self._coords) < 2:
@@ -532,7 +510,7 @@ class EstimatePolyline:
 		G.add_weighted_edges_from([
 			(u, v, np.linalg.norm(np.array(u) - np.array(v))) for u, v in uvs], weight="distance")
 
-		path = _longest_path(G)
+		path = _longest_path(G, self._orientation)
 		line_width = float(max(v.time for v in skeleton.vertices))
 
 		path = list(shapely.geometry.LineString(
@@ -548,7 +526,7 @@ class EstimatePolyline:
 		if len(G) < 2:
 			return None, 0
 
-		path = _longest_path(G)
+		path = _longest_path(G, self._orientation)
 		path = _expand_path(G, path)
 
 		path = list(shapely.geometry.LineString(
