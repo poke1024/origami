@@ -70,7 +70,7 @@ class DewarpProcessor(Processor):
 		lines = warped.lines
 		separators = warped.separators
 
-		page = list(blocks.values())[0].page
+		page = warped.page
 
 		min_length = page.geometry(dewarped=False).rel_length(
 			self._options["min_line_length"])

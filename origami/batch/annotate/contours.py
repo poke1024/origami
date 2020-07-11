@@ -43,7 +43,7 @@ class AnnotateContoursProcessor(Processor):
 			logging.info("no blocks for %s" % page_path)
 			return
 
-		page = list(blocks.values())[0].page
+		page = input.page
 		predictors = warped.predictors
 
 		qt_im = ImageQt(page.dewarped if self._stage.is_dewarped else page.warped)

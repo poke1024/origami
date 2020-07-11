@@ -932,7 +932,7 @@ class LayoutDetectionProcessor(Processor):
 		separators = Separators(
 			warped.segmentation, dewarped.separators)
 
-		page = list(blocks.values())[0].page
+		page = dewarped.page
 		contours = [(k, block.image_space_polygon) for k, block in blocks.items()]
 
 		regions = Regions(

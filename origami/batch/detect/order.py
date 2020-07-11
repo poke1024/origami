@@ -101,9 +101,9 @@ class ReadingOrderProcessor(Processor):
 		if not blocks:
 			return
 
-		page = list(blocks.values())[0].page
+		page = aggregate.page
 
-		combinator = Combinator(blocks.keys())
+		combinator = TableRegionCombinator(blocks.keys())
 		contours = combinator.contours(dict(
 			(k, v.image_space_polygon) for k, v in blocks.items()))
 		combined_lines = combinator.lines(aggregate.lines)
