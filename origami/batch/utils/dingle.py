@@ -28,6 +28,10 @@ def text_region_name(path):
 def normalize_text(text):
 	text = text.replace("‚‚", "„")
 	text = text.replace("''", "\"")
+	text = text.replace("ſ", "s")
+	text = text.replace("⸗", "-")
+	text = text.replace("–", "-")
+
 	return text
 
 
