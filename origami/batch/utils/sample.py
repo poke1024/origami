@@ -39,7 +39,8 @@ class SampleProcessor(Processor):
 
 		artifact = options["artifact"]
 		if "/" in artifact:
-			parts = map(lambda s: s.strip(), artifact.split("/"))
+			parts = list(map(
+				lambda s: s.strip(), artifact.split("/")))
 			if len(parts) != 2:
 				raise ValueError(artifact)
 			t, name = parts
