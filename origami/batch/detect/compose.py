@@ -37,7 +37,7 @@ class TextRegion:
 
 	def export_plain_line_text(self, composition, line_path):
 		composition.append_text(
-			line_path, self._lines[line_path])
+			line_path, self._line_texts[line_path])
 
 	def export_page_xml(self, px_document):
 		px_region = px_document.append_region(
