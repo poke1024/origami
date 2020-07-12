@@ -22,7 +22,8 @@ class OCRProcessor(Processor):
 		self._options = options
 
 		models = list(self._model_path.glob("*.json"))
-		models = [m for m in models if m.with_suffix(".h5").exists()]
+		if not options["legacy_model"]:
+			models = [m for m in models if m.with_suffix(".h5").exists()]
 		if len(models) < 1:
 			raise FileNotFoundError(
 				"no Calamari models found at %s" % self._model_path)
@@ -109,6 +110,11 @@ class OCRProcessor(Processor):
 	required=True,
 	type=click.Path(exists=True),
 	help='path that contains Calamari model(s)')
+@click.option(
+	'--legacy-model',
+	is_flag=True,
+	default=False,
+	help='support Calamari legacy models (pre 1.0)')
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),
