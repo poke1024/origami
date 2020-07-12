@@ -24,6 +24,7 @@ class Stage(enum.Enum):
 	DEWARPED = 1
 	AGGREGATE = 2
 	RELIABLE = 3
+	ANY = -1
 
 	@property
 	def is_dewarped(self):

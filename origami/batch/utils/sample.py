@@ -4,6 +4,7 @@ import click
 import random
 import logging
 import shutil
+import enum
 import zipfile
 
 from pathlib import Path
@@ -27,72 +28,108 @@ def _unpack_zip(src, dst):
 				f.write(zf.read(name))
 
 
+class NamingScheme(enum.Enum):
+	PAGE = 0
+	PATH = 1
+
+
+def name_by_page(suffix, path):
+	return path.parent.with_suffix(suffix).name
+
+
+def name_by_path(suffix, path):
+	name = path.parent.with_suffix(suffix)
+	sep = "--"
+	name = str(name).replace("/", sep)
+	name = name.strip(sep)
+	return name
+
+
+_namers = {
+	NamingScheme.PAGE: name_by_page,
+	NamingScheme.PATH: name_by_path
+}
+
+
+def parse_artifact(name):
+	if "/" in name:
+		parts = list(map(
+			lambda s: s.strip(), name.split("/")))
+		if len(parts) != 2:
+			raise ValueError(name)
+		t, name = parts
+		if t != "annotation":
+			raise ValueError(name)
+		artifact = Annotation(name)
+	else:
+		artifact = Artifact[name.upper()]
+
+	return artifact
+
+
 class SampleProcessor(Processor):
 	def __init__(self, options):
 		options["nolock"] = True
 		super().__init__(options)
 		self._options = options
+		self._stage = Stage.ANY
 
-		self._paths = []
 		self._out_path = Path(self._options["output_path"])
 		self._out_path.mkdir(exist_ok=True)
 
-		artifact = options["artifact"]
-		if "/" in artifact:
-			parts = list(map(
-				lambda s: s.strip(), artifact.split("/")))
-			if len(parts) != 2:
-				raise ValueError(artifact)
-			t, name = parts
-			if t != "annotation":
-				raise ValueError(artifact)
-			self._artifact = Annotation(name)
-		else:
-			self._artifact = Artifact[artifact.upper()]
+		self._namer = _namers[NamingScheme[
+			self._options["filename"].upper()]]
 
-		if self._options["do_not_unpack"]:
-			self._copy = _default_copy
-		elif self._artifact == Artifact.COMPOSE:
-			self._copy = _unpack_zip
-		else:
-			self._copy = _default_copy
+		self._artifacts = []
+		for spec in options["artifacts"].split(","):
+			artifact = parse_artifact(spec.strip())
+
+			if self._options["do_not_unpack"]:
+				copy = _default_copy
+			elif artifact == Artifact.COMPOSE:
+				copy = _unpack_zip
+			else:
+				copy = _default_copy
+
+			self._artifacts.append((artifact, copy))
+
+		self._queue = []
 
 	def artifacts(self):
 		return [
-			("data", Input(self._artifact))
+			("data", Input(*[a for a, _ in self._artifacts], stage=self._stage))
 		]
 
 	def should_process(self, p: Path) -> bool:
 		return True
 
 	def process(self, page_path: Path, data):
-		paths = data.paths
-		assert len(paths) == 1
-		self._paths.append(paths[0])
+		for artifact, copy in self._artifacts:
+			copy_args = (artifact, data.path(artifact), copy)
+			if self._options["all"]:  # take all?
+				self._copy(*copy_args)
+			else:
+				self._queue.append(copy_args)
+
+	def _copy(self, artifact, path, copy):
+		copy(path, self._out_path / self._namer(
+			"." + artifact.filename(self._stage), path))
 
 	def output(self):
-		if self._options["all"]:  # take all?
-			paths = self._paths
-		else:
-			k = self._options["number"]
-			if k > len(self._paths):
-				logging.error("not enough data to sample %d pages." % k)
-				k = len(self._paths)
-			paths = random.sample(self._paths, k)
+		if self._options["all"]:
+			return
 
-		if paths:
-			filename = self._options["filename"]
-			for p in tqdm(paths, desc="copying"):
-				if filename == "page":
-					name = p.parent.with_suffix(p.suffix).name
-				elif filename == "path":
-					name = p.parent.with_suffix(p.suffix)
-					sep = "--"
-					name = str(name).replace("/", sep)
-					name = name.strip(sep)
-				else:
-					raise ValueError(filename)
-				self._copy(p, self._out_path / name)
+		k = self._options["number"]
+		if k > len(self._queue):
+			k = len(self._queue)
+			logging.error("only found %d pages to sample from." % k)
+		sampled = random.sample(self._queue, k)
+
+		if not sampled:
+			return
+
+		for args in tqdm(sampled, desc="copying"):
+			self._copy(*args)
 
 
 @click.command()
@@ -116,7 +153,7 @@ class SampleProcessor(Processor):
 	default=False,
 	help="Ignore --n and take all.")
 @click.option(
-	'-a', '--artifact',
+	'-a', '--artifacts',
 	type=str,
 	default="annotation/layout",
 	help="Artifact to sample.")
