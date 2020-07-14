@@ -48,8 +48,8 @@ class TextRegion:
 			if line.image_space_polygon.is_empty:
 				if self._line_texts[line_path]:
 					raise RuntimeError(
-						"line %s has text '%s' but empty geometry" % (
-							str(line_path), self._line_texts[line_path]))
+						"line %s has text '%s', confidence %.2f, but empty geometry" % (
+							str(line_path), self._line_texts[line_path], line.confidence))
 				continue
 			px_line = px_region.append_text_line(id_="-".join(line_path))
 			px_line.append_coords(self._transform(
