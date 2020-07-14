@@ -62,15 +62,16 @@ class LineCounts:
 		self._num_lines[name] = count
 
 	def remove(self, name):
-		del self._num_lines[name]
+		if name in self._num_lines:
+			del self._num_lines[name]
 
 	def combine(self, names, target):
 		self._num_lines[target] = sum([
-			self._num_lines[x] for x in names
+			self._num_lines.get(x, 0) for x in names
 		])
 
 	def __getitem__(self, block_path):
-		return self._num_lines[block_path]
+		return self._num_lines.get(block_path, 0)
 
 
 def non_empty_contours(contours):
@@ -160,10 +161,15 @@ class Regions:
 			(k, named_f(k, contour))
 			for k, contour in self._contours.items())
 
-	def combine(self, sources):
-		agg_path = min(sources)
+	def combine(self, sources, agg_path=None):
+		contours = self._contours
 
-		u = self.union([self._contours[p] for p in sources])
+		if agg_path is None:
+			s = list(sources)
+			i = np.argmax([contours[p].area for p in s])
+			agg_path = s[i]
+
+		u = self.union([contours[p] for p in sources])
 		self.modify_contour(agg_path, u)
 		self._line_counts.combine(sources, agg_path)
 
@@ -181,8 +187,11 @@ class Regions:
 			return False
 
 	def modify_contour(self, path, contour):
-		self._contours[path] = contour
-		contour.name = "/".join(path)
+		if contour.is_empty:
+			self.remove_contour(path)
+		else:
+			self._contours[path] = contour
+			contour.name = "/".join(path)
 
 	def remove_contour(self, path):
 		del self._contours[path]
@@ -194,6 +203,7 @@ class Regions:
 		path = label + (str(i),)
 		self._contours[path] = contour
 		contour.name = "/".join(path)
+		return path
 
 	def sources(self, path):
 		m = self._mapped_from.get(path)
@@ -397,6 +407,100 @@ class Overlap:
 			if not intersection.is_empty:
 				t_areas.append(intersection.area / t.area)
 		return max(t_areas)
+
+
+class DominanceOperator:
+	def __init__(self, fringe):
+		self._fringe = fringe
+
+	def _graph(self, contours):
+		graph = nx.Graph()
+		graph.add_nodes_from([
+			tuple(c.name.split("/")) for c in contours])
+
+		tree = shapely.strtree.STRtree(contours)
+		for contour in contours:
+			for other in tree.query(contour):
+				if contour.name == other.name:
+					continue
+				graph.add_edge(
+					tuple(contour.name.split("/")),
+					tuple(other.name.split("/")))
+
+		return graph
+
+	def _resolve(self, regions, nodes):
+		fringe = regions.geometry.rel_length(self._fringe)
+
+		# phase 1. larger areas consume smaller areas.
+
+		remaining = dict([
+			(k, regions.contours[k].area)
+			for k in nodes])
+
+		done = False
+		while not done:
+			by_area = [x[0] for x in sorted(
+				list(remaining.items()), key=lambda x: x[-1])]
+
+			done = True
+			for i in reversed(range(1, len(by_area))):
+				largest_path = by_area[i]
+				largest = regions.contours[largest_path]
+				largest = largest.buffer(fringe)
+				union = [largest_path]
+				for path in by_area[:i - 1]:
+					polygon = regions.contours[path]
+					if polygon.is_empty:
+						union.append(path)
+					elif largest.contains(polygon):
+						union.append(path)
+				if len(union) > 1:
+					regions.combine(union, agg_path=largest_path)
+					for x in union:
+						if x != largest_path:
+							del remaining[x]
+					remaining[largest_path] = regions.contours[largest_path].area
+					done = False
+					break
+
+		# phase 2. resolve remaining overlaps.
+
+		done = len(remaining) < 2
+		while not done:
+			by_area = [x[0] for x in sorted(
+				list(remaining.items()), key=lambda x: x[-1])]
+
+			done = True
+			largest_path = by_area[-1]
+			largest = regions.contours[largest_path]
+			for path in by_area[:-1]:
+				polygon = regions.contours[path]
+				intersection = polygon.intersection(largest)
+				if intersection.area > 1:
+					done = False
+					polygon = polygon.difference(largest)
+					if polygon.is_empty:
+						regions.remove_contour(path)
+						del remaining[path]
+					elif polygon.geom_type == "MultiPolygon":
+						regions.remove_contour(path)
+						del remaining[path]
+						for geom in polygon.geoms:
+							new_path = regions.add_contour(path[:2], geom)
+							remaining[new_path] = geom.area
+					elif polygon.geom_type != "Polygon":
+						raise RuntimeError(
+							"illegal shape %d" % polygon.geom_type)
+					else:
+						regions.modify_contour(path, polygon)
+						remaining[path] = polygon.area
+
+	def __call__(self, regions):
+		graph = self._graph(regions.contours.values())
+
+		for nodes in nx.connected_components(graph):
+			self._resolve(regions, nodes)
 
 
 class DilationOperator:
@@ -898,6 +1002,8 @@ class LayoutDetectionProcessor(Processor):
 				"regions/TABULAR", IsBelow()),
 			seq_merger,
 			OverlapMerger(0),
+			DominanceOperator(
+				fringe=self._options["fringe"]),
 			FixSpillOver("regions/TEXT")
 		])
 
