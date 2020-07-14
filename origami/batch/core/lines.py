@@ -7,6 +7,7 @@ import json
 import click
 import shapely.ops
 import functools
+import logging
 
 from pathlib import Path
 from functools import partial
@@ -109,14 +110,17 @@ class LineExtractor:
 
 		line_parts = []
 		for path, line in lines.items():
-			if line.confidence > self._min_confidence:
-				line_columns = self._columns.get(path[:3])
-				if line_columns is None:
-					line_parts.append((path, line, None))
-				else:
-					line_columns = [None] + line_columns + [None]
-					for i, (x0, x1) in enumerate(zip(line_columns, line_columns[1:])):
-						line_parts.append((self._column_path(path, 1 + i), line, (x0, x1)))
+			if line.confidence < self._min_confidence:
+				logging.info("skipping line %s with confidence %.1f" % (
+					str(path), line.confidence))
+				continue
+			line_columns = self._columns.get(path[:3])
+			if line_columns is None:
+				line_parts.append((path, line, None))
+			else:
+				line_columns = [None] + line_columns + [None]
+				for i, (x0, x1) in enumerate(zip(line_columns, line_columns[1:])):
+					line_parts.append((self._column_path(path, 1 + i), line, (x0, x1)))
 
 		with multiprocessing.pool.ThreadPool(processes=8) as pool:
 			return pool.map(self._extract_line_image, line_parts)

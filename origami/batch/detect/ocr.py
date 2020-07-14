@@ -34,6 +34,10 @@ class OCRProcessor(Processor):
 		self._line_height = None
 
 		self._ignored = RegionsFilter(options["ignore"])
+		self._dry_run = self._options["dry_run"]
+
+		if self._dry_run:
+			logging.getLogger().setLevel(logging.INFO)
 
 	@property
 	def processor_name(self):
@@ -87,8 +91,15 @@ class OCRProcessor(Processor):
 			names.append("/".join(stem))
 			images.append(np.array(im))
 
-		texts = []
+		if self._dry_run:
+			logging.info("will ocr the following lines:\n%s" % "\n".join(sorted(names)))
+			return
+
 		chunk_size = self._chunk_size
+		if chunk_size <= 0:
+			chunk_size = len(images)
+
+		texts = []
 		for i in range(0, len(images), chunk_size):
 			for prediction in self._predictor.predict_raw(
 				images[i:i + chunk_size], progress_bar=False, **self._predict_kwargs):
@@ -128,6 +139,10 @@ class OCRProcessor(Processor):
 	'--ignore',
 	type=str,
 	default="regions/ILLUSTRATION")
+@click.option(
+	'--dry-run',
+	is_flag=True,
+	default=False)
 def segment(data_path, **kwargs):
 	""" Perform OCR on all recognized lines in DATA_PATH. """
 	processor = OCRProcessor(kwargs)
