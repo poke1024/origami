@@ -14,18 +14,56 @@ from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Annotation
 
 
-def _default_copy(src, dst):
-	shutil.copy(src, dst)
+class DirectoryTarget:
+	def __init__(self, dst):
+		self._dst = dst
+		self._dst.mkdir(exist_ok=True)
+
+	def close(self):
+		pass
+
+	def default_copy(self, src, name):
+		shutil.copy(src, self._dst / name)
+
+	def unpack_zip(self, src, name):
+		basename = name.rsplit(".", 1)[0]
+
+		with zipfile.ZipFile(src, "r") as zf:
+			for name in zf.namelist():
+				with open(self._dst / (basename + "_" + name), "wb") as f:
+					f.write(zf.read(name))
 
 
-def _unpack_zip(src, dst):
-	parent = dst.parent
-	basename = dst.name.rsplit(".", 1)[0]
+class ZipFileTarget:
+	def __init__(self, dst):
+		self._dst = dst
+		self._zf = None
+		self._closed = False
 
-	with zipfile.ZipFile(src, "r") as zf:
-		for name in zf.namelist():
-			with open(parent / (basename + "_" + name), "wb") as f:
-				f.write(zf.read(name))
+	def close(self):
+		self._closed = True
+		if self._zf:
+			self._zf.close()
+
+	@property
+	def zf(self):
+		if self._closed:
+			raise RuntimeError("file already closed.")
+		if self._zf is None:
+			self._zf = zipfile.ZipFile(
+				self._dst, "w", compression=zipfile.ZIP_DEFLATED)
+		return self._zf
+
+	def default_copy(self, src, name):
+		with open(src, "rb") as f:
+			self.zf.writestr(name, f.read())
+
+	def unpack_zip(self, src, name):
+		basename = name.rsplit(".", 1)[0]
+
+		with zipfile.ZipFile(src, "r") as zf:
+			for name in zf.namelist():
+				self.zf.write(basename + "_" + name, zf.read(name))
 
 
 class NamingScheme(enum.Enum):
@@ -75,7 +113,10 @@ class SampleProcessor(Processor):
 		self._stage = Stage.ANY
 
 		self._out_path = Path(self._options["output_path"])
-		self._out_path.mkdir(exist_ok=True)
+		if self._out_path.suffix == ".zip":
+			self._target = ZipFileTarget(self._out_path)
+		else:
+			self._target = DirectoryTarget(self._out_path)
 
 		self._namer = _namers[NamingScheme[
 			self._options["filename"].upper()]]
@@ -85,15 +126,18 @@ class SampleProcessor(Processor):
 			artifact = parse_artifact(spec.strip())
 
 			if self._options["do_not_unpack"]:
-				copy = _default_copy
+				copy = self._target.default_copy
 			elif artifact == Artifact.COMPOSE:
-				copy = _unpack_zip
+				copy = self._target.unpack_zip
 			else:
-				copy = _default_copy
+				copy = self._target.default_copy
 
 			self._artifacts.append((artifact, copy))
 
 		self._queue = []
+
+	def close(self):
+		self._target.close()
 
 	def artifacts(self):
 		return [
@@ -112,7 +156,7 @@ class SampleProcessor(Processor):
 				self._queue.append(copy_args)
 
 	def _copy(self, artifact, path, copy):
-		copy(path, self._out_path / self._namer(
+		copy(path, self._namer(
 			"." + artifact.filename(self._stage), path))
 
 	def output(self):
@@ -141,7 +185,7 @@ class SampleProcessor(Processor):
 	'-o', '--output-path',
 	type=Path,
 	required=True,
-	help="Directory where samples will get saved.")
+	help="Directory or zip file where samples will get saved.")
 @click.option(
 	'-n', '--number',
 	type=int,
@@ -171,8 +215,11 @@ class SampleProcessor(Processor):
 def sample(data_path, **kwargs):
 	""" Get a sample of page results in DATA_PATH. """
 	processor = SampleProcessor(kwargs)
-	processor.traverse(data_path)
-	processor.output()
+	try:
+		processor.traverse(data_path)
+		processor.output()
+	finally:
+		processor.close()
 
 
 if __name__ == "__main__":

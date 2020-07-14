@@ -53,6 +53,7 @@ class LineDetectionProcessor(Processor):
 		super().__init__(options)
 		self._options = options
 		self._allow_conflicts = RegionsFilter(options["allow_conflicts"])
+		self._min_confidence = options["min_confidence"]
 
 	@property
 	def processor_name(self):
@@ -66,7 +67,7 @@ class LineDetectionProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, warped, aggregate, output):
-		blocks = aggregate.blocks
+		blocks = aggregate.regions.by_path
 		if not blocks:
 			return
 
@@ -92,7 +93,7 @@ class LineDetectionProcessor(Processor):
 				line.update_confidence(sampler(block_path, line))
 
 		with output.lines() as zf:
-			info = dict(version=1)
+			info = dict(version=1, min_confidence=self._min_confidence)
 			zf.writestr("meta.json", json.dumps(info))
 
 			for parts, lines in block_lines.items():
@@ -104,7 +105,6 @@ class LineDetectionProcessor(Processor):
 					line_name = "%s/%s/%s/%d" % (
 						prediction_name, class_name, block_id, line_id)
 					zf.writestr("%s.json" % line_name, json.dumps(line.info))
-
 
 
 @click.command()
@@ -128,6 +128,10 @@ class LineDetectionProcessor(Processor):
 	default="regions/ILLUSTRATION",
 	type=str,
 	help='regions types that may overlap without being resolved')
+@click.option(
+	'--min-confidence',
+	type=float,
+	default=0.5)
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),

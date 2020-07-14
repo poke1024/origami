@@ -115,23 +115,58 @@ def read_separators(path: Path, open=open):
 	return separators
 
 
-def read_lines(path: Path, blocks, stage=Stage.WARPED, open=open):
-	assert all(block.stage == stage for block in blocks.values())
-	lines = dict()
-	with open(path, "rb") as lf:
-		with zipfile.ZipFile(lf, "r") as zf:
-			for name in zf.namelist():
-				if name == "meta.json":
-					continue
-				if not name.endswith(".json"):
-					raise RuntimeError("illegal file %s in %s." % (
-						name, page_path.with_suffix(".lines.zip")))
-				stem = name.rsplit('.', 1)[0]
-				parts = tuple(stem.split("/"))
-				block = blocks[tuple(parts[:3])]
-				line_info = json.loads(zf.read(name))
-				lines[parts] = Line(block, **line_info)
-	return lines
+class Regions:
+	def __init__(self, path: Path, page, stage, open=open):
+		blocks = dict()
+
+		for parts, polygon in read_contours(
+			path,
+			PredictorType.REGION,
+			open=open):
+
+			blocks[parts] = Block(
+				page, polygon, stage)
+
+		self._blocks = blocks
+
+	@property
+	def by_path(self):
+		return self._blocks
+
+
+class Lines:
+	def __init__(self, path: Path, regions, stage=Stage.WARPED, open=open):
+		blocks = regions.by_path
+		assert all(block.stage == stage for block in blocks.values())
+		self._meta = None
+		lines = dict()
+		with open(path, "rb") as lf:
+			with zipfile.ZipFile(lf, "r") as zf:
+				for name in zf.namelist():
+					if name == "meta.json":
+						self._meta = json.loads(zf.read(name))
+						continue
+					if not name.endswith(".json"):
+						raise RuntimeError("illegal file %s in %s." % (
+							name, path))
+					stem = name.rsplit('.', 1)[0]
+					parts = tuple(stem.split("/"))
+					block = blocks[tuple(parts[:3])]
+					line_info = json.loads(zf.read(name))
+					lines[parts] = Line(block, **line_info)
+		self._lines = lines
+
+	@property
+	def meta(self):
+		return self._meta
+
+	@property
+	def min_confidence(self):
+		return self.meta.get("min_confidence", 0.5)
+
+	@property
+	def by_path(self):
+		return self._lines
 
 
 class Reader:
@@ -188,19 +223,12 @@ class Reader:
 		return Segmentation.open(self.path(Artifact.SEGMENTATION))
 
 	@cached_property
-	def blocks(self):
-		blocks = dict()
-		page = self.page
-
-		for parts, polygon in read_contours(
+	def regions(self):
+		return Regions(
 			self.path(Artifact.CONTOURS),
-			PredictorType.REGION,
-			open=self._open):
-
-			blocks[parts] = Block(
-				page, polygon, self._stage)
-
-		return blocks
+			self.page,
+			self._stage,
+			open=self._open)
 
 	@cached_property
 	def separators(self):
@@ -210,9 +238,9 @@ class Reader:
 
 	@cached_property
 	def lines(self):
-		return read_lines(
+		return Lines(
 			self.path(Artifact.LINES),
-			self.blocks,
+			self.regions,
 			self._stage,
 			open=self._open)
 

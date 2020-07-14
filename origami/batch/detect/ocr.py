@@ -80,10 +80,13 @@ class OCRProcessor(Processor):
 	def process(self, page_path: Path, aggregate, output):
 		self._load_models()
 
-		lines = aggregate.lines
+		lines = aggregate.lines.by_path
 
 		extractor = LineExtractor(
-			aggregate.tables, self._line_height, self._options)
+			aggregate.tables,
+			self._line_height,
+			self._options,
+			min_confidence=aggregate.lines.min_confidence)
 
 		names = []
 		images = []

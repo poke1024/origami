@@ -48,7 +48,7 @@ class LineExtractionProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, input, output):
-		lines = input.lines
+		lines = input.lines.by_path.items
 		tables = None if self._options["do_not_dewarp"] else input.tables
 
 		extractor = LineExtractor(

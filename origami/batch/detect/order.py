@@ -26,7 +26,6 @@ class ReadingOrderProcessor(Processor):
 		self._options = options
 		self._ignore = RegionsFilter(options["ignore"])
 		self._splittable = RegionsFilter(options["splittable"])
-		self._min_confidence = options["min_line_confidence"]
 		self._enable_region_splitting = not options["disable_region_splitting"]
 
 	@property
@@ -66,7 +65,7 @@ class ReadingOrderProcessor(Processor):
 
 		return order
 
-	def xycut_orders(self, page, contours, lines, separators):
+	def xycut_orders(self, page, contours, lines, separators, min_confidence):
 		contours = dict((k, v) for k, v in contours.items() if not v.is_empty)
 
 		by_labels = collections.defaultdict(list)
@@ -79,7 +78,7 @@ class ReadingOrderProcessor(Processor):
 
 		reliable_region_lines = collections.defaultdict(list)
 		for line_path, line in lines.items():
-			if line.confidence > self._min_confidence:
+			if line.confidence > min_confidence:
 				reliable_region_lines[line_path[:3]].append((line_path, line))
 
 		sampler = ObstacleSampler(separators)
@@ -97,20 +96,21 @@ class ReadingOrderProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, warped, dewarped, aggregate, output):
-		blocks = aggregate.blocks
+		blocks = aggregate.regions.by_path
 		if not blocks:
 			return
 
 		page = aggregate.page
+		min_confidence = aggregate.lines.min_confidence
 
 		combinator = TableRegionCombinator(blocks.keys())
 		contours = combinator.contours(dict(
 			(k, v.image_space_polygon) for k, v in blocks.items()))
-		combined_lines = combinator.lines(aggregate.lines)
+		combined_lines = combinator.lines(aggregate.lines.by_path)
 		reliable = reliable_contours(
 			contours,
 			combined_lines,
-			min_confidence=self._min_confidence,
+			min_confidence=min_confidence,
 			ignore=self._ignore)
 
 		min_area = page.geometry(True).rel_area(self._options["region_area"])
@@ -129,7 +129,8 @@ class ReadingOrderProcessor(Processor):
 						"reliable contour %s is %s" % (k, contour.geom_type))
 				zf.writestr("/".join(k) + ".wkt", contour.wkt)
 
-		orders = self.xycut_orders(page, reliable, aggregate.lines, separators)
+		orders = self.xycut_orders(
+			page, reliable, aggregate.lines.by_path, separators, min_confidence)
 
 		orders = dict(
 			("/".join(k), ["/".join(map(str, p)) for p in ps])
@@ -166,10 +167,6 @@ class ReadingOrderProcessor(Processor):
 	'--disable-region-splitting',
 	is_flag=True,
 	default=False)
-@click.option(
-	'--min-line-confidence',
-	type=float,
-	default=0.5)
 @Processor.options
 def reading_order(data_path, **kwargs):
 	""" Detect reading order on all document images in DATA_PATH. """

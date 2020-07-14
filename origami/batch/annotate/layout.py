@@ -89,7 +89,7 @@ class DebugLayoutProcessor(Processor):
 	def process(self, page_path: Path, warped, aggregate, reliable, output):
 		contours = dict([
 			(k, b.image_space_polygon)
-			for k, b in reliable.blocks.items()])
+			for k, b in reliable.regions.by_path.items()])
 		rendered_contours = contours
 		rendered_lines = []
 
@@ -106,7 +106,7 @@ class DebugLayoutProcessor(Processor):
 
 			rendered_line_paths = set([x for x in order if len(x) == 4])
 			rendered_lines = dict(
-				(k, v) for k, v in aggregate.lines.items()
+				(k, v) for k, v in aggregate.lines.by_path.items()
 				if k in rendered_line_paths)
 
 			order = dict(

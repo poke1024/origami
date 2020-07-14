@@ -37,8 +37,9 @@ class Canvas(QtWidgets.QScrollArea):
 		self._xycut_score = "u"
 
 		if stage == "deskewed":
-			blocks = read_blocks(page_path)
-			lines = read_lines(page_path, blocks)
+			warped = Reader([Artifact.CONTOURS. Artifact.LINES], Stage.WARPED, page_path)
+			blocks = warped.regions.by_path
+			lines = warped.lines.by_path
 
 			deskewer = Deskewer(lines)
 
@@ -50,7 +51,7 @@ class Canvas(QtWidgets.QScrollArea):
 			qt_im = ImageQt(deskewer.image(im))
 		elif stage == "dewarped":
 			reader = Reader([Artifact.CONTOURS], Stage.AGGREGATE, page_path)
-			blocks = reader.blocks
+			blocks = reader.regions.by_path
 
 			for block_path, block in blocks.items():
 				polygons[block_path] = block.image_space_polygon
@@ -67,7 +68,7 @@ class Canvas(QtWidgets.QScrollArea):
 
 			contours = dict(
 				(k, b.image_space_polygon)
-				for k, b in reliable.blocks.items())
+				for k, b in reliable.regions.by_path.items())
 
 			for block_path, polygon in contours.items():
 				polygons[block_path] = polygon
@@ -75,7 +76,7 @@ class Canvas(QtWidgets.QScrollArea):
 			page = reliable.page
 			qt_im = ImageQt(page.dewarped)
 		else:
-			raise ValueError(mode)
+			raise ValueError("unsupported stage %s" % stage)
 
 		boxes = []
 		for block_path, polygon in polygons.items():

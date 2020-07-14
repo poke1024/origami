@@ -30,7 +30,7 @@ class WarpDetectionProcessor(Processor):
 			force_parallel_lines=False,
 			extend_baselines=False)
 
-		block_lines = detector(input.blocks)
+		block_lines = detector(input.regions.by_path)
 
 		with output.lines() as zf:
 			info = dict(version=1)

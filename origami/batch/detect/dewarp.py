@@ -62,12 +62,12 @@ class DewarpProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, warped, output):
-		blocks = warped.blocks
+		blocks = warped.regions.by_path
 
 		if not blocks:
 			return
 
-		lines = warped.lines
+		lines = warped.lines.by_path
 		separators = warped.separators
 
 		page = warped.page

@@ -46,6 +46,12 @@ class TextRegion:
 			self._block.image_space_polygon.exterior.coords))
 
 		for line_path, line in sorted(list(self._lines.items()), key=lambda x: x[0]):
+			if line.image_space_polygon.is_empty:
+				if self._line_texts[line_path]:
+					raise RuntimeError(
+						"line %s has text '%s' but empty geometry" % (
+							str(line_path), self._line_texts[line_path]))
+				continue
 			px_line = px_region.append_text_line(id_="-".join(line_path))
 			px_line.append_coords(self._transform(
 				line.image_space_polygon.exterior.coords))
@@ -193,11 +199,11 @@ class Document:
 		self._input = input
 		self._grid = self.page.dewarper.grid
 
-		combinator = TableRegionCombinator(input.blocks.keys())
+		combinator = TableRegionCombinator(input.regions.by_path.keys())
 		self._mapping = combinator.mapping
 
 		region_lines = collections.defaultdict(list)
-		for line_path, line in input.lines.items():
+		for line_path, line in input.lines.by_path.items():
 			region_lines[line_path[:3]].append((line_path, line))
 		self._region_lines = region_lines
 
@@ -216,7 +222,7 @@ class Document:
 				self._add(TextRegion, block_path).add_text(
 					line_path, ocr_text)
 
-		for block_path, block in input.blocks.items():
+		for block_path, block in input.regions.by_path.items():
 			if block_path[:2] == ("regions", "ILLUSTRATION"):
 				self._add(GraphicRegion, block_path)
 
@@ -235,7 +241,7 @@ class Document:
 			blocks = []
 			lines = []
 			for path in self._mapping[block_path]:
-				blocks.append((path, self._input.blocks[path]))
+				blocks.append((path, self._input.regions.by_path[path]))
 				lines.extend(self._region_lines[path])
 			region = class_(
 				block_path, blocks, dict(lines), self.transform)
@@ -245,13 +251,24 @@ class Document:
 
 	def get(self, block_path):
 		region = self._regions.get(block_path)
-		if region is None:
-			raise RuntimeError("no text found for %s" % str(block_path))
-		return region
+		if region is not None:
+			return region
+
+		confidences = [
+			l.confidence
+			for _, l in self._region_lines[block_path]]
+		min_confidence = self._input.lines.min_confidence
+
+		if all(c < min_confidence for c in confidences):
+			return None
+		else:
+			raise RuntimeError(
+				"no text found for %s, line confidences are: %s" % (
+					str(block_path), ", ".join(["%.2f" % x for x in confidences])))
 
 	@property
 	def page(self):
-		return list(self._input.blocks.values())[0].page
+		return list(self._input.regions.by_path.values())[0].page
 
 	@property
 	def paths(self):
@@ -288,7 +305,7 @@ class ComposeProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
-		self._page_xml = False
+		self._page_xml = options["page_xml"]
 
 		if options["regions"]:
 			self._block_filter = RegionsFilter(options["regions"])
@@ -323,14 +340,15 @@ class ComposeProcessor(Processor):
 
 		for path in document.paths:
 			region = document.get(path)
-			region.export_page_xml(px_document)
+			if region is not None:
+				region.export_page_xml(px_document)
 
 		with io.BytesIO() as f:
 			px_document.write(f, overwrite=True, validate=True)
 			return f.getvalue()
 
 	def process(self, page_path: Path, input, output):
-		blocks = input.blocks
+		blocks = input.regions.by_path
 		if not blocks:
 			return
 
@@ -348,9 +366,13 @@ class ComposeProcessor(Processor):
 				continue
 
 			if len(path) == 3:  # is this a block path?
-				document.get(path).export_plain_text(composition)
+				region = document.get(path)
+				if region is not None:
+					region.export_plain_text(composition)
 			elif len(path) == 4:  # is this a line path?
-				document.get(path[:3]).export_plain_line_text(composition, path)
+				region = document.get(path[:3])
+				if region is not None:
+					region.export_plain_line_text(composition, path)
 			else:
 				raise RuntimeError("illegal path %s in reading order" % path)
 
@@ -379,6 +401,10 @@ class ComposeProcessor(Processor):
 	'--fringe',
 	type=float,
 	default=0.001)
+@click.option(
+	'--page-xml',
+	is_flag=True,
+	default=False)
 @Processor.options
 def compose(data_path, **kwargs):
 	""" Produce text composed in a single text file for each page in DATA_PATH. """

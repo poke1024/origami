@@ -31,7 +31,7 @@ class DebugWarpProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, warped, output):
-		lines = warped.lines
+		lines = warped.lines.by_path
 
 		qt_im = ImageQt(PIL.Image.open(page_path))
 		pixmap = QtGui.QPixmap.fromImage(qt_im)

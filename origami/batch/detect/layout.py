@@ -924,7 +924,7 @@ class LayoutDetectionProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, warped, dewarped, output):
-		blocks = dewarped.blocks
+		blocks = dewarped.regions.by_path
 
 		if not blocks:
 			return
@@ -936,7 +936,7 @@ class LayoutDetectionProcessor(Processor):
 		contours = [(k, block.image_space_polygon) for k, block in blocks.items()]
 
 		regions = Regions(
-			page, warped.lines,
+			page, warped.lines.by_path,
 			contours, separators,
 			self._union)
 		self._transformer(regions)

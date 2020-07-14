@@ -84,7 +84,7 @@ class SignatureProcessor(Processor):
 		]
 
 	def process(self, p: Path, input, output):
-		grid = self.grid(input.blocks)
+		grid = self.grid(input.regions.by_path)
 		output.signature(dict(
 			version=1,
 			classes=["/".join(x) for x in self._classes],
