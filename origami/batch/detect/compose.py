@@ -246,7 +246,7 @@ class Document:
 	def get(self, block_path):
 		region = self._regions.get(block_path)
 		if region is None:
-			raise RuntimeError("no text found for %s" % block_path)
+			raise RuntimeError("no text found for %s" % str(block_path))
 		return region
 
 	@property
@@ -288,6 +288,7 @@ class ComposeProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._page_xml = False
 
 		if options["regions"]:
 			self._block_filter = RegionsFilter(options["regions"])
@@ -355,7 +356,8 @@ class ComposeProcessor(Processor):
 
 		with output.compose() as zf:
 			zf.writestr("page.txt", composition.text)
-			zf.writestr("page.xml", self.export_page_xml(page_path, document))
+			if self._page_xml:
+				zf.writestr("page.xml", self.export_page_xml(page_path, document))
 
 
 @click.command()
