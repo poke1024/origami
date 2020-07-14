@@ -52,6 +52,8 @@ class Document:
 	def write(self, path, validate=True, overwrite=False):
 		if not overwrite and Path(path).exists():
 			raise ValueError("xml file at %s already exists" % path)
+		if isinstance(path, Path):
+			path = str(path)
 		tree = etree.ElementTree(self._root)
 		tree.write(
 			path,
@@ -134,6 +136,11 @@ class Region:
 		region = Region(class_="TextRegion", **kwargs)
 		self.append(region)
 		return region
+
+
+class TextRegion(Region):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs, class_="TextRegion")
 
 
 class TextLine:
