@@ -68,6 +68,7 @@ class DebugLayoutProcessor(Processor):
 		super().__init__(options, needs_qt=True)
 		self._options = options
 		self._overwrite = self._options["overwrite"]
+		self._scale = max(0, min(2, self._options["scale"]))
 
 	@property
 	def processor_name(self):
@@ -138,17 +139,25 @@ class DebugLayoutProcessor(Processor):
 
 		page = reliable.page
 		predictors = warped.predictors
+		scale = self._scale
 
-		qt_im = ImageQt(page.dewarped)
+		width, height = page.dewarped.size
+		pixels = np.array(page.dewarped.convert("L"))
+		pixels = cv2.resize(
+			pixels,
+			(int(width * scale), int(height * scale)),
+			interpolation=cv2.INTER_AREA)
+
+		qt_im = ImageQt(PIL.Image.fromarray(pixels))
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 		pixmap = render_contours(
 			pixmap, rendered_contours, predictors,
-			get_label=get_contour_label, alternate=False)
+			get_label=get_contour_label, alternate=False, scale=scale)
 
 		pixmap = render_lines(
 			pixmap, rendered_lines, predictors,
-			get_label=get_line_label, show_vectors=True)
+			get_label=get_line_label, show_vectors=True, scale=scale)
 
 		columns = []
 		for path, xs in cond_table_data(table_data["columns"]).items():
@@ -156,7 +165,7 @@ class DebugLayoutProcessor(Processor):
 			for x in xs:
 				for coords in column_paths(contours[path], x):
 					columns.append(coords)
-		pixmap = render_paths(pixmap, columns, "blue")
+		pixmap = render_paths(pixmap, columns, "blue", scale=scale)
 
 		dividers = []
 		for path, ys in cond_table_data(table_data["dividers"]).items():
@@ -179,6 +188,11 @@ class DebugLayoutProcessor(Processor):
 	type=str,
 	default="order",
 	help="How to label the block nodes.")
+@click.option(
+	'--scale',
+	type=float,
+	default=1,
+	help="Scale of annotated image.")
 @Processor.options
 def debug_layout(data_path, **kwargs):
 	""" Export annotate information on xycuts for all document images in DATA_PATH. """

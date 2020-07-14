@@ -135,7 +135,7 @@ def contour_patterns(contours, buffer=-5, threshold=10):
 
 def render_contours(
 	pixmap, contours, predictors,
-	brushes=None, matrix=None,
+	brushes=None, matrix=None, scale=1,
 	get_label=None, alternate=False, edges=None):
 
 	if not contours:
@@ -147,7 +147,7 @@ def render_contours(
 	def point(x, y):
 		if matrix is not None:
 			x, y = matrix @ np.array([x, y, 1])
-		return QtCore.QPointF(x, y)
+		return QtCore.QPointF(x * scale, y * scale)
 
 	if alternate:
 		patterns = contour_patterns(contours)
@@ -206,14 +206,14 @@ def render_contours(
 
 		qp.setBrush(QtGui.QBrush(QtGui.QColor("white")))
 
-		font = QtGui.QFont("Arial Narrow", 56, QtGui.QFont.Bold)
+		font = QtGui.QFont("Arial Narrow", 56 * scale, QtGui.QFont.Bold)
 		qp.setFont(font)
 
 		fm = QtGui.QFontMetrics(font)
 
-		qp.setPen(default_pen())
+		qp.setPen(default_pen(width=5 * scale))
 		nodes = dict()
-		node_r = 50
+		node_r = 50 * scale
 
 		for block_path, contour in contours.items():
 			if contour.is_empty:
@@ -239,7 +239,7 @@ def render_contours(
 
 		if edges:
 			qp.setOpacity(0.8)
-			qp.setPen(default_pen(width=10))
+			qp.setPen(default_pen(width=10 * scale))
 
 			for p, q in edges:
 				coords = [nodes[p], nodes[q]]
@@ -251,9 +251,9 @@ def render_contours(
 	return pixmap
 
 
-def render_arrows(qp, path, pos="center"):
+def render_arrows(qp, path, pos="center", scale=1):
 	theta = 45
-	d = 25
+	d = 25 * scale
 	for (x1, y1), (x2, y2) in zip(path, path[1:]):
 		dx = x2 - x1
 		dy = y2 - y1
@@ -276,7 +276,10 @@ def render_arrows(qp, path, pos="center"):
 	])
 
 
-def render_lines(pixmap, lines, predictors, get_label=None, show_vectors=False):
+def render_lines(
+	pixmap, lines, predictors, scale=1,
+	get_label=None, show_vectors=False):
+
 	if not lines:
 		return pixmap
 
@@ -286,8 +289,8 @@ def render_lines(pixmap, lines, predictors, get_label=None, show_vectors=False):
 	qp.begin(pixmap)
 
 	try:
-		black_pen = default_pen()
-		red_pen = default_pen("#FFA500", 7)
+		black_pen = default_pen(width=5 * scale)
+		red_pen = default_pen("#FFA500", width=7 * scale)
 
 		for i, (line_path, line) in enumerate(lines.items()):
 			geom_type = line.image_space_polygon.geom_type
@@ -300,19 +303,22 @@ def render_lines(pixmap, lines, predictors, get_label=None, show_vectors=False):
 
 			qp.setOpacity(0.5)
 			poly = QtGui.QPolygonF()
-			for x, y in line.image_space_polygon.exterior.coords:
+			coords = np.array(line.image_space_polygon.exterior.coords) * scale
+			for x, y in coords:
 				poly.append(QtCore.QPointF(x, y))
 			qp.drawPolygon(poly)
 
 			if show_vectors:
 				p1, p2 = line.baseline
+				p1 = np.array(p1) * scale
+				p2 = np.array(p2) * scale
 
 				line_info = line.info
 				tess_data = line_info["tesseract_data"]
 
 				up = np.array(line_info["up"])
 				lh = abs(tess_data["height"]) - abs(tess_data["ascent"])
-				up = up * (lh / np.linalg.norm(up))
+				up = up * (scale * lh / np.linalg.norm(up))
 
 				qp.setOpacity(0.9)
 				qp.setPen(red_pen)
@@ -320,19 +326,19 @@ def render_lines(pixmap, lines, predictors, get_label=None, show_vectors=False):
 
 				m = (np.array(p1) + np.array(p2)) / 2
 				qp.drawPolyline([QtCore.QPointF(*m), QtCore.QPointF(*(m + up))])
-				render_arrows(qp, [m, m + up], "end")
+				render_arrows(qp, [m, m + up], "end", scale=scale)
 
 		if get_label:
-			font = QtGui.QFont("Arial Narrow", 24, QtGui.QFont.Bold)
+			font = QtGui.QFont("Arial Narrow", 24 * scale, QtGui.QFont.Bold)
 			qp.setFont(font)
 			fm = QtGui.QFontMetrics(font)
 
-			qp.setPen(default_pen())
-			node_r = 25
+			qp.setPen(default_pen(width=5 * scale))
+			node_r = 25 * scale
 
 			for i, (line_path, line) in enumerate(lines.items()):
 				x, y = line.image_space_polygon.centroid.coords[0]
-				p = QtCore.QPointF(x, y)
+				p = QtCore.QPointF(x * scale, y * scale)
 
 				path, label = get_label(line_path)
 				qp.setBrush(brushes.get_brush(line_path[:3], value=50))
@@ -417,7 +423,8 @@ def render_warped_line_confidence(pixmap, lines):
 
 def render_paths(
 	pixmap, columns,
-	color="blue", opacity=0.5, show_dir=False):
+	color="blue", opacity=0.5,
+	show_dir=False, scale=1):
 
 	if not columns:
 		return pixmap
@@ -430,6 +437,8 @@ def render_paths(
 		qp.setPen(default_pen(color, 10))
 
 		for path in columns:
+			path = np.array(path) * scale
+
 			poly = QtGui.QPolygonF()
 			for x, y in path:
 				poly.append(QtCore.QPointF(x, y))
@@ -437,7 +446,7 @@ def render_paths(
 
 			if show_dir:
 				for part in partition_path(path, 200):
-					render_arrows(qp, part, "center")
+					render_arrows(qp, part, "center", scale=scale)
 
 	finally:
 		qp.end()
