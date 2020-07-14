@@ -26,16 +26,15 @@ class TextRegion:
 		self._block = blocks[0][1]
 		self._lines = lines
 		self._line_texts = dict()
+		self._order = []
 		self._block_path = block_path
 		self._transform = transform
 
-	def export_plain_text(self, composition):
-		sorted_lines = sorted(
-			list(self._line_texts.items()), key=lambda x: x[0])
-		for p, text in sorted_lines:
-			composition.append_text(p, text)
+	def export_plain_text_region(self, composition):
+		for p in self._order:
+			composition.append_text(p, self._line_texts[p])
 
-	def export_plain_line_text(self, composition, line_path):
+	def export_plain_text_line(self, composition, line_path):
 		composition.append_text(
 			line_path, self._line_texts[line_path])
 
@@ -58,6 +57,7 @@ class TextRegion:
 			px_line.append_text_equiv(self._line_texts[line_path])
 
 	def add_text(self, line_path, text):
+		self._order.append(line_path)
 		self._line_texts[line_path] = text
 
 
@@ -76,7 +76,7 @@ class TableRegion:
 			block_id, division, row, column = map(int, path[2].split("."))
 			self._blocks[(column, division, row)] = block
 
-	def export_plain_text(self, composition):
+	def export_plain_text_region(self, composition):
 		composition.append_text(
 			self._block_path, self.to_text())
 
@@ -368,11 +368,11 @@ class ComposeProcessor(Processor):
 			if len(path) == 3:  # is this a block path?
 				region = document.get(path)
 				if region is not None:
-					region.export_plain_text(composition)
+					region.export_plain_text_region(composition)
 			elif len(path) == 4:  # is this a line path?
 				region = document.get(path[:3])
 				if region is not None:
-					region.export_plain_line_text(composition, path)
+					region.export_plain_text_line(composition, path)
 			else:
 				raise RuntimeError("illegal path %s in reading order" % path)
 
