@@ -19,8 +19,91 @@ from origami.core.separate import Separators, ObstacleSampler
 import origami.core.xycut as xycut
 
 
+class Configuration:
+	def __init__(self, page_path):
+		self._page_path = page_path
+		self._image = None
+		self._polygons = dict()
+
+	@property
+	def image(self):
+		return self._image
+
+	@property
+	def polygons(self):
+		return self._polygons
+
+	@property
+	def xycut_score(self):
+		return "longest_cut"
+
+
+class DeskewedConfiguration(Configuration):
+	def __init__(self, page_path):
+		super().__init__(page_path)
+
+		warped = Reader([Artifact.CONTOURS.Artifact.LINES], Stage.WARPED, self._page_path)
+		blocks = warped.regions.by_path
+		lines = warped.lines.by_path
+
+		deskewer = Deskewer(lines)
+
+		polygons = dict()
+		for block_path, block in blocks.items():
+			polygons[block_path] = deskewer.shapely(
+				block.image_space_polygon)
+
+		im = PIL.Image.open(self._page_path)
+		self._image = deskewer.image(im)
+		self._polygons = polygons
+
+
+class DewarpedConfiguration(Configuration):
+	def __init__(self, page_path):
+		super().__init__(page_path)
+
+		reader = Reader([Artifact.CONTOURS], Stage.AGGREGATE, self._page_path)
+		blocks = reader.regions.by_path
+
+		polygons = dict()
+		for block_path, block in blocks.items():
+			polygons[block_path] = block.image_space_polygon
+
+		page = reader.page
+		self._image = page.dewarped
+		self._polygons = polygons
+
+
+class OrigamiConfiguration(Configuration):
+	def __init__(self, page_path):
+		super().__init__(page_path)
+
+		warped = Reader([Artifact.SEGMENTATION], Stage.WARPED, self._page_path)
+		reliable = Reader([Artifact.CONTOURS], Stage.RELIABLE, self._page_path)
+
+		separators = Separators(
+			warped.segmentation, reliable.separators)
+		self._xycut_score = ObstacleSampler(separators)
+
+		contours = dict(
+			(k, b.image_space_polygon)
+			for k, b in reliable.regions.by_path.items())
+
+		polygons = dict()
+		for block_path, polygon in contours.items():
+			polygons[block_path] = polygon
+
+		page = reliable.page
+		self._image = page.dewarped
+		self._polygons = polygons
+
+	@property
+	def xycut_score(self):
+		return self._xycut_score
+
+
 class Canvas(QtWidgets.QScrollArea):
-	def __init__(self, page_path, stage="reliable"):
+	def __init__(self, page_path, configuration):
 		super().__init__()
 
 		self.setSizePolicy(
@@ -33,50 +116,11 @@ class Canvas(QtWidgets.QScrollArea):
 		self.setWidgetResizable(True)
 		self.setWidget(self.label)
 
-		polygons = dict()
-		self._xycut_score = "u"
-
-		if stage == "deskewed":
-			warped = Reader([Artifact.CONTOURS. Artifact.LINES], Stage.WARPED, page_path)
-			blocks = warped.regions.by_path
-			lines = warped.lines.by_path
-
-			deskewer = Deskewer(lines)
-
-			for block_path, block in blocks.items():
-				polygons[block_path] = deskewer.shapely(
-					block.image_space_polygon)
-
-			im = PIL.Image.open(page_path)
-			qt_im = ImageQt(deskewer.image(im))
-		elif stage == "dewarped":
-			reader = Reader([Artifact.CONTOURS], Stage.AGGREGATE, page_path)
-			blocks = reader.regions.by_path
-
-			for block_path, block in blocks.items():
-				polygons[block_path] = block.image_space_polygon
-
-			page = reader.page
-			qt_im = ImageQt(page.dewarped)
-		elif stage == "reliable":
-			warped = Reader([Artifact.SEGMENTATION], Stage.WARPED, page_path)
-			reliable = Reader([Artifact.CONTOURS], Stage.RELIABLE, page_path)
-
-			separators = Separators(
-				warped.segmentation, reliable.separators)
-			self._xycut_score = ObstacleSampler(separators)
-
-			contours = dict(
-				(k, b.image_space_polygon)
-				for k, b in reliable.regions.by_path.items())
-
-			for block_path, polygon in contours.items():
-				polygons[block_path] = polygon
-
-			page = reliable.page
-			qt_im = ImageQt(page.dewarped)
-		else:
-			raise ValueError("unsupported stage %s" % stage)
+		conf = configuration(page_path)
+		im = conf.image
+		polygons = conf.polygons
+		self._xycut_score = conf.xycut_score
+		qt_im = ImageQt(im)
 
 		boxes = []
 		for block_path, polygon in polygons.items():
@@ -188,12 +232,12 @@ class Canvas(QtWidgets.QScrollArea):
 
 
 class Form(QtWidgets.QDialog):
-	def __init__(self, page_path, parent=None):
+	def __init__(self, page_path, configuration, parent=None):
 		super().__init__(parent)
 		self.page_path = page_path
 		self.setWindowTitle(page_path.name)
 
-		self.canvas = Canvas(page_path)
+		self.canvas = Canvas(page_path, configuration)
 		self.edit = QtWidgets.QLineEdit("")
 
 		self.edit.textChanged.connect(self.editChanged)
@@ -226,7 +270,7 @@ def app(page_path, **kwargs):
 	if path.is_dir() or imghdr.what(path) is None:
 		raise click.UsageError("given path needs to point to a page.")
 
-	form = Form(path)
+	form = Form(path, OrigamiConfiguration)
 	form.show()
 
 	sys.exit(app.exec_())
