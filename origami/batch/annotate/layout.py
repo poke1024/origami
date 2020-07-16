@@ -142,13 +142,15 @@ class DebugLayoutProcessor(Processor):
 		scale = self._scale
 
 		width, height = page.dewarped.size
-		pixels = np.array(page.dewarped.convert("L"))
-		pixels = cv2.resize(
-			pixels,
-			(int(width * scale), int(height * scale)),
-			interpolation=cv2.INTER_AREA)
+		im = page.dewarped
+		if scale != 1:
+			pixels = cv2.resize(
+				np.array(im),
+				(int(width * scale), int(height * scale)),
+				interpolation=cv2.INTER_AREA)
+			im = PIL.Image.fromarray(pixels)
 
-		qt_im = ImageQt(PIL.Image.fromarray(pixels))
+		qt_im = ImageQt(im)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 		pixmap = render_contours(
