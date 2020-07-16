@@ -1,7 +1,7 @@
 import PIL
-import PIL.ImageDraw
 import numpy as np
-import cairocffi as cairo
+
+from origami.core.canvas import Canvas
 
 
 class Mask:
@@ -21,11 +21,9 @@ class Mask:
 		w = int(maxx - minx)
 		h = int(maxy - miny)
 
-		surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+		canvas = Canvas(w, h)
 
 		try:
-			ctx = cairo.Context(surface)
-
 			if shape.geom_type == 'Polygon':
 				polygons = [shape]
 			elif shape.geom_type == 'MultiPolygon':
@@ -33,39 +31,20 @@ class Mask:
 			else:
 				raise ValueError("unsupported shape for mask: %s" % shape.geom_type)
 
+			canvas.set_color(1, 1, 1)
+
 			for polygon in polygons:
 				pts = np.array(polygon.exterior.coords) - np.array([minx, miny])
-				pts = [tuple(p) for p in np.round(pts).astype(np.int32)]
+				pts = np.round(pts).astype(np.int32)
+				canvas.fill_polygon(pts)
 
-				ctx.move_to(*pts[0])
-				for p in pts[1:]:
-					ctx.line_to(*p)
-				ctx.set_source_rgb(1, 1, 1)
-				ctx.fill()
-
-			surface.flush()
-
-			'''
-			with io.BytesIO() as f:
-				surface.write_to_png(f)
-				data = f.getvalue()
-	
-			with io.BytesIO(data) as f:
-				data = np.array(PIL.Image.open(f).convert("L"))
-			'''
-
-			data = np.ndarray(
-				shape=(surface.get_height(), surface.get_stride() // 4),
-				dtype=np.uint32,
-				buffer=surface.get_data())
-
-			data = np.right_shift(data, 24).astype(np.uint8)
+			data = canvas.channel("R")
 
 			self._mask = data > 0
 			self._bbox = (minx, miny, w, h)
 
 		finally:
-			surface.finish()
+			canvas.finish()
 
 	@property
 	def binary(self):
