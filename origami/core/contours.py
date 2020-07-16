@@ -531,8 +531,15 @@ class EstimatePolyline:
 		path = _longest_path(G, self._orientation)
 		path = _expand_path(G, path)
 
-		path = list(shapely.geometry.LineString(
-			path).simplify(self._tolerance).coords)
+		simplified = shapely.geometry.LineString(
+			path).simplify(self._tolerance)
+		if simplified.is_empty:
+			return None, 0
+
+		if simplified.geom_type != "LineString":
+			logging.warning("unexpected line geometry %s" % simplified.geom_type)
+
+		path = list(simplified.coords)
 
 		origin = np.array(mask.bounds[:2])
 		path = [np.array(p) + origin for p in path]
