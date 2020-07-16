@@ -3,6 +3,7 @@
 import enum
 import json
 import zipfile
+import collections
 import shapely.wkt
 
 from pathlib import Path
@@ -132,6 +133,13 @@ class Regions:
 	@property
 	def by_path(self):
 		return self._blocks
+
+	@cached_property
+	def by_predictors(self):
+		by_predictors = collections.defaultdict(list)
+		for k, block in self._blocks.items():
+			by_predictors[k[:2]].append(block)
+		return by_predictors
 
 
 class Lines:

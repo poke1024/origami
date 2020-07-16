@@ -142,11 +142,11 @@ class Regions:
 		return lines_by_block
 
 	@property
-	def by_labels(self):
-		by_labels = collections.defaultdict(list)
+	def by_predictors(self):
+		by_predictors = collections.defaultdict(list)
 		for k, contour in self._contours.items():
-			by_labels[k[:2]].append(contour)
-		return by_labels
+			by_predictors[k[:2]].append(contour)
+		return by_predictors
 
 	def line_count(self, a):
 		return self._line_counts[a]
@@ -382,10 +382,10 @@ class OverlapMerger:
 		return regions.combine_from_graph(graph)
 
 	def __call__(self, regions):
-		modify = set(regions.by_labels.keys())
+		modify = set(regions.by_predictors.keys())
 		while modify:
 			changed = set()
-			for k, contours in regions.by_labels.items():
+			for k, contours in regions.by_predictors.items():
 				if k in modify:
 					if self._merge(regions, contours):
 						changed.add(k)
@@ -635,17 +635,17 @@ class SequentialMerger:
 		selection = set(tuple(c.name.split("/")) for c in contours)
 		return [x for x in order if x in selection]
 
-	def _merge_pass(self, regions, by_labels):
+	def _merge_pass(self, regions, by_predictors):
 		merged = set()
 
-		for path, contours in by_labels.items():
+		for path, contours in by_predictors.items():
 			if not self._filter(path):
 				continue
 
 			order = self._compute_order(
 				regions, contours)
 
-			labels = set(by_labels.keys())
+			labels = set(by_predictors.keys())
 			error_overlap = Overlap(
 				regions.unmodified_contours,
 				labels - set([path[:2]]))
@@ -659,20 +659,20 @@ class SequentialMerger:
 		return merged
 
 	def __call__(self, regions):
-		by_labels = regions.by_labels
+		by_predictors = regions.by_predictors
 
-		while by_labels:
+		while by_predictors:
 			dirty = self._merge_pass(
-				regions, by_labels)
+				regions, by_predictors)
 
 			if not dirty:
 				break
 
-			by_labels = regions.by_labels
-			keep = set(by_labels.keys()) & dirty
-			by_labels = dict(
+			by_predictors = regions.by_predictors
+			keep = set(by_predictors.keys()) & dirty
+			by_predictors = dict(
 				(k, v)
-				for k, v in by_labels.items()
+				for k, v in by_predictors.items()
 				if k in keep)
 
 
