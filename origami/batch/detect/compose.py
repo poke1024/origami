@@ -21,10 +21,17 @@ def sorted_by_keys(x):
 	return [x[k] for k in sorted(list(x.keys()))]
 
 
+def polygon_union(geoms):
+	shape = shapely.ops.cascaded_union(geoms)
+	if shape.geom_type != "Polygon":
+		shape = shape.convex_hull
+	return shape
+
+
 class MergedTextRegion:
 	def __init__(self, document, block_path, lines):
 		self._block_path = block_path
-		self._polygon = shapely.ops.cascaded_union([
+		self._polygon = polygon_union([
 			line.image_space_polygon for _, line in lines])
 		self._document = document
 		self._transform = document.rewarp
@@ -113,6 +120,7 @@ class TableRegion:
 		self._columns = set()
 		self._texts = collections.defaultdict(list)
 		self._transform = document.rewarp
+		self._document = document
 
 		self._blocks = dict()
 		for path, block in blocks:
@@ -166,7 +174,7 @@ class TableRegion:
 					cell_shapes.append(block.image_space_polygon)
 
 				if cell_shapes:
-					division_shape = shapely.ops.cascaded_union(cell_shapes)
+					division_shape = polygon_union(cell_shapes)
 					px_division.prepend_coords(self._transform(
 						division_shape.exterior.coords))
 					division_shapes.append(division_shape)
@@ -174,7 +182,7 @@ class TableRegion:
 					px_column.remove(px_division)
 
 			if division_shapes:
-				column_shape = shapely.ops.cascaded_union(division_shapes)
+				column_shape = polygon_union(division_shapes)
 				px_column.prepend_coords(self._transform(
 					column_shape.exterior.coords))
 				column_shapes.append(column_shape)
@@ -182,11 +190,12 @@ class TableRegion:
 				px_table_region.remove(px_column)
 
 		if column_shapes:
-			shape = shapely.ops.cascaded_union(column_shapes)
+			shape = polygon_union(column_shapes)
 			px_table_region.prepend_coords(self._transform(
 				shape.exterior.coords))
 		else:
-			logging.warning("table %s was empty." % str(self._block_path))
+			logging.warning("table %s was empty on page %s." % (
+				str(self._block_path), self._document.page_path))
 			px_document.remove(px_table_region)
 
 	def append_cell_text(self, grid, line_path, text):
@@ -242,7 +251,8 @@ class GraphicRegion:
 
 
 class Document:
-	def __init__(self, input):
+	def __init__(self, page_path, input):
+		self._page_path = page_path
 		self._input = input
 		self._grid = self.page.dewarper.grid
 
@@ -276,6 +286,10 @@ class Document:
 		for block_path, block in input.regions.by_path.items():
 			if block_path[:2] == ("regions", "ILLUSTRATION"):
 				self._add(GraphicRegion, block_path)
+
+	@property
+	def page_path(self):
+		return self._page_path
 
 	@property
 	def reading_order(self):
@@ -401,8 +415,9 @@ class RegionReadingOrder:
 	def append(self, path):
 		if len(path) == 3:  # block path?
 			self._flush_regionless_lines()
-			self._ordered_regions.append(
-				(path, self._document.get(path)))
+			region = self._document.get(path)
+			if region is not None:
+				self._ordered_regions.append((path, region))
 		elif len(path) > 3:  # line path?
 			assert path[:2] == ("regions", "TEXT")
 			self._add_regionless_line(path)
@@ -531,7 +546,7 @@ class ComposeProcessor(Processor):
 		if not input.regions.by_path:
 			return
 
-		document = Document(input)
+		document = Document(page_path, input)
 
 		with output.compose() as zf:
 			zf.writestr("page.txt", self.export_plain_text(document))
