@@ -40,7 +40,7 @@ class Artifact(enum.Enum):
 	OCR = ("ocr.zip",)
 	COMPOSE = ("compose.zip",)
 	RUNTIME = ("runtime.json",)
-	SIGNATURE = ("signature.json",)
+	SIGNATURE = ("signature.zip",)
 	THUMBNAIL = ("thumbnail.jpg",)
 	CONTOURS = ("contours.%s.zip", {
 		Stage.WARPED: 0,
@@ -265,9 +265,9 @@ class Reader:
 	def order(self):
 		return self.load_json(Artifact.ORDER)
 
-	@cached_property
+	@property
 	def signature(self):
-		return self.load_json(Artifact.SIGNATURE)
+		return zipfile.Zipfile(self.path(Artifact.SIGNATURE), "rb")
 
 	@cached_property
 	def ocr(self):
@@ -378,8 +378,8 @@ class Writer:
 	def compose(self):
 		return self.write_zip_file(Artifact.COMPOSE)
 
-	def signature(self, data):
-		self.write_json(Artifact.SIGNATURE, data)
+	def signature(self):
+		return self.write_zip_file(Artifact.SIGNATURE)
 
 	def annotation(self, image):
 		assert len(self._artifacts) == 1

@@ -4,12 +4,34 @@ import click
 import numpy as np
 import shapely
 import shapely.strtree
+import shapely.affinity
 import collections
+import logging
+import cv2
+import io
+import json
+import PIL.Image
 
 from pathlib import Path
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
+from origami.core.canvas import Canvas
+from origami.core.math import to_shapely_matrix
+
+
+def block_bounds(blocks):
+	bounds = []
+	for block in blocks:
+		if not block.image_space_polygon.is_empty:
+			bounds.append(block.image_space_polygon.bounds)
+	bounds = np.array(bounds)
+
+	return (
+		np.min(bounds[:, 0]),
+		np.min(bounds[:, 1]),
+		np.max(bounds[:, 2]),
+		np.max(bounds[:, 3]))
 
 
 class SignatureProcessor(Processor):
@@ -30,20 +52,10 @@ class SignatureProcessor(Processor):
 	def grid(self, blocks):
 		num_steps = self._options["grid_size"]
 
-		bounds = []
-		for block in blocks.values():
-			if not block.image_space_polygon.is_empty:
-				bounds.append(block.image_space_polygon.bounds)
-		bounds = np.array(bounds)
+		minx, miny, maxx, maxy = block_bounds(blocks.values())
 
-		grid_x = np.linspace(
-			np.min(bounds[:, 0]),
-			np.max(bounds[:, 2]),
-			num_steps + 1)
-		grid_y = np.linspace(
-			np.min(bounds[:, 1]),
-			np.max(bounds[:, 3]),
-			num_steps + 1)
+		grid_x = np.linspace(minx, maxx, num_steps + 1)
+		grid_y = np.linspace(miny, maxy, num_steps + 1)
 
 		shapes = []
 		for block_path, block in blocks.items():
@@ -84,11 +96,55 @@ class SignatureProcessor(Processor):
 		]
 
 	def process(self, p: Path, input, output):
-		grid = self.grid(input.regions.by_path)
-		output.signature(dict(
-			version=1,
-			classes=["/".join(x) for x in self._classes],
-			grid=grid.tolist()))
+		c_size = 128
+		c_buffer = 2
+
+		minx, miny, maxx, maxy = block_bounds(
+			input.regions.by_path.values())
+
+		matrix = to_shapely_matrix(cv2.getAffineTransform(
+			np.array([(minx, miny), (maxx, miny), (maxx, maxy)], dtype=np.float32),
+			np.array([(0, 0), (c_size, 0), (c_size, c_size)], dtype=np.float32)
+		))
+
+		thumbnails = dict()
+
+		for k, blocks in input.regions.by_predictors.items():
+			canvas = Canvas(c_size, c_size)
+			canvas.set_color(1, 1, 1)
+
+			for block in blocks:
+				shape = shapely.affinity.affine_transform(
+					block.image_space_polygon, matrix)
+				shape = shape.buffer(-c_buffer)
+				if shape.is_empty:
+					continue
+				elif shape.geom_type == "Polygon":
+					canvas.fill_polygon(
+						np.array(shape.exterior.coords))
+				elif shape.geom_type == "MultiPolygon":
+					for polygon in shape.geoms:
+						canvas.fill_polygon(
+							np.array(polygon.exterior.coords))
+				else:
+					logging.error(
+						"unexpected geom_type %s" % shape.geom_type)
+
+			mask = canvas.channel("R") > 0
+			im = PIL.Image.fromarray(mask.astype(np.uint8) * 255).convert("1")
+
+			with io.BytesIO() as f:
+				im.save(f, format="PNG")
+				thumbnails["/".join(k)] = f.getvalue()
+
+		with output.signature() as zf:
+			meta = dict(
+				version=1,
+				classes=["/".join(x) for x in self._classes])
+			zf.writestr(
+				"meta.json", json.dumps(meta).encode("utf8"))
+			for k, im_data in thumbnails.items():
+				zf.writestr(k + ".png", im_data)
 
 
 @click.command()
