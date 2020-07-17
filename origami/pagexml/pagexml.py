@@ -52,6 +52,11 @@ class Document:
 	def append_text_region(self, **kwargs):
 		return self.append_region(class_="TextRegion", **kwargs)
 
+	def append_reading_order(self):
+		ro = ReadingOrder()
+		self.append(ro)
+		return ro
+
 	def write(self, path, validate=True, overwrite=False):
 		if not overwrite and Path(path).exists():
 			raise ValueError("xml file at %s already exists" % path)
@@ -105,6 +110,33 @@ def make_text_node(text):
 		etree.QName(namespace, "TextEquiv"), nsmap=nsmap)
 	text_equiv_node.append(unicode_node)
 	return text_equiv_node
+
+
+class ReadingOrder:
+	def __init__(self):
+		self._node = etree.Element(
+			etree.QName(namespace, "ReadingOrder"), nsmap=nsmap)
+
+	def append_ordered_group(self, **kwargs):
+		g = OrderedGroup(**kwargs)
+		self._node.append(g._node)
+		return g
+
+
+class OrderedGroup:
+	def __init__(self, id_, caption=""):
+		self._node = etree.Element(
+			etree.QName(namespace, "OrderedGroup"), nsmap=nsmap)
+		self._node.set("id", id_)
+		if caption:
+			self._node.set("caption", caption)
+
+	def append_region_ref_indexed(self, index, region_ref):
+		node = etree.Element(
+			etree.QName(namespace, "RegionRefIndexed"), nsmap=nsmap)
+		node.set("index", str(index))
+		node.set("regionRef", region_ref)
+		self._node.append(node)
 
 
 class Region:

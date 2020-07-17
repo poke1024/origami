@@ -9,6 +9,7 @@ import shapely
 
 from pathlib import Path
 from tabulate import tabulate
+from cached_property import cached_property
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
@@ -20,15 +21,51 @@ def sorted_by_keys(x):
 	return [x[k] for k in sorted(list(x.keys()))]
 
 
+class MergedTextRegion:
+	def __init__(self, document, block_path, lines):
+		self._block_path = block_path
+		self._polygon = shapely.ops.cascaded_union([
+			line.image_space_polygon for _, line in lines])
+		self._document = document
+		self._transform = document.transform
+		self._lines = lines
+
+	def export_page_xml(self, px_document):
+		px_region = px_document.append_region(
+			"TextRegion", id_="-".join(self._block_path))
+		px_region.append_coords(self._transform(
+			self._polygon.exterior.coords))
+
+		for i, (line_path, line) in enumerate(self._lines):
+			line_text = self._document.get(line_path[:3]).get_line_text(line_path)
+			px_line = px_region.append_text_line(id_="-".join(self._block_path + (str(i),)))
+			px_line.append_coords(self._transform(
+				line.image_space_polygon.exterior.coords))
+			px_line.append_text_equiv(line_text)
+
+
 class TextRegion:
-	def __init__(self, block_path, blocks, lines, transform):
+	def __init__(self, document, block_path):
+		blocks, lines = document.blocks_and_lines(block_path)
+
 		assert len(blocks) == 1
-		self._block = blocks[0][1]
+		_, block = blocks[0]
+		self._polygon = block.image_space_polygon
+
+		self._block_path = block_path
+
 		self._lines = lines
 		self._line_texts = dict()
+
 		self._order = []
-		self._block_path = block_path
-		self._transform = transform
+		self._transform = document.transform
+
+	@property
+	def polygon(self):
+		return self._polygon
+
+	def get_line_text(self, line_path):
+		return self._line_texts[line_path]
 
 	def export_plain_text_region(self, composition):
 		for p in self._order:
@@ -42,7 +79,7 @@ class TextRegion:
 		px_region = px_document.append_region(
 			"TextRegion", id_="-".join(self._block_path))
 		px_region.append_coords(self._transform(
-			self._block.image_space_polygon.exterior.coords))
+			self._polygon.exterior.coords))
 
 		for line_path in self._order:
 			line = self._lines[line_path]
@@ -65,14 +102,16 @@ class TextRegion:
 
 
 class TableRegion:
-	def __init__(self, block_path, blocks, lines, transform):
+	def __init__(self, document, block_path):
+		blocks, lines = document.blocks_and_lines(block_path)
+
 		self._lines = lines
 		self._block_path = block_path
 		self._divisions = set()
 		self._rows = collections.defaultdict(set)
 		self._columns = set()
 		self._texts = collections.defaultdict(list)
-		self._transform = transform
+		self._transform = document.transform
 
 		self._blocks = dict()
 		for path, block in blocks:
@@ -186,12 +225,13 @@ class TableRegion:
 
 
 class GraphicRegion:
-	def __init__(self, block_path, blocks, lines, transform):
+	def __init__(self, document, block_path):
+		blocks, lines = document.blocks_and_lines(block_path)
 		assert len(blocks) == 1
 		self._block = blocks[0][1]
 		self._lines = lines
 		self._block_path = block_path
-		self._transform = transform
+		self._transform = document.transform
 
 	def export_page_xml(self, px_document):
 		px_region = px_document.append_region(
@@ -215,42 +255,54 @@ class Document:
 
 		self._regions = dict()
 
+		# add lines and line texts in correct order.
 		for line_path, ocr_text in input.sorted_ocr:
 			block_path = line_path[:3]
 
 			table_path = block_path[2].split(".")
 			if len(table_path) > 1:
+				assert block_path[:2] == ("regions", "TABULAR")
 				base_block_path = block_path[:2] + (table_path[0],)
 
 				self._add(TableRegion, base_block_path).append_cell_text(
 					table_path[1:], line_path, ocr_text)
 			else:
+				assert block_path[:2] == ("regions", "TEXT")
 				self._add(TextRegion, block_path).add_text(
 					line_path, ocr_text)
 
+		# add graphics regions.
 		for block_path, block in input.regions.by_path.items():
 			if block_path[:2] == ("regions", "ILLUSTRATION"):
 				self._add(GraphicRegion, block_path)
 
+	@property
+	def reading_order(self):
+		order_data = self._input.order
+		return list(map(
+			lambda x: tuple(x.split("/")), order_data["orders"]["*"]))
+
 	def transform(self, coords):
 		w_coords = self._grid.inverse(coords)
-		# Page XML is very picky that we do not specify any
+		# Page XML is very picky about not specifying any
 		# negative coordinates. we need to clip.
 		width, height = self.page.size(False)
 		box = shapely.geometry.box(0, 0, width, height)
 		poly = shapely.geometry.Polygon(w_coords).intersection(box)
 		return poly.exterior.coords
 
+	def blocks_and_lines(self, block_path):
+		blocks = []
+		lines = []
+		for path in self._mapping[block_path]:
+			blocks.append((path, self._input.regions.by_path[path]))
+			lines.extend(self._region_lines[path])
+		return blocks, dict(lines)
+
 	def _add(self, class_, block_path):
 		region = self._regions.get(block_path)
 		if region is None:
-			blocks = []
-			lines = []
-			for path in self._mapping[block_path]:
-				blocks.append((path, self._input.regions.by_path[path]))
-				lines.extend(self._region_lines[path])
-			region = class_(
-				block_path, blocks, dict(lines), self.transform)
+			region = class_(self, block_path)
 			self._regions[block_path] = region
 		assert isinstance(region, class_)
 		return region
@@ -274,14 +326,100 @@ class Document:
 
 	@property
 	def page(self):
-		return list(self._input.regions.by_path.values())[0].page
+		return self._input.page
 
 	@property
+	def lines(self):
+		return self._input.lines
+
+	@cached_property
 	def paths(self):
 		return sorted(list(self._regions.keys()))
 
 	def transform(self, order):
 		return order
+
+
+class RegionReadingOrder:
+	def __init__(self, document):
+		self._document = document
+
+		self._ordered_regions = []
+		self._regionless_text_lines = []
+
+		region_indices = collections.defaultdict(int)
+		for p in document.paths:
+			region_indices[p[:2]] = max(region_indices[p[:2]], int(p[2]))
+		self._region_indices = region_indices
+
+		for path in document.reading_order:
+			self.append(path)
+		self.close()
+
+	def _flush_regionless_lines(self):
+		if not self._regionless_text_lines:
+			return
+
+		base_path = self._regionless_text_lines[0][:2]
+		assert all(p[:2] == base_path for p in self._regionless_text_lines)
+
+		region_indices = self._region_indices
+		new_region_index = region_indices[base_path] + 1
+		region_indices[base_path] = new_region_index
+
+		new_region_path = base_path + (str(new_region_index),)
+		lines = self._document.lines.by_path
+		merged = MergedTextRegion(
+			self._document,
+			new_region_path,
+			[(p, lines[p]) for p in self._regionless_text_lines])
+		self._ordered_regions.append((new_region_path, merged))
+
+	def _is_adjacent(self, line_path):
+		if not self._regionless_text_lines:
+			return False
+
+		# did lines originally belong to the same region?
+		if self._regionless_text_lines[-1][:3] != line_path[:3]:
+			return False
+
+		lines = self._document.lines.by_path
+		l0 = lines[self._regionless_text_lines[-1]]
+		l1 = lines[line_path]
+
+		# FIXME
+		if l0.image_space_polygon.distance(l1.image_space_polygon) < 5:
+			return True
+
+		return True
+
+	def _add_regionless_line(self, line_path):
+		if not self._is_adjacent(line_path):
+			self._flush_regionless_lines()
+
+		self._regionless_text_lines.append(line_path)
+
+	def append(self, path):
+		if len(path) == 3:  # block path?
+			self._flush_regionless_lines()
+			self._ordered_regions.append(
+				(path, self._document.get(path)))
+		elif len(path) > 3:  # line path?
+			assert path[:2] == ("regions", "TEXT")
+			self._add_regionless_line(path)
+		else:
+			raise ValueError("illegal region/line path %s" % str(path))
+
+	def close(self):
+		self._flush_regionless_lines()
+
+	@property
+	def reading_order(self):
+		return [x[0] for x in self._ordered_regions]
+
+	@property
+	def regions(self):
+		return [x[1] for x in self._ordered_regions]
 
 
 class PlainTextComposition:
@@ -340,34 +478,39 @@ class ComposeProcessor(Processor):
 
 	def export_page_xml(self, page_path, document):
 		page = document.page
+
 		px_document = pagexml.Document(
 			filename=str(page_path),
 			image_size=page.warped.size)
 
-		for path in document.paths:
-			region = document.get(path)
-			if region is not None:
-				region.export_page_xml(px_document)
+		# Page XML does not allow reading orders that
+		# contain of regions and lines. We therefore
+		# need to merge all line items occurring as
+		# separate entities in our reading order into
+		# new regions. RegionReadingOrder does that.
+
+		ro = RegionReadingOrder(document)
+
+		px_ro = px_document.append_reading_order()
+		px_ro_group = px_ro.append_ordered_group(
+			id_="ro_regions", caption="regions reading order")
+		for i, path in enumerate(ro.reading_order):
+			px_ro_group.append_region_ref_indexed(
+				index=i, region_ref="-".join(path))
+
+		for region in ro.regions:
+			region.export_page_xml(px_document)
 
 		with io.BytesIO() as f:
 			px_document.write(f, overwrite=True, validate=True)
 			return f.getvalue()
 
-	def process(self, page_path: Path, input, output):
-		blocks = input.regions.by_path
-		if not blocks:
-			return
-
-		order_data = input.order
-		order = order_data["orders"]["*"]
-
-		document = Document(input)
-
+	def export_plain_text(self, document):
 		composition = PlainTextComposition(
 			line_separator="\n",
 			block_separator=self._block_separator)
 
-		for path in map(lambda x: tuple(x.split("/")), order):
+		for path in document.reading_order:
 			if self._block_filter is not None and not self._block_filter(path):
 				continue
 
@@ -382,8 +525,16 @@ class ComposeProcessor(Processor):
 			else:
 				raise RuntimeError("illegal path %s in reading order" % path)
 
+		return composition.text
+
+	def process(self, page_path: Path, input, output):
+		if not input.regions.by_path:
+			return
+
+		document = Document(input)
+
 		with output.compose() as zf:
-			zf.writestr("page.txt", composition.text)
+			zf.writestr("page.txt", self.export_plain_text(document))
 			if self._page_xml:
 				zf.writestr("page.xml", self.export_page_xml(page_path, document))
 
