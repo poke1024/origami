@@ -23,6 +23,7 @@ class AnnotateContoursProcessor(Processor):
 		except KeyError:
 			raise click.BadParameter(
 				"illegal stage name %s" % options["stage"], param_hint="stage")
+		self._warped = options["warped"]
 
 	@property
 	def processor_name(self):
@@ -46,16 +47,23 @@ class AnnotateContoursProcessor(Processor):
 		page = input.page
 		predictors = warped.predictors
 
-		qt_im = ImageQt(page.dewarped if self._stage.is_dewarped else page.warped)
+		dewarped_im = self._stage.is_dewarped and not self._warped
+		qt_im = ImageQt(page.dewarped if dewarped_im else page.warped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 
 		def get_label(block_path):
 			classifier, segmentation_label, block_id = block_path
 			return (classifier, segmentation_label), int(block_id.split(".")[0])
 
+		if self._warped and self._stage.is_dewarped:
+			transform = page.dewarper.grid.inverse
+		else:
+			transform = None
+
 		if not self._options["omit_blocks"]:
 			pixmap = render_blocks(
-				pixmap, blocks, predictors, get_label=get_label)
+				pixmap, blocks, predictors,
+				get_label=get_label, transform=transform)
 
 		if not self._options["omit_separators"]:
 			pixmap = render_separators(pixmap, separators)
@@ -72,6 +80,10 @@ class AnnotateContoursProcessor(Processor):
 	'--stage',
 	type=str,
 	default="warped")
+@click.option(
+	'--warped',
+	is_flag=True,
+	default=False)
 @click.option(
 	'--omit-blocks',
 	is_flag=True,

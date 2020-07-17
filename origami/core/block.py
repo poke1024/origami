@@ -210,7 +210,7 @@ class Line:
 
 		dewarped_grid = (ys + p0)[:, np.newaxis] + xs[np.newaxis, :]
 		dewarped_grid = np.flip(dewarped_grid, axis=-1)
-		inv = self.block.page.dewarper.grid.inverse
+		inv = self.block.page.dewarper.grid.inverse_yx
 		warped_grid = inv(dewarped_grid.reshape((len(ys) * len(xs), 2)))
 		warped_grid = warped_grid.reshape((len(ys), len(xs), 2)).astype(np.float32)
 

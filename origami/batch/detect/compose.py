@@ -27,7 +27,7 @@ class MergedTextRegion:
 		self._polygon = shapely.ops.cascaded_union([
 			line.image_space_polygon for _, line in lines])
 		self._document = document
-		self._transform = document.transform
+		self._transform = document.rewarp
 		self._lines = lines
 
 	def export_page_xml(self, px_document):
@@ -58,7 +58,7 @@ class TextRegion:
 		self._line_texts = dict()
 
 		self._order = []
-		self._transform = document.transform
+		self._transform = document.rewarp
 
 	@property
 	def polygon(self):
@@ -78,6 +78,7 @@ class TextRegion:
 	def export_page_xml(self, px_document):
 		px_region = px_document.append_region(
 			"TextRegion", id_="-".join(self._block_path))
+
 		px_region.append_coords(self._transform(
 			self._polygon.exterior.coords))
 
@@ -111,7 +112,7 @@ class TableRegion:
 		self._rows = collections.defaultdict(set)
 		self._columns = set()
 		self._texts = collections.defaultdict(list)
-		self._transform = document.transform
+		self._transform = document.rewarp
 
 		self._blocks = dict()
 		for path, block in blocks:
@@ -231,7 +232,7 @@ class GraphicRegion:
 		self._block = blocks[0][1]
 		self._lines = lines
 		self._block_path = block_path
-		self._transform = document.transform
+		self._transform = document.rewarp
 
 	def export_page_xml(self, px_document):
 		px_region = px_document.append_region(
@@ -282,13 +283,13 @@ class Document:
 		return list(map(
 			lambda x: tuple(x.split("/")), order_data["orders"]["*"]))
 
-	def transform(self, coords):
-		w_coords = self._grid.inverse(coords)
+	def rewarp(self, coords):
+		warped_coords = self._grid.inverse(coords)
 		# Page XML is very picky about not specifying any
 		# negative coordinates. we need to clip.
 		width, height = self.page.size(False)
 		box = shapely.geometry.box(0, 0, width, height)
-		poly = shapely.geometry.Polygon(w_coords).intersection(box)
+		poly = shapely.geometry.Polygon(warped_coords).intersection(box)
 		return poly.exterior.coords
 
 	def blocks_and_lines(self, block_path):
@@ -336,9 +337,6 @@ class Document:
 	def paths(self):
 		return sorted(list(self._regions.keys()))
 
-	def transform(self, order):
-		return order
-
 
 class RegionReadingOrder:
 	def __init__(self, document):
@@ -374,6 +372,7 @@ class RegionReadingOrder:
 			new_region_path,
 			[(p, lines[p]) for p in self._regionless_text_lines])
 		self._ordered_regions.append((new_region_path, merged))
+		self._regionless_text_lines = []
 
 	def _is_adjacent(self, line_path):
 		if not self._regionless_text_lines:
@@ -468,6 +467,7 @@ class ComposeProcessor(Processor):
 	def artifacts(self):
 		return [
 			("input", Input(
+				Artifact.CONTOURS,
 				Artifact.LINES,
 				Artifact.OCR,
 				Artifact.ORDER,

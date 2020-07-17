@@ -792,13 +792,21 @@ class Grid:
 		return Transformer(x_grid_hv[::r, ::r], r)
 
 	@cached_property
-	def inverse(self):
+	def inverse_yx(self):
 		grid = self.points("full")
 
 		return scipy.interpolate.RegularGridInterpolator(
 			(np.arange(grid.shape[0]), np.arange(grid.shape[1])),
 			grid, method="linear", bounds_error=False, fill_value=None)
 
+	@cached_property
+	def inverse(self):
+		interp = self.inverse_yx
+
+		def f(pts):
+			return interp(np.flip(pts, axis=-1))
+
+		return f
 
 class Dewarper:
 	def __init__(self, im, grid):

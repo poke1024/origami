@@ -135,7 +135,7 @@ def contour_patterns(contours, buffer=-5, threshold=10):
 
 def render_contours(
 	pixmap, contours, predictors,
-	brushes=None, matrix=None, scale=1,
+	brushes=None, transform=None, scale=1,
 	get_label=None, alternate=False, edges=None):
 
 	if not contours:
@@ -144,10 +144,11 @@ def render_contours(
 	if brushes is None:
 		brushes = LabelBrushes(predictors)
 
-	def point(x, y):
-		if matrix is not None:
-			x, y = matrix @ np.array([x, y, 1])
-		return QtCore.QPointF(x * scale, y * scale)
+	def points(pts):
+		pts = np.array(pts)
+		if transform is not None:
+			pts = transform(pts)
+		return [QtCore.QPointF(*pt) for pt in (pts * scale)]
 
 	if alternate:
 		patterns = contour_patterns(contours)
@@ -172,10 +173,7 @@ def render_contours(
 				label_path[k], key=lambda x: x[0])]
 
 		def render_contour(coords):
-			poly = QtGui.QPolygonF()
-			for x, y in coords:
-				poly.append(point(x, y))
-			qp.drawPolygon(poly)
+			qp.drawPolygon(points(coords))
 
 		for k in sorted_contours.keys():
 			for i, (block_path, contour) in enumerate(sorted_contours[k]):
@@ -219,8 +217,7 @@ def render_contours(
 			if contour.is_empty:
 				continue
 
-			x, y = contour.centroid.coords[0]
-			p = point(x, y)
+			p = points([contour.centroid.coords[0]])[0]
 
 			path, label = get_label(block_path)
 			qp.setBrush(brushes.get_brush(block_path, value=50))
