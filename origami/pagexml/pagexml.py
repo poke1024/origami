@@ -41,6 +41,9 @@ class Document:
 	def append(self, element):
 		self._page.append(element._node)
 
+	def remove(self, element):
+		self._page.remove(element._node)
+
 	def append_region(self, class_, **kwargs):
 		region = Region(class_=class_, **kwargs)
 		self.append(region)
