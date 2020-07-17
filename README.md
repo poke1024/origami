@@ -29,22 +29,51 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 * Sample random lines using `origami.tool.sample`.
 * Fine tune your training corpus using `origami.tool.pick`.
 * Annotate using `origami.tool.annotate`.
-* Annotate using `origami.tool.export`.
+* Export annotations using `origami.tool.export`.
 * Train your OCR model.
 
 ## Batches
 
-The necessary order of batches is:
+Given an OCR model, the necessary order of batches for performing OCR for a folder of documents is:
 
-* segment
-* contours
-* warp
-* dewarp
-* layout
-* lines
-* order
-* ocr
-* compose
+<table>
+<tr>
+<td>1</td>
+<td>segment</td>
+</tr>
+<tr>
+<td>2</td>
+<td>contours</td>
+</tr>
+<tr>
+<td>3</td>
+<td>warp</td>
+</tr>
+<tr>
+<td>4</td>
+<td>dewarp</td>
+</tr>
+<tr>
+<td>5</td>
+<td>layout</td>
+</tr>
+<tr>
+<td>6</td>
+<td>lines</td>
+</tr>
+<tr>
+<td>7</td>
+<td>order</td>
+</tr>
+<tr>
+<td>8</td>
+<td>ocr</td>
+</tr>
+<tr>
+<td>9</td>
+<td>compose</td>
+</tr>
+</table>
 
 <dl>
   <dt>origami.batch.detect.segment</dt>
@@ -85,26 +114,37 @@ The necessary order of batches is:
   <dd>⁂ Composes text into one file using the detected reading order.</dd>
 </dl>
 
+<dl>
+  <dt>origami.batch.detect.stats</dt>
+  <dd>needs: nothing</dd>
+  <dd>⁂ Prints out statistics on computed artifacts and errors. This is useful for
+  understanding how many pages for processed, and for which stages this processing
+  is finished.</dd>
+</dl>
+
 ## Debugging
 
 <dl>
-  <dt>origami.batch.debug.contours (debugging only)</dt>
-  <dd>needs: images, contours</dd>
-  <dd>⁂ Produces debug images for understanding the result of the contours batch stage. <img src="/docs/img/sample-2436020X_1925-02-27_70_98_009.debug.contours.jpg"></dd>
+  <dt>origami.batch.annotate.contours</dt>
+  <dd>needs: stages 1, 2 (and maybe more, depending on `--stage`)</dd>
+  <dd>⁂ Produces debug images for understanding the result of the contours batch stage.
+  <img src="/docs/img/sample-2436020X_1925-02-27_70_98_009.debug.contours.jpg"></dd>
 </dl>
 
 <dl>
-  <dt>origami.batch.export.lines (debugging only)</dt>
-  <dd>needs: images, lines</dd>
-  <dd>⁂ Export images of lines detected during lines batch.</dd>
+  <dt>origami.batch.annotate.lines</dt>
+  <dd>needs: stages 1 - 6</dd>
+  <dd>⁂ Produces debug images for understanding the line detection stage.
+  <img src="/docs/img/sample-SNP2436020X-18720410-1-12-0-0.lines.jpg">
+  </dd>
 </dl>
 
 <dl>
-  <dt>origami.batch.export.pagexml  (debugging only)</dt>
-  <dd>needs: images, lines</dd>
-  <dd>⁂ Export polygons of lines detected during lines batch as PageXML.</dd>
+  <dt>origami.batch.annotate.layout</dt>
+  <dd>needs: stages 1 - 7</dd>
+  <dd>⁂ Produces debug images for understanding the result of the layout and order
+  batch stage.</dd>
 </dl>
-
 
 ## Tools
 
@@ -139,6 +179,24 @@ The necessary order of batches is:
     ground truth text files. Annotation normalization through a schema is supported. Use this command to generate training data for
     <a href="https://github.com/Calamari-OCR/calamari">Calamari</a>. See command line for details.</dd>
 </dl>
+
+<dl>
+  <dt>origami.tool.xycut</dt>
+  <dd>⁂ Debug internal X-Y cut implementation.</dd>
+</dl>
+
+<dl>
+  <dt>origami.batch.export.lines (debugging only)</dt>
+  <dd>needs: images, lines</dd>
+  <dd>⁂ Export images of lines detected during lines batch.</dd>
+</dl>
+
+<dl>
+  <dt>origami.batch.export.pagexml  (debugging only)</dt>
+  <dd>needs: images, lines</dd>
+  <dd>⁂ Export polygons of lines detected during lines batch as PageXML.</dd>
+</dl>
+
 
 ## How to create ground truth
 
