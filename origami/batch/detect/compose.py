@@ -44,13 +44,16 @@ class TextRegion:
 		px_region.append_coords(self._transform(
 			self._block.image_space_polygon.exterior.coords))
 
-		for line_path, line in sorted(list(self._lines.items()), key=lambda x: x[0]):
+		for line_path in self._order:
+			line = self._lines[line_path]
+
 			if line.image_space_polygon.is_empty:
 				if self._line_texts[line_path]:
 					raise RuntimeError(
 						"line %s has text '%s', confidence %.2f, but empty geometry" % (
 							str(line_path), self._line_texts[line_path], line.confidence))
 				continue
+
 			px_line = px_region.append_text_line(id_="-".join(line_path))
 			px_line.append_coords(self._transform(
 				line.image_space_polygon.exterior.coords))
@@ -104,6 +107,8 @@ class TableRegion:
 					block = self._blocks.get((column, division, row))
 					if not block:
 						continue
+					if block.image_space_polygon.is_empty:
+						continue
 
 					cell_id = "%s.%d" % (division_id, row)
 					px_cell = px_division.append_text_region(id_=cell_id)
@@ -141,6 +146,7 @@ class TableRegion:
 			px_table_region.prepend_coords(self._transform(
 				shape.exterior.coords))
 		else:
+			logging.warning("table %s was empty." % str(self._block_path))
 			px_document.remove(px_table_region)
 
 	def append_cell_text(self, grid, line_path, text):
