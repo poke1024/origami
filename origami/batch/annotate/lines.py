@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-import imghdr
 import click
 import PIL.Image
 import io
 import numpy as np
+import skimage.filters
 
 from pathlib import Path
 from PySide2 import QtGui, QtCore
@@ -12,6 +12,7 @@ from PIL.ImageQt import ImageQt
 
 from origami.batch.core.processor import Processor
 from origami.batch.annotate.utils import render_warped_line_paths, render_warped_line_confidence
+from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 
 
 class DebugLinesProcessor(Processor):
@@ -23,19 +24,23 @@ class DebugLinesProcessor(Processor):
 	def processor_name(self):
 		return __loader__.name
 
-	def should_process(self, p: Path) -> bool:
-		return imghdr.what(p) is not None and\
-			p.with_suffix(".dewarped.lines.zip").exists()
+	def artifacts(self):
+		return [
+			("warped", Input(Artifact.SEGMENTATION)),
+			("aggregate", Input(
+				Artifact.LINES, stage=Stage.AGGREGATE)),
+			("output", Output(Annotation("lines")))
+		]
 
-	def process(self, page_path: Path):
-		blocks = self.read_aggregate_blocks(page_path)
-		lines = self.read_aggregate_lines(page_path, blocks)
+	def process(self, page_path: Path, warped, aggregate, output):
+		blocks = aggregate.regions.by_path
+		lines = aggregate.lines.by_path
 
 		if not blocks:
 			return
 
-		page = list(blocks.values())[0].page
-		predictors = self.read_predictors(page_path)
+		page = aggregate.page
+		predictors = warped.predictors
 
 		qt_im = ImageQt(page.warped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
@@ -60,8 +65,7 @@ class DebugLinesProcessor(Processor):
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
 		pixmap = render_warped_line_confidence(pixmap, lines)
 
-		pixmap.toImage().save(str(
-			page_path.with_suffix(".annotate.lines.jpg")))
+		output.annotation(pixmap.toImage())
 
 
 
