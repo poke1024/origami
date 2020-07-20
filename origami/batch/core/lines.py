@@ -39,6 +39,40 @@ def reliable_contours(all_contours, all_lines, min_confidence, ignore=None):
 	return reliable
 
 
+class LineRewriter:
+	def __init__(self, tables):
+		self._columns = dict(
+			(tuple(k.split("/")), xs)
+			for k, xs in tables["columns"].items())
+
+	def _column_path(self, path, column):
+		assert column >= 1
+		predictor, label = path[:2]
+		parts = path[2].split(".")
+		if len(parts) != 4:
+			raise RuntimeError("%s is not a valid table path" % str(path))
+		block, division, _, _ = parts
+		line = 1 + int(path[-1])  # index of line inside this block division
+		grid = ".".join(map(str, (block, division, line, column)))
+		return predictor, label, grid, str(0)
+
+	def __call__(self, lines):
+		# this logic is intertwined with the logic in subdivide_table_blocks(). we
+		# split table rows, if our table data says so.
+
+		line_parts = []
+		for path, line in lines.items():
+			line_columns = self._columns.get(path[:3])
+			if line_columns is None:
+				line_parts.append((path, line, None))
+			else:
+				line_columns = [None] + line_columns + [None]
+				for i, (x0, x1) in enumerate(zip(line_columns, line_columns[1:])):
+					line_parts.append((self._column_path(path, 1 + i), line, (x0, x1)))
+
+		return line_parts
+
+
 class LineExtractor:
 	def __init__(self, tables, line_height, options, min_confidence=0.5):
 		self._options = options
@@ -52,10 +86,7 @@ class LineExtractor:
 			self._binarizer = None
 
 		self._min_confidence = min_confidence
-
-		self._columns = dict(
-			(tuple(k.split("/")), xs)
-			for k, xs in tables["columns"].items())
+		self._rewriter = LineRewriter(tables)
 
 	@staticmethod
 	def options(f):
@@ -88,39 +119,22 @@ class LineExtractor:
 			deskewed=not self._options["do_not_deskew"],
 			binarizer=self._binarizer)
 
-	def _column_path(self, path, column):
-		assert column >= 1
-		predictor, label = path[:2]
-		parts = path[2].split(".")
-		if len(parts) != 4:
-			raise RuntimeError("%s is not a valid table path" % str(path))
-		block, division, _, _ = parts
-		line = 1 + int(path[-1])  # index of line inside this block division
-		grid = ".".join(map(str, (block, division, line, column)))
-		return predictor, label, grid, str(0)
-
 	def __call__(self, lines, ignored=None):
 		if ignored is not None:
 			lines = dict(
 				(k, v) for k, v in lines.items()
 				if not ignored(tuple(k[:2])))
 
-		# this logic is intertwined with the logic in subdivide_table_blocks(). we
-		# split table rows, if our table data says so.
-
-		line_parts = []
+		filtered_lines = []
 		for path, line in lines.items():
 			if line.confidence < self._min_confidence:
 				logging.info("skipping line %s with confidence %.1f" % (
 					str(path), line.confidence))
 				continue
-			line_columns = self._columns.get(path[:3])
-			if line_columns is None:
-				line_parts.append((path, line, None))
 			else:
-				line_columns = [None] + line_columns + [None]
-				for i, (x0, x1) in enumerate(zip(line_columns, line_columns[1:])):
-					line_parts.append((self._column_path(path, 1 + i), line, (x0, x1)))
+				filtered_lines.append((path, line))
+
+		line_parts = self._rewriter(dict(filtered_lines))
 
 		with multiprocessing.pool.ThreadPool(processes=8) as pool:
 			return pool.map(self._extract_line_image, line_parts)

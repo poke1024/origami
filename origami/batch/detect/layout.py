@@ -950,16 +950,16 @@ def subdivide_table_blocks(filters, regions, columns, dividers):
 		# split them here into separate blocks for each column.
 
 		# as a result, a three column table with header would be split
-		# into four blocks (with block4 getting subdivided later inside
-		# LineExtractor):
+		# into four blocks (with X being the region id of the table and
+		# with X.2.1.1 getting subdivided later inside LineExtractor):
 
 		# ----------------------------------------------------------
-		# | BLOCK1  | BLOCK2 | BLOCK3                              |
+		# | X.1.1.1  | X.1.1.2 | X.1.1.3                           |
 		# ----------------------------------------------------------
-		# | BLOCK 4                                                |
-		# | BLOCK 4                                                |
-		# | BLOCK 4                                                |
-		# | BLOCK 4                                                |
+		# | X.2.1.1                                                |
+		# |                                                        |
+		# |                                                        |
+		# |                                                        |
 		# ----------------------------------------------------------
 
 		areas = divide(contour, dividers.get(k, []), 1)

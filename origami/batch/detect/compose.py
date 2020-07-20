@@ -14,6 +14,7 @@ from cached_property import cached_property
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.batch.core.utils import RegionsFilter, TableRegionCombinator
+from origami.batch.core.lines import LineRewriter
 import origami.pagexml.pagexml as pagexml
 
 
@@ -127,9 +128,47 @@ class TableRegion:
 			block_id, division, row, column = map(int, path[2].split("."))
 			self._blocks[(column, division, row)] = block
 
+		rewritten = dict()
+		for k, line, xs in self._document.rewrite_lines(self._lines):
+			rewritten[k] = (line, xs)
+		self._rewritten = rewritten
+
 	def export_plain_text_region(self, composition):
 		composition.append_text(
 			self._block_path, self.to_text())
+
+	def _get_cell_shape(self, cell_line_path):
+		# we deal with two different formats of line_path here:
+		#
+		# cell_line_path we get from OCR-ed text, derived from LineExtractor
+		# (generated in _column_path) in OCR stage:
+		# : predictor, label, (block, division, 1 + line, x_column), 0
+		# here, x_column is a new attribute describing the column split for the
+		# line (that covers all columns in the case of non-header divisions).
+
+		# line_path stored in self._lines that was detected during baseline
+		# detection in LINES stage:
+		# : predictor, label, (block, division, row, column), line
+		# (format derives from block id generated in subdivide_table_blocks
+		# in LAYOUT stage).
+		#
+		# we use the inverse mapping in "rewritten" to get from one to the other.
+
+		line, (x0, x1) = self._rewritten[cell_line_path]
+
+		line_shape = line.image_space_polygon
+		if not (x0 is None and x1 is None):
+			minx, miny, maxx, maxy = line_shape.bounds
+			if x0 is None:
+				x0 = minx
+			if x1 is None:
+				x1 = maxx
+			box = shapely.geometry.box(x0, miny, x1, maxy)
+			line_shape = box.intersection(line_shape)
+			if line_shape.geom_type != "Polygon":
+				line_shape = line_shape.convex_hull
+
+		return line_shape
 
 	def export_page_xml(self, px_document):
 		table_id = "-".join(self._block_path)
@@ -139,6 +178,9 @@ class TableRegion:
 		columns = sorted(list(self._columns))
 		divisions = sorted(list(self._divisions))
 		column_shapes = []
+
+		# make sure to look at subdivide_table_blocks
+		# in LAYOUT stage to understand this.
 
 		for column in columns:
 			column_id = "%s.%d" % (table_id, column)
@@ -152,26 +194,33 @@ class TableRegion:
 
 				rows = sorted(list(self._rows[division]))
 				for row in rows:
-					block = self._blocks.get((column, division, row))
-					if not block:
-						continue
-					if block.image_space_polygon.is_empty:
-						continue
-
 					cell_id = "%s.%d" % (division_id, row)
 					px_cell = px_division.append_text_region(id_=cell_id)
-					px_cell.append_coords(self._transform(
-						block.image_space_polygon.exterior.coords))
 
+					line_shapes = []
 					texts = self._texts.get((division, row, column), [])
-					for line_path, text in texts:
+					for cell_line_path, text in texts:
 						px_line = px_cell.append_text_line(
-							id_="-".join(line_path))
+							id_="-".join(cell_line_path))
+
+						line_shape = self._get_cell_shape(cell_line_path)
+						line_shapes.append(line_shape)
+
 						px_line.append_coords(self._transform(
-							self._lines[line_path].image_space_polygon.exterior.coords))
+							line_shape.exterior.coords))
 						px_line.append_text_equiv(text)
 
-					cell_shapes.append(block.image_space_polygon)
+					if line_shapes:
+						cell_shape = polygon_union(line_shapes)
+					else:
+						cell_shape = None
+
+					if cell_shape is not None:
+						px_cell.prepend_coords(self._transform(
+							cell_shape.exterior.coords))
+						cell_shapes.append(cell_shape)
+					else:
+						px_division.remove(px_cell)
 
 				if cell_shapes:
 					division_shape = polygon_union(cell_shapes)
@@ -255,6 +304,7 @@ class Document:
 		self._page_path = page_path
 		self._input = input
 		self._grid = self.page.dewarper.grid
+		self._rewriter = LineRewriter(input.tables)
 
 		combinator = TableRegionCombinator(input.regions.by_path.keys())
 		self._mapping = combinator.mapping
@@ -296,6 +346,9 @@ class Document:
 		order_data = self._input.order
 		return list(map(
 			lambda x: tuple(x.split("/")), order_data["orders"]["*"]))
+
+	def rewrite_lines(self, lines):
+		return self._rewriter(lines)
 
 	def rewarp(self, coords):
 		warped_coords = self._grid.inverse(coords)
