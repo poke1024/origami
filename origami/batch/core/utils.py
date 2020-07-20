@@ -24,6 +24,8 @@ class RegionsFilter:
 
 
 class TableRegionCombinator:
+	""" reverses the splitting done in subdivide_table_blocks """
+
 	def __init__(self, paths):
 		mapping = collections.defaultdict(list)
 		for k in paths:
