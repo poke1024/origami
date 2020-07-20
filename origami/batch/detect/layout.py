@@ -938,6 +938,30 @@ def subdivide_table_blocks(filters, regions, columns, dividers):
 		line_hs = regions.line_heights(k)
 		line_h = np.median(line_hs) if len(line_hs) >= 2 else None
 
+		# this whole logic is intertwined with LineExtractor. for
+		# each table division (collection of rows), we produce one
+		# block. for this block, we will detect baselines (for the
+		# whole width and across columns) in the LINES stages. each
+		# baseline will then we split along the available columns in
+		# LineExtractor to generate the content of each cell.
+
+		# for line headers, we follow a different approach, since they
+		# might have mixed one- and multi-line content. we explicitly
+		# split them here into separate blocks for each column.
+
+		# as a result, a three column table with header would be split
+		# into four blocks (with block4 getting subdivided later inside
+		# LineExtractor):
+
+		# ----------------------------------------------------------
+		# | BLOCK1  | BLOCK2 | BLOCK3                              |
+		# ----------------------------------------------------------
+		# | BLOCK 4                                                |
+		# | BLOCK 4                                                |
+		# | BLOCK 4                                                |
+		# | BLOCK 4                                                |
+		# ----------------------------------------------------------
+
 		areas = divide(contour, dividers.get(k, []), 1)
 		for i in list(find_table_headers(areas, line_h)):
 			areas[i] = divide(areas[i], columns.get(k, []), 0)
@@ -1048,9 +1072,8 @@ class LayoutDetectionProcessor(Processor):
 		self._transformer(regions)
 
 		# we split table cells into separate regions so that the
-		# next stage (baseline detection) runs on isolated cells.
-		# in fact, each region is now one cell that may contain one
-		# or more lines.
+		# next stage (baseline detection) runs on isolated divisions.
+		# see subdivide_table_blocks for details.
 
 		split_contours, columns, dividers = subdivide_table_blocks(
 			"regions/TABULAR",
