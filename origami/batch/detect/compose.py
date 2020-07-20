@@ -154,7 +154,12 @@ class TableRegion:
 		#
 		# we use the inverse mapping in "rewritten" to get from one to the other.
 
-		line, (x0, x1) = self._rewritten[cell_line_path]
+		line, xs = self._rewritten[cell_line_path]
+
+		if xs is None:
+			x0, x1 = (None, None)
+		else:
+			x0, x1 = xs
 
 		line_shape = line.image_space_polygon
 		if not (x0 is None and x1 is None):
@@ -200,15 +205,28 @@ class TableRegion:
 					line_shapes = []
 					texts = self._texts.get((division, row, column), [])
 					for cell_line_path, text in texts:
-						px_line = px_cell.append_text_line(
-							id_="-".join(cell_line_path))
 
 						line_shape = self._get_cell_shape(cell_line_path)
-						line_shapes.append(line_shape)
+						if line_shape.geom_type == "Polygon" and line_shape.area > 1:
+							add_cell = True
+							line_shapes.append(line_shape)
 
-						px_line.append_coords(self._transform(
-							line_shape.exterior.coords))
-						px_line.append_text_equiv(text)
+						elif text.strip():
+							add_cell = True
+							line_shape = None
+
+							logging.warning("no cell geometry for text '%s' on page %s" % (
+								text, self._document.page_path))
+						else:
+							add_cell = False
+
+						if add_cell:
+							px_line = px_cell.append_text_line(
+								id_="-".join(cell_line_path))
+							if line_shape is not None:
+								px_line.append_coords(self._transform(
+									line_shape.exterior.coords))
+							px_line.append_text_equiv(text)
 
 					if line_shapes:
 						cell_shape = polygon_union(line_shapes)
