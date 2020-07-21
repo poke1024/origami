@@ -8,6 +8,7 @@ import logging
 import zipfile
 import portalocker
 import contextlib
+import contextlib
 import traceback
 import imghdr
 import multiprocessing
@@ -22,6 +23,7 @@ from contextlib import contextmanager, nullcontext
 from origami.core.time import elapsed_timer
 from origami.batch.core.io import *
 from origami.batch.core.utils import Spinner
+from origami.batch.core.mutex import DatabaseMutex, FileMutex, DummyMutex
 
 
 def qt_app():
@@ -32,11 +34,21 @@ def qt_app():
 
 class Processor:
 	def __init__(self, options, needs_qt=False):
-		self._lock_files = not options.get("nolock", True)
 		self._overwrite = options.get("overwrite", False)
 		self._processes = options.get("processes", 1)
 		self._name = options.get("name", "")
 		self._verbose = False
+
+		self._lock_strategy = options.get("lock_strategy", "DB")
+		self._lock_level = options.get("lock_level", "PAGE")
+		self._mutex = None
+
+		if self._lock_strategy == "DB":
+			self._lock_database = options.get("lock_database")
+		elif self._lock_strategy in ("FILE", "NONE"):
+			pass
+		else:
+			raise ValueError(self._lock_strategy)
 
 		if needs_qt:
 			self._qt_app = qt_app()
@@ -68,12 +80,20 @@ class Processor:
 				default="",
 				help="Only process paths that conform to the given pattern."),
 			click.option(
-				'--nolock',
-				is_flag=True,
-				default=False,
-				help=
-				"Do not lock files while processing. Breaks concurrent batches, "
-				"but is necessary on some network file systems."),
+				'--lock-strategy',
+				type=click.Choice(['FILE', 'DB', 'NONE'], case_sensitive=False),
+				default="DB",
+				help="How to implement locking for concurrency."),
+			click.option(
+				'--lock-level',
+				type=click.Choice(['PAGE', 'TASK'], case_sensitive=False),
+				default="PAGE",
+				help="Lock granularity."),
+			click.option(
+				'--lock-database',
+				type=click.Path(),
+				required=False,
+				help="Mutex database path used for concurrent processing"),
 			click.option(
 				'--overwrite',
 				is_flag=True,
@@ -115,20 +135,28 @@ class Processor:
 
 	def _trigger_process(self, p, kwargs):
 		try:
-			with self.page_lock(p) as _:
-				with elapsed_timer() as elapsed:
-					data_path = find_data_path(p)
-					data_path.mkdir(exist_ok=True)
+			if self._lock_level == "PAGE":
+				lock_actor_name = "page"
+			elif self._lock_level == "TASK":
+				lock_actor_name = self.processor_name
+			else:
+				raise ValueError(self._lock_level)
 
-					runtime_info = self.process(p, **kwargs)
+			with self._mutex.lock(lock_actor_name, str(p)) as locked:
+				if locked:
+					with elapsed_timer() as elapsed:
+						data_path = find_data_path(p)
+						data_path.mkdir(exist_ok=True)
 
-				if runtime_info is None:
-					runtime_info = dict()
-				runtime_info["status"] = "COMPLETED"
-				runtime_info["elapsed"] = round(elapsed(), 2)
+						runtime_info = self.process(p, **kwargs)
 
-				self._update_runtime_info(
-					p, {self.processor_name: runtime_info})
+					if runtime_info is None:
+						runtime_info = dict()
+					runtime_info["status"] = "COMPLETED"
+					runtime_info["elapsed"] = round(elapsed(), 2)
+
+					self._update_runtime_info(
+						p, {self.processor_name: runtime_info})
 
 		except KeyboardInterrupt:
 			logging.exception("Interrupted at %s." % p)
@@ -203,7 +231,24 @@ class Processor:
 	def traverse(self, path: Path):
 		queued = self._build_queue(path)
 
-		self._process_queue(queued)
+		if self._lock_strategy == "DB":
+			if self._lock_database:
+				db_path = Path(self._lock_database)
+			else:
+				db_path = Path(path) / "origami.lock.db"
+
+			self._mutex = DatabaseMutex(db_path)
+		elif self._lock_strategy == "FILE":
+			self._mutex = FileMutex()
+		elif self._lock_strategy == "NONE":
+			self._mutex = DummyMutex()
+		else:
+			raise ValueError(self._mutex)
+
+		try:
+			self._process_queue(queued)
+		finally:
+			self._mutex = None
 
 		if self._profiler:
 			self._profiler.run_viewer()
@@ -211,12 +256,14 @@ class Processor:
 	def process(self, p: Path):
 		pass
 
-	def page_lock(self, path):
-		return self.lock_or_open(path, "r")
-
 	def lock_or_open(self, path, mode):
-		if self._lock_files:
-			return portalocker.Lock(path, mode, flags=portalocker.LOCK_EX, timeout=1)
+		if self._lock_strategy == "FILE":
+			return portalocker.Lock(
+				path,
+				mode,
+				flags=portalocker.LOCK_EX,
+				timeout=1,
+				fail_when_locked=True)
 		else:
 			return open(path, mode)
 
