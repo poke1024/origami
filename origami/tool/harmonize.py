@@ -134,7 +134,7 @@ class Schema:
 	@staticmethod
 	def get_schema_path(name):
 		script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
-		schema_path = script_dir.parent / "harmonizations" / ("%s.py" % name)
+		schema_path = script_dir.parent / "custom" / "harmonizations" / ("%s.py" % name)
 		if not schema_path.exists():
 			raise ValueError("schema with name '%s' does not exist" % name)
 		return schema_path

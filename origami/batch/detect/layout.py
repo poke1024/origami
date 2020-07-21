@@ -15,6 +15,7 @@ import networkx as nx
 import collections
 import portion
 import logging
+import importlib
 
 from pathlib import Path
 from functools import partial
@@ -682,7 +683,7 @@ class SequentialMerger:
 
 
 class Shrinker:
-	def __init__(self, min_area):
+	def __init__(self, min_area=0):
 		self._min_area = min_area
 
 	def __call__(self, regions):
@@ -708,6 +709,20 @@ class Shrinker:
 							regions.remove_contour(k)
 				except ValueError:
 					logging.exception("deformed geometry errors")
+
+
+class AreaFilter:
+	def __init__(self, min_area):
+		self._min_area = min_area
+
+	def __call__(self, regions):
+		min_area = regions.geometry.rel_area(self._min_area)
+		remove = []
+		for k, contour in regions.contours.items():
+			if contour.area < min_area:
+				remove.append(k)
+		for k in remove:
+			regions.remove_contour(k)
 
 
 class FixSpillOver:
@@ -1005,38 +1020,15 @@ class LayoutDetectionProcessor(Processor):
 		super().__init__(options)
 		self._options = options
 
-		self._union = UnionOperator(self._options["union"])
+		layout_name = options["layout"]
 
-		# bbz specific settings.
+		try:
+			imported_module = importlib.import_module("origami.custom.layouts.%s" % layout_name)
+		except ModuleNotFoundError as e:
+			raise click.UsageError("layout %s not found in origami.custom.layouts" % layout_name)
 
-		seq_merger = SequentialMerger(
-			filters="regions/TABULAR",
-			cohesion=(0.5, 0.8),
-			max_distance=0.01,
-			max_error=0.05,
-			fringe=self._options["fringe"],
-			obstacles=["separators/V"])
-
-		self._transformer = Transformer([
-			Dilation(self._options["dilation"]),
-			AdjacencyMerger(
-				"regions/TEXT",
-				IsOnSameLine(
-					max_line_count=3,
-					fringe=self._options["fringe"])),
-			OverlapMerger(self._options["maximum_overlap"]),
-			Shrinker(0),
-			seq_merger,
-			AdjacencyMerger(
-				"regions/TABULAR", IsBelow()),
-			seq_merger,
-			OverlapMerger(0),
-			DominanceOperator(
-				filters="regions/TEXT, regions/TABULAR",
-				fringe=self._options["fringe"]),
-			FixSpillOver("regions/TEXT"),
-			Shrinker(0.005)
-		])
+		self._union = getattr(imported_module, "make_union_operator")()
+		self._transformer = getattr(imported_module, "make_transformer")()
 
 		self._table_column_detector = TableLayoutDetector(
 			"regions/TABULAR", "separators/T", axis=0)
@@ -1106,26 +1098,10 @@ class LayoutDetectionProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @click.option(
-	'--dilation',
+	'--layout',
 	type=str,
-	default="none")
-@click.option(
-	'--union',
-	type=str,
-	default="convex")
-@click.option(
-	'--maximum-overlap',
-	type=float,
-	default=0.1)
-@click.option(
-	'--fringe',
-	type=float,
-	default=0.001)
-@click.option(
-	'--region-area',
-	type=float,
-	default=0,
-	help="Ignore regions below this relative size.")
+	default="bbz",
+	help="Name of set of heuristic layout rules to apply.")
 @Processor.options
 def detect_layout(data_path, **kwargs):
 	""" Detect layout and reading order for documents in DATA_PATH. """
