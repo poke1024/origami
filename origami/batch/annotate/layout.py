@@ -69,6 +69,7 @@ class DebugLayoutProcessor(Processor):
 		self._options = options
 		self._overwrite = self._options["overwrite"]
 		self._scale = max(0, min(2, self._options["scale"]))
+		self._font_scale = max(0, min(2, self._options["font_scale"]))
 
 	@property
 	def processor_name(self):
@@ -140,6 +141,7 @@ class DebugLayoutProcessor(Processor):
 		page = reliable.page
 		predictors = warped.predictors
 		scale = self._scale
+		font_scale = self._font_scale
 
 		width, height = page.dewarped.size
 		im = page.dewarped
@@ -155,11 +157,13 @@ class DebugLayoutProcessor(Processor):
 
 		pixmap = render_contours(
 			pixmap, rendered_contours, predictors,
-			get_label=get_contour_label, alternate=False, scale=scale)
+			get_label=get_contour_label, alternate=False,
+			scale=scale, font_scale=font_scale)
 
 		pixmap = render_lines(
 			pixmap, rendered_lines, predictors,
-			get_label=get_line_label, show_vectors=True, scale=scale)
+			get_label=get_line_label, show_vectors=True,
+			scale=scale, font_scale=font_scale)
 
 		columns = []
 		for path, xs in cond_table_data(table_data["columns"]).items():
@@ -195,6 +199,11 @@ class DebugLayoutProcessor(Processor):
 	type=float,
 	default=1,
 	help="Scale of annotated image.")
+@click.option(
+	'--font-scale',
+	type=float,
+	default=1,
+	help="Scale of label text of annotated image.")
 @Processor.options
 def debug_layout(data_path, **kwargs):
 	""" Export annotate information on xycuts for all document images in DATA_PATH. """

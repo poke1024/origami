@@ -135,7 +135,7 @@ def contour_patterns(contours, buffer=-5, threshold=10):
 
 def render_contours(
 	pixmap, contours, predictors,
-	brushes=None, transform=None, scale=1,
+	brushes=None, transform=None, scale=1, font_scale=1,
 	get_label=None, alternate=False, edges=None):
 
 	if not contours:
@@ -204,14 +204,14 @@ def render_contours(
 
 		qp.setBrush(QtGui.QBrush(QtGui.QColor("white")))
 
-		font = QtGui.QFont("Arial Narrow", 56 * scale, QtGui.QFont.Bold)
+		font = QtGui.QFont("Arial Narrow", 56 * scale * font_scale, QtGui.QFont.Bold)
 		qp.setFont(font)
 
 		fm = QtGui.QFontMetrics(font)
 
-		qp.setPen(default_pen(width=5 * scale))
+		qp.setPen(default_pen(width=5 * scale * font_scale))
 		nodes = dict()
-		node_r = 50 * scale
+		node_r = 50 * scale * font_scale
 
 		for block_path, contour in contours.items():
 			if contour.is_empty:
@@ -274,7 +274,7 @@ def render_arrows(qp, path, pos="center", scale=1):
 
 
 def render_lines(
-	pixmap, lines, predictors, scale=1,
+	pixmap, lines, predictors, scale=1, font_scale=1,
 	get_label=None, show_vectors=False):
 
 	if not lines:
@@ -326,12 +326,12 @@ def render_lines(
 				render_arrows(qp, [m, m + up], "end", scale=scale)
 
 		if get_label:
-			font = QtGui.QFont("Arial Narrow", 24 * scale, QtGui.QFont.Bold)
+			font = QtGui.QFont("Arial Narrow", 24 * scale * font_scale, QtGui.QFont.Bold)
 			qp.setFont(font)
 			fm = QtGui.QFontMetrics(font)
 
-			qp.setPen(default_pen(width=5 * scale))
-			node_r = 25 * scale
+			qp.setPen(default_pen(width=5 * scale * font_scale))
+			node_r = 25 * scale * font_scale
 
 			for i, (line_path, line) in enumerate(lines.items()):
 				x, y = line.image_space_polygon.centroid.coords[0]
