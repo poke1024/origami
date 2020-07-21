@@ -410,7 +410,8 @@ class Overlap:
 
 
 class DominanceOperator:
-	def __init__(self, fringe):
+	def __init__(self, filters, fringe):
+		self._filter = RegionsFilter(filters)
 		self._fringe = fringe
 
 	def _graph(self, contours):
@@ -497,7 +498,11 @@ class DominanceOperator:
 						remaining[path] = polygon.area
 
 	def __call__(self, regions):
-		graph = self._graph(regions.contours.values())
+		f_contours = [
+			v for k, v in regions.contours.items()
+			if self._filter(k)]
+
+		graph = self._graph(f_contours)
 
 		for nodes in nx.connected_components(graph):
 			self._resolve(regions, nodes)
@@ -1027,6 +1032,7 @@ class LayoutDetectionProcessor(Processor):
 			seq_merger,
 			OverlapMerger(0),
 			DominanceOperator(
+				filters="regions/TEXT, regions/TABULAR",
 				fringe=self._options["fringe"]),
 			FixSpillOver("regions/TEXT")
 		])
