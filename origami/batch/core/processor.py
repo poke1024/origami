@@ -143,7 +143,16 @@ class Processor:
 				raise ValueError(self._lock_level)
 
 			with self._mutex.lock(lock_actor_name, str(p)) as locked:
-				if locked:
+				work = locked
+
+				if work:
+					# a concurrent worker might already have done this.
+					for f in kwargs.values():
+						if not f.is_ready():
+							work = False
+							break
+
+				if work:
 					with elapsed_timer() as elapsed:
 						data_path = find_data_path(p)
 						data_path.mkdir(exist_ok=True)
