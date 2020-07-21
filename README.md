@@ -21,7 +21,8 @@ All command line tools will give you help information on their arguments when ca
 
 The given data path should contain processed pages as images. Generated data is put into the same path.  Images may be structured into any hierarchy of sub folders.
 
-Batch processes can be run concurrently.
+Batch processes can be run concurrently. Origami supports file-based locking or by using a database (see `--lock-strategy`). The latter strategy is more compatible and set by default.
+Use `--lock-database` to specify the path to a lock database (if none is specified, Origami will create one in your data folder).
 
 For generating ground truth for training an OCR engine from a corpus, we suggest this general process:
 
