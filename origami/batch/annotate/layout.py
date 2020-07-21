@@ -69,7 +69,7 @@ class DebugLayoutProcessor(Processor):
 		self._options = options
 		self._overwrite = self._options["overwrite"]
 		self._scale = max(0, min(2, self._options["scale"]))
-		self._font_scale = max(0, min(2, self._options["font_scale"]))
+		self._font_scale = max(0, min(100, self._options["font_scale"]))
 
 	@property
 	def processor_name(self):
