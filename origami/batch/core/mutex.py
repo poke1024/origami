@@ -2,6 +2,7 @@ import sqlalchemy
 import datetime
 import os
 import portalocker
+import logging
 
 from pathlib import Path
 from contextlib import contextmanager
@@ -33,7 +34,13 @@ class DatabaseMutex:
 			sqlalchemy.Column('time', sqlalchemy.DateTime, nullable=False),
 			sqlalchemy.PrimaryKeyConstraint('path', 'processor', name='mutex_pk')
 		)
-		metadata.create_all()
+
+		try:
+			metadata.create_all()
+		except sqlalchemy.exc.OperationalError as e:
+			# ignore this, usually this is an error inside sqlalchemy, see
+			# https://github.com/sqlalchemy/sqlalchemy/issues/4936
+			logging.exception("Metadata creation failed.")
 
 	def try_lock(self, processor, path):
 		conn = self._engine.connect()
