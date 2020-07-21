@@ -1025,7 +1025,7 @@ class LayoutDetectionProcessor(Processor):
 					max_line_count=3,
 					fringe=self._options["fringe"])),
 			OverlapMerger(self._options["maximum_overlap"]),
-			Shrinker(self._options["region_area"]),
+			Shrinker(0),
 			seq_merger,
 			AdjacencyMerger(
 				"regions/TABULAR", IsBelow()),
@@ -1034,7 +1034,8 @@ class LayoutDetectionProcessor(Processor):
 			DominanceOperator(
 				filters="regions/TEXT, regions/TABULAR",
 				fringe=self._options["fringe"]),
-			FixSpillOver("regions/TEXT")
+			FixSpillOver("regions/TEXT"),
+			Shrinker(0.005)
 		])
 
 		self._table_column_detector = TableLayoutDetector(
