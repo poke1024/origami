@@ -10,37 +10,56 @@ from contextlib import contextmanager
 
 class DatabaseMutex:
 	def __init__(self, path):
-		db_uri = 'sqlite:///%s' % str(Path(path))
-		self._engine = sqlalchemy.create_engine(
-			db_uri, isolation_level="SERIALIZABLE")
+		self._db_uri = 'sqlite:///%s' % str(Path(path))
+
+		self._engine = None
+		self._metadata = None
+		self._mutex_table = None
+		self._connect()
+
+		try:
+			self._metadata.create_all()
+		except sqlalchemy.exc.OperationalError as e:
+			# ignore this, usually this is an error inside sqlalchemy, see
+			# https://github.com/sqlalchemy/sqlalchemy/issues/4936
+			logging.exception("Metadata creation failed.")
+
+	def __getstate__(self):
+		return dict(db_uri=self._db_uri)
+
+	def __setstate__(self, newstate):
+		self._db_uri = newstate["db_uri"]
+		self._engine = None
+		self._metadata = None
+		self._mutex_table = None
+		self._connect()
+
+	def _connect(self):
+		engine = sqlalchemy.create_engine(
+			self._db_uri, isolation_level="SERIALIZABLE")
 
 		# see https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#pysqlite-serializable
-		@sqlalchemy.event.listens_for(self._engine, "connect")
+		@sqlalchemy.event.listens_for(engine, "connect")
 		def do_connect(dbapi_connection, connection_record):
 			# disable pysqlite's emitting of the BEGIN statement entirely.
 			# also stops it from emitting COMMIT before any DDL.
 			dbapi_connection.isolation_level = None
 
-		@sqlalchemy.event.listens_for(self._engine, "begin")
+		@sqlalchemy.event.listens_for(engine, "begin")
 		def do_begin(conn):
 			conn.execute("BEGIN EXCLUSIVE")
 
-		metadata = sqlalchemy.MetaData(self._engine)
+		self._engine = engine
+
+		self._metadata = sqlalchemy.MetaData(self._engine)
+
 		self._mutex_table = sqlalchemy.Table(
-			"mutex", metadata,
+			"mutex", self._metadata,
 			sqlalchemy.Column('path', sqlalchemy.Text, nullable=False),
 			sqlalchemy.Column('processor', sqlalchemy.Text, nullable=False),
 			sqlalchemy.Column('pid', sqlalchemy.BigInteger, nullable=False),
 			sqlalchemy.Column('time', sqlalchemy.DateTime, nullable=False),
-			sqlalchemy.PrimaryKeyConstraint('path', 'processor', name='mutex_pk')
-		)
-
-		try:
-			metadata.create_all()
-		except sqlalchemy.exc.OperationalError as e:
-			# ignore this, usually this is an error inside sqlalchemy, see
-			# https://github.com/sqlalchemy/sqlalchemy/issues/4936
-			logging.exception("Metadata creation failed.")
+			sqlalchemy.PrimaryKeyConstraint('path', 'processor', name='mutex_pk'))
 
 	def try_lock(self, processor, path):
 		conn = self._engine.connect()
@@ -67,10 +86,11 @@ class DatabaseMutex:
 		conn = self._engine.connect()
 
 		try:
-			stmt = self._mutex_table.delete().where(sqlalchemy.and_(
-				self._mutex_table.c.processor == processor,
-				self._mutex_table.c.path == path,
-				self._mutex_table.c.pid == os.getpid()))
+			table = self._mutex_table
+			stmt = table.delete().where(sqlalchemy.and_(
+				table.c.processor == processor,
+				table.c.path == path,
+				table.c.pid == os.getpid()))
 			conn.execute(stmt)
 		finally:
 			conn.close()

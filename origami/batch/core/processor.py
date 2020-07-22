@@ -252,7 +252,7 @@ class Processor:
 		elif self._lock_strategy == "NONE":
 			self._mutex = DummyMutex()
 		else:
-			raise ValueError(self._mutex)
+			raise ValueError(self._lock_strategy)
 
 		try:
 			self._process_queue(queued)
