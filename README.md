@@ -1,6 +1,18 @@
 # origami
 
-Building and using OCR tools can be hard. origami is a low-overhead suite of batch tools for OCR processing to make one’s life easier. It consists of various minimalistic batches and tools useful in building training data for training models and/or generating OCR output from existing models.
+origami is a self-contained suite of batches and tools for OCR processing of historical newspapers.
+It covers many essential steps in a digitization pipeline, including (1) building training data for
+training models, and (2) generating Page-XML OCR output from pages using trained models.
+
+Some of origami's features are:
+
+* easy setup, easy to use
+* DNN segmentation
+* dewarping
+* reading order detection
+* simple table support
+* Page-XML export
+* various additional tools
 
 # Installation 
 
@@ -20,18 +32,6 @@ python -m origami.batch.detect.segment
 All command line tools will give you help information on their arguments when called as above.
 
 The given data path should contain processed pages as images. Generated data is put into the same path.  Images may be structured into any hierarchy of sub folders.
-
-Batch processes can be run concurrently. Origami supports file-based locking or by using a database (see `--lock-strategy`). The latter strategy is more compatible and set by default.
-Use `--lock-database` to specify the path to a lock database (if none is specified, Origami will create one in your data folder).
-
-For generating ground truth for training an OCR engine from a corpus, we suggest this general process:
-
-* Run batches up to `lines` on your page images.
-* Sample random lines using `origami.tool.sample`.
-* Fine tune your training corpus using `origami.tool.pick`.
-* Annotate using `origami.tool.annotate`.
-* Export annotations using `origami.tool.export`.
-* Train your OCR model.
 
 ## Batches
 
@@ -201,11 +201,17 @@ Given an OCR model, the necessary order of batches for performing OCR for a fold
 
 ## How to create ground truth
 
-You first need to detect lines in your pages: in order to do this, run `origami.batch.detect.binarize`,
-`origami.batch.detect.segment`, `origami.batch.detect.contours` and `origami.batch.detect.lines` on your
-`DATA_PATH` that contains your page images.
+For generating ground truth for training an OCR engine from a corpus, we suggest this general process:
 
-Now run `python -m origami.tool.sample DATA_PATH` (look at the `-s` parameter to specify which content
-you want to annotate) to generate an `annotations.db` with a sample of lines. You can now run
-`python -m origami.tool.pick DATA_PATH` to extend this sample with hand-picked lines from various pages
-(optional). Finally, run `python -m origami.tool.annotate DATA_PATH`, to edit and review transcriptions.
+* Run batches up to `lines` on your page images.
+* Sample random lines using `origami.tool.sample`.
+* Fine tune your training corpus using `origami.tool.pick` (optional).
+* Annotate using `origami.tool.annotate`.
+* Export annotations using `origami.tool.export`.
+* Train your OCR model.
+
+## Concurrency
+
+Batch processes can be run concurrently. Origami supports file-based locking or by using a database (see `--lock-strategy`). The latter strategy is more compatible and set by default.
+Use `--lock-database` to specify the path to a lock database (if none is specified, Origami will create one in your data folder).
+
