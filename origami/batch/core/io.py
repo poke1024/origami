@@ -5,6 +5,7 @@ import json
 import zipfile
 import collections
 import shapely.wkt
+import click
 
 from pathlib import Path
 from contextlib import contextmanager
@@ -396,3 +397,23 @@ class Output:
 
 	def instantiate(self, **kwargs):
 		return Writer(self._artifacts, self._stage, **kwargs)
+
+
+def parse_artifact(name):
+	if "/" in name:
+		parts = list(map(
+			lambda s: s.strip(), name.split("/")))
+		if len(parts) != 2:
+			raise ValueError(name)
+		t, name = parts
+		if t != "annotation":
+			raise ValueError(name)
+		artifact = Annotation(name)
+	else:
+		try:
+			artifact = Artifact[name.upper()]
+		except KeyError:
+			raise click.UsageError(
+				"illegal artifact name %s" % name)
+
+	return artifact

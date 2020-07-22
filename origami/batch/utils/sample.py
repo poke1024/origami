@@ -11,7 +11,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from origami.batch.core.processor import Processor
-from origami.batch.core.io import Artifact, Stage, Input, Annotation
+from origami.batch.core.io import Artifact, Stage, Input, Annotation, parse_artifact
 
 
 class DirectoryTarget:
@@ -87,22 +87,6 @@ _namers = {
 	NamingScheme.PAGE: name_by_page,
 	NamingScheme.PATH: name_by_path
 }
-
-
-def parse_artifact(name):
-	if "/" in name:
-		parts = list(map(
-			lambda s: s.strip(), name.split("/")))
-		if len(parts) != 2:
-			raise ValueError(name)
-		t, name = parts
-		if t != "annotation":
-			raise ValueError(name)
-		artifact = Annotation(name)
-	else:
-		artifact = Artifact[name.upper()]
-
-	return artifact
 
 
 class SampleProcessor(Processor):
