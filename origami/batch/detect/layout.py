@@ -791,7 +791,7 @@ class FixSpillOver:
 			crop = (crop > thresh_sauvola).astype(np.float32)
 
 			ink_v = scipy.ndimage.convolve(
-				crop, kernel(int_line_height, 1), mode="constant")
+				crop, kernel(int_line_height, 1), mode="constant", cval=1)
 
 			ink_h = np.quantile(ink_v, self._level, axis=0)
 
