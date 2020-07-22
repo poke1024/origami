@@ -10,9 +10,10 @@ from origami.batch.core.io import Artifact, Stage, Input, Output
 
 
 class SegmentationProcessor(Processor):
-	def __init__(self, predictor, options):
+	def __init__(self, model, options):
 		super().__init__(options)
-		self._predictor = predictor
+		self._model_path = model
+		self._predictor = None
 
 	@property
 	def processor_name(self):
@@ -24,6 +25,9 @@ class SegmentationProcessor(Processor):
 		]
 
 	def process(self, p: Path, output):
+		if self._predictor is None:
+			self._predictor = SegmentationPredictor(self._model_path)
+
 		segmentation = self._predictor(p)
 		output.segmentation(segmentation)
 
@@ -41,8 +45,7 @@ class SegmentationProcessor(Processor):
 @Processor.options
 def segment(data_path, model, **kwargs):
 	""" Perform page segmentation on all document images in DATA_PATH. """
-	predictor = SegmentationPredictor(model)
-	processor = SegmentationProcessor(predictor, kwargs)
+	processor = SegmentationProcessor(model, kwargs)
 	processor.traverse(data_path)
 
 
