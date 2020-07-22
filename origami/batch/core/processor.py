@@ -32,6 +32,19 @@ def qt_app():
 	return QtGui.QGuiApplication()
 
 
+def is_image(path):
+	# imghdr might be the perfect tool for this, but
+	# it fails to detect some valid images. so we go
+	# with extenstions for the most part.
+	# see https://stackoverflow.com/questions/36870661/
+	# imghdr-python-cant-detec-type-of-some-images-image-extension
+
+	if path.suffix.lower() in (".jpg", ".png", ".tif", ".tiff"):
+		return True
+
+	return imghdr.what(path) is not None
+
+
 class Processor:
 	def __init__(self, options, needs_qt=False):
 		self._overwrite = options.get("overwrite", False)
@@ -219,7 +232,8 @@ class Processor:
 
 					if self._name and not re.search(self._name, str(p)):
 						continue
-					if imghdr.what(p) is None:
+
+					if not is_image(p):
 						if self._verbose:
 							print("skipping %s: not an image." % p)
 						continue
