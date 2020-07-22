@@ -335,7 +335,7 @@ class IsBelow:
 
 class Dilation:
 	def __init__(self, spec):
-		self._operator = DilationOperator(spec)
+		self._operator = HullOperator(spec)
 
 	def __call__(self, regions):
 		regions.map(lambda _, contour: self._operator(regions.page, contour))
@@ -509,12 +509,12 @@ class DominanceOperator:
 			self._resolve(regions, nodes)
 
 
-class DilationOperator:
+class HullOperator:
 	def __init__(self, spec):
 		names = ("none", "rect", "convex", "concave")
 
 		funcs = dict(
-			(x, getattr(DilationOperator, "_" + x))
+			(x, getattr(HullOperator, "_" + x))
 			for x in names)
 
 		self._f = build_func_from_string(spec, funcs)
@@ -565,7 +565,7 @@ class DilationOperator:
 
 class UnionOperator:
 	def __init__(self, spec):
-		self._dilation = DilationOperator(spec)
+		self._dilation = HullOperator(spec)
 
 	def __call__(self, page, shapes):
 		if len(shapes) > 1:
