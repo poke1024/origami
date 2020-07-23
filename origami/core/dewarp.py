@@ -367,11 +367,14 @@ class Samples:
 
 
 class Field:
-	def __init__(self, samples, size):
+	def __init__(self, samples, size, phi0):
 		self._size = size
 
-		self._interp = lininterp(
-			samples.points, samples.values, (0, 0, size[0], size[1]))
+		if len(samples.points) < 2:
+			self._interp = lambda pts: [phi0 for _ in pts]
+		else:
+			self._interp = lininterp(
+				samples.points, samples.values, (0, 0, size[0], size[1]))
 
 	def get(self, pts):
 		angles = self._interp(pts)
@@ -564,12 +567,12 @@ class GridFactory:
 	@cached_property
 	def field_h(self):
 		size = (self._width, self._height)
-		return Field(self._samples_h, size)
+		return Field(self._samples_h, size, phi0=0)
 
 	@cached_property
 	def field_v(self):
 		size = (self._width, self._height)
-		return Field(self._samples_v, size)
+		return Field(self._samples_v, size, phi0=math.pi / 2)
 
 	@cached_property
 	def grid_shape(self):
