@@ -28,9 +28,11 @@ class LineExtractionProcessor(Processor):
 			name.append("dewarped")
 		elif not self._options["do_not_deskew"]:
 			name.append("deskewed")
-		if self._options["binarize"]:
+		if self._options.get("binarize", False):
 			name.append("binarized")
-			name.append(int(self._options["binarize_window_size"]))
+			w_size = self._options.get("binarize_window_size")
+			if w_size is not None:
+				name.append(int(w_size))
 		name.append("zip")
 		return DebuggingArtifact(".".join(name))
 
@@ -48,7 +50,7 @@ class LineExtractionProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, input, output):
-		lines = input.lines.by_path.items
+		lines = input.lines.by_path
 		tables = None if self._options["do_not_dewarp"] else input.tables
 
 		extractor = LineExtractor(
