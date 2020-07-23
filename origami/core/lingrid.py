@@ -68,6 +68,11 @@ class Box:
 				"point %s outside given domain, %s does not hit %s" % (
 					p, ray, self._box))
 
+		if int_pt.geom_type != "Point":
+			raise ValueError(
+				"expected Point, got %s with ray %s on box %s" % (
+					int_pt, ray, self._box))
+
 		pt = tuple(list(int_pt.coords)[0])
 		borders = set()
 
