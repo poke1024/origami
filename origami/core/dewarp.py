@@ -371,7 +371,7 @@ class Field:
 		self._size = size
 
 		self._interp = lininterp(
-			samples.points, samples.values, (0, 0, size[0] - 1, size[1] - 1))
+			samples.points, samples.values, (0, 0, size[0], size[1]))
 
 	def get(self, pts):
 		angles = self._interp(pts)
