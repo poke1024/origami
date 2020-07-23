@@ -191,8 +191,8 @@ class Interpolator:
 
 class InterpolatorFactory:
 	def __init__(self, points, values, bounds):
-		if len(values) == 0:
-			raise ValueError("no values given.")
+		if len(values) < 2:
+			raise ValueError("not enough values given.")
 
 		self._points = points
 		self._values = values
