@@ -13,9 +13,14 @@ from origami.batch.core.processor import Processor
 from origami.batch.core.io import find_data_path
 
 
+def traceback_dict():
+	return collections.defaultdict(list)
+
+
 class StatsProcessor(Processor):
 	def __init__(self, options):
-		options["nolock"] = True
+		options["lock_strategy"] = "NONE"
+		options["processes"] = 1
 		super().__init__(options)
 
 		self._list_names = options["list_names"]
@@ -25,8 +30,7 @@ class StatsProcessor(Processor):
 			self._names = None
 
 		self._list_errors = options["list_errors"]
-		self._tracebacks = collections.defaultdict(
-			lambda: collections.defaultdict(list))
+		self._tracebacks = collections.defaultdict(traceback_dict)
 
 		self._num_pages = 0
 		self._artifacts = collections.defaultdict(int)
