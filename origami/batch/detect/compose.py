@@ -23,10 +23,15 @@ def sorted_by_keys(x):
 
 
 def polygon_union(geoms):
+	if not geoms:
+		return None
 	shape = shapely.ops.cascaded_union(geoms)
 	if shape.geom_type != "Polygon":
 		shape = shape.convex_hull
-	return shape
+	if shape.is_empty or not shape.is_valid:
+		return None
+	else:
+		return shape
 
 
 class MergedTextRegion:
@@ -39,6 +44,9 @@ class MergedTextRegion:
 		self._lines = lines
 
 	def export_page_xml(self, px_document):
+		if self._polygon is None:
+			return
+
 		px_region = px_document.append_region(
 			"TextRegion", id_="-".join(self._block_path))
 		px_region.append_coords(self._transform(
@@ -212,11 +220,16 @@ class TableRegion:
 							line_shapes.append(line_shape)
 
 						elif text.strip():
-							add_cell = True
-							line_shape = None
+							# we have no cell geometry but some text. usually this
+							# stems from buffering around a point and the text is
+							# meaningless. we omit it.
+							# FIXME investigate how these cell geometries come to be.
 
-							logging.warning("no cell geometry for text '%s' on page %s" % (
-								text, self._document.page_path))
+							add_cell = False
+
+							logging.warning(
+								"no cell geometry for text '%s' on page %s" % (
+									text, self._document.page_path))
 						else:
 							add_cell = False
 
@@ -240,26 +253,26 @@ class TableRegion:
 					else:
 						px_division.remove(px_cell)
 
-				if cell_shapes:
-					division_shape = polygon_union(cell_shapes)
+				division_shape = polygon_union(cell_shapes)
+				if division_shape is not None:
 					px_division.prepend_coords(self._transform(
 						division_shape.exterior.coords))
 					division_shapes.append(division_shape)
 				else:
 					px_column.remove(px_division)
 
-			if division_shapes:
-				column_shape = polygon_union(division_shapes)
+			column_shape = polygon_union(division_shapes)
+			if column_shape is not None:
 				px_column.prepend_coords(self._transform(
 					column_shape.exterior.coords))
 				column_shapes.append(column_shape)
 			else:
 				px_table_region.remove(px_column)
 
-		if column_shapes:
-			shape = polygon_union(column_shapes)
+		table_shape = polygon_union(column_shapes)
+		if table_shape is not None:
 			px_table_region.prepend_coords(self._transform(
-				shape.exterior.coords))
+				table_shape.exterior.coords))
 		else:
 			logging.warning("table %s was empty on page %s." % (
 				str(self._block_path), self._document.page_path))
@@ -374,8 +387,18 @@ class Document:
 		# negative coordinates. we need to clip.
 		width, height = self.page.size(False)
 		box = shapely.geometry.box(0, 0, width, height)
-		poly = shapely.geometry.Polygon(warped_coords).intersection(box)
-		return poly.exterior.coords
+		poly = shapely.geometry.Polygon(warped_coords)
+		if not poly.is_valid:
+			poly = poly.convex_hull
+		page_poly = poly.intersection(box)
+		if page_poly.is_empty:
+			raise RuntimeError(
+				"failed to rewarp coords %s as %s outside page" % (
+					str(list(coords)),
+					poly))
+			return None
+		else:
+			return page_poly.exterior.coords
 
 	def blocks_and_lines(self, block_path):
 		blocks = []
