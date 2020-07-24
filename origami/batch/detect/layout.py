@@ -117,6 +117,22 @@ class Regions:
 		return self._page
 
 	@cached_property
+	def binarized(self):
+		grayscale = np.array(
+			self._page.dewarped.convert("L"))
+
+		m_lh = self.median_line_height
+
+		window_size = m_lh // 2
+		if window_size % 2 == 0:
+			window_size += 1
+		window_size = max(window_size, 3)
+
+		thresh_sauvola = skimage.filters.threshold_sauvola(
+			grayscale, window_size)
+		return (grayscale > thresh_sauvola).astype(np.float32)
+
+	@cached_property
 	def geometry(self):
 		return self.page.geometry(dewarped=True)
 
@@ -230,6 +246,15 @@ class Regions:
 				heights.append(line.dewarped_height(dewarper))
 
 		return heights
+
+	@cached_property
+	def median_line_height(self):
+		heights = []
+		dewarper = self.page.dewarper
+		for lines in self.warped_lines_by_block.values():
+			for line in lines:
+				heights.append(line.dewarped_height(dewarper))
+		return max(6, int(np.median(heights)))
 
 
 class Transformer:
@@ -726,10 +751,23 @@ class AreaFilter:
 
 
 class FixSpillOver:
+	def _binarized_crop(self, regions, contour):
+		minx, miny, maxx, maxy = contour.bounds
+
+		binarized = regions.binarized
+		miny = int(max(0, miny))
+		minx = int(max(0, minx))
+		maxy = int(min(maxy, binarized.shape[0]))
+		maxx = int(min(maxx, binarized.shape[1]))
+
+		return binarized[miny:maxy, minx:maxx], (minx, miny)
+
+
+class FixSpillOverH(FixSpillOver):
 	def __init__(
 			self, filters,
 			level=0.1, band=0.01, peak=0.8, whratio=1.5,
-			min_line_count=3, min_area=0.2, window_size=15):
+			min_line_count=3, min_area=0.2):
 
 		# "whratio" is measured in line height (lh). examples:
 		# good split: w=90, lh=35, whratio=2.5
@@ -742,7 +780,6 @@ class FixSpillOver:
 		self._whratio = whratio
 		self._min_line_count = min_line_count
 		self._min_area = min_area
-		self._window_size = window_size
 
 	def _good_split(self, union, shapes):
 		union_area = union.area
@@ -752,16 +789,17 @@ class FixSpillOver:
 	def __call__(self, regions):
 		# for each contour, sample the binarized image.
 		# if we detect a whitespace region in a column,
-		# we split the polygon here and now.
-		# since we dewarped, we know columns are unskewed.
-		page = regions.page
-		pixels = np.array(page.dewarped.convert("L"))
+		# we split the polygon. since we dewarped, we know
+		# columns are unskewed.
+
+		m_lh = regions.median_line_height
 
 		kernel_w = max(
-			10,  # pixels in warped image space
+			m_lh / 5,  # pixels in dewarped image space
 			int(np.ceil(regions.geometry.rel_length(self._band))))
 
 		splits = []
+		binarized = regions.binarized
 
 		for k, contour in regions.contours.items():
 			if not self._filter(k):
@@ -777,18 +815,7 @@ class FixSpillOver:
 			line_height = np.median(line_heights)
 			int_line_height = max(6, int(line_height))
 
-			minx, miny, maxx, maxy = contour.bounds
-
-			miny = int(max(0, miny))
-			minx = int(max(0, minx))
-			maxy = int(min(maxy, pixels.shape[0]))
-			maxx = int(min(maxx, pixels.shape[1]))
-
-			crop = pixels[miny:maxy, minx:maxx]
-
-			thresh_sauvola = skimage.filters.threshold_sauvola(
-				crop, window_size=self._window_size)
-			crop = (crop > thresh_sauvola).astype(np.float32)
+			crop, (minx, miny) = self._binarized_crop(regions, contour)
 
 			ink_v = scipy.ndimage.convolve(
 				crop, kernel(int_line_height, 1), mode="constant", cval=1)
@@ -809,7 +836,7 @@ class FixSpillOver:
 				x = peaks[i] + minx
 
 				sep = shapely.geometry.LineString([
-					[x, -1], [x, pixels.shape[0] + 1]
+					[x, -1], [x, binarized.shape[0] + 1]
 				])
 
 				splits.append((k, contour, sep))
@@ -820,6 +847,53 @@ class FixSpillOver:
 				regions.remove_contour(k)
 				for shape in shapes:
 					regions.add_contour(k[:2], shape)
+
+
+class FixSpillOverV(FixSpillOver):
+	def __init__(self, filters):
+		self._filter = RegionsFilter(filters)
+
+	def __call__(self, regions):
+		m_lh = regions.median_line_height
+
+		splits = []
+		binarized = regions.binarized
+
+		for k, contour in regions.contours.items():
+			if not self._filter(k):
+				continue
+
+			crop, (minx, miny) = self._binarized_crop(regions, contour)
+
+			letter_width = int(m_lh)  # guess
+			ink_h = scipy.ndimage.convolve(
+				crop, kernel(1, letter_width * 10), mode="constant")
+			ink_v = np.quantile(ink_h, 0.1, axis=1)
+
+			ink_v2 = np.convolve(
+				ink_v, kernel(m_lh // 2), mode="same")
+
+			peaks, info = scipy.signal.find_peaks(
+				ink_v2,
+				height=0.75,
+				width=m_lh * 2,
+				rel_height=2)
+
+			if len(peaks) > 0:
+				i = np.argmax(info["peak_heights"])
+				y = peaks[i] + miny
+
+				sep = shapely.geometry.LineString([
+					[-1, y], [binarized.shape[1] + 1, y]
+				])
+
+				splits.append((k, contour, sep))
+
+		for k, contour, sep in splits:
+			shapes = shapely.ops.split(contour, sep).geoms
+			regions.remove_contour(k)
+			for shape in shapes:
+				regions.add_contour(k[:2], shape)
 
 
 class TableLayoutDetector:

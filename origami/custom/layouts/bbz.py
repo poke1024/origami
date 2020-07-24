@@ -33,6 +33,7 @@ def make_transformer():
         DominanceOperator(
             filters="regions/TEXT, regions/TABULAR",
             fringe=_fringe),
-        FixSpillOver("regions/TEXT"),
+        FixSpillOverH("regions/TEXT"),
+        FixSpillOverV("regions/TEXT"),
         AreaFilter(0.005)
     ])
