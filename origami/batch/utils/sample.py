@@ -71,14 +71,13 @@ class NamingScheme(enum.Enum):
 	PATH = 1
 
 
-def name_by_page(suffix, path):
-	return path.parent.with_suffix(suffix).name
+def name_by_page(path):
+	return path.name
 
 
-def name_by_path(suffix, path):
-	name = path.parent.with_suffix(suffix)
+def name_by_path(path):
 	sep = "--"
-	name = str(name).replace("/", sep)
+	name = str(path).replace("/", sep)
 	name = name.strip(sep)
 	return name
 
@@ -106,17 +105,22 @@ class SampleProcessor(Processor):
 			self._options["filename"].upper()]]
 
 		self._artifacts = []
+		self._copy_page = False
 		for spec in options["artifacts"].split(","):
-			artifact = parse_artifact(spec.strip())
-
-			if self._options["do_not_unpack"]:
-				copy = self._target.default_copy
-			elif artifact == Artifact.COMPOSE:
-				copy = self._target.unpack_zip
+			s = spec.strip()
+			if s.upper() == "PAGE":
+				self._copy_page = True
 			else:
-				copy = self._target.default_copy
+				artifact = parse_artifact(s)
 
-			self._artifacts.append((artifact, copy))
+				if self._options["do_not_unpack"]:
+					copy = self._target.default_copy
+				elif artifact == Artifact.COMPOSE:
+					copy = self._target.unpack_zip
+				else:
+					copy = self._target.default_copy
+
+				self._artifacts.append((artifact, copy))
 
 		self._queue = []
 
@@ -131,17 +135,26 @@ class SampleProcessor(Processor):
 	def should_process(self, p: Path) -> bool:
 		return True
 
+	def _enqueue(self, *copy_args):
+		if self._options["all"]:  # take all?
+			self._copy(*copy_args)
+		else:
+			self._queue.append(copy_args)
+
 	def process(self, page_path: Path, data):
 		for artifact, copy in self._artifacts:
-			copy_args = (artifact, data.path(artifact), copy)
-			if self._options["all"]:  # take all?
-				self._copy(*copy_args)
-			else:
-				self._queue.append(copy_args)
+			self._enqueue(artifact, data.path(artifact), copy)
+
+		if self._copy_page:
+			self._enqueue(None, page_path, self._target.default_copy)
 
 	def _copy(self, artifact, path, copy):
-		copy(path, self._namer(
-			"." + artifact.filename(self._stage), path))
+		if artifact is None:
+			renamed_path = path
+		else:
+			suffix = "." + artifact.filename(self._stage)
+			renamed_path = path.parent.with_suffix(suffix)
+		copy(path, self._namer(renamed_path))
 
 	def output(self):
 		if self._options["all"]:
