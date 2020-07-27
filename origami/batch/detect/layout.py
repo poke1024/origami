@@ -52,6 +52,15 @@ def kernel(*s):
 	return np.ones(s) / np.prod(s)
 
 
+def _line_length(geom):
+	if geom.geom_type == "LineString":
+		return geom.length
+	elif geom.geom_type == "MultiLineString":
+		return sum(map(_line_length, geom.geoms))
+	else:
+		return 0
+
+
 class LineCounts:
 	def __init__(self, lines):
 		num_lines = collections.defaultdict(int)
@@ -839,9 +848,13 @@ class FixSpillOverH(FixSpillOver):
 					[x, -1], [x, binarized.shape[0] + 1]
 				])
 
-				splits.append((k, contour, sep))
+				splits.append((k, contour, sep, line_height))
 
-		for k, contour, sep in splits:
+		for k, contour, sep, lh in splits:
+			split_length = _line_length(contour.intersection(sep))
+			if split_length < lh * self._min_line_count:
+				continue
+
 			shapes = shapely.ops.split(contour, sep).geoms
 			if self._good_split(contour, shapes):
 				regions.remove_contour(k)
