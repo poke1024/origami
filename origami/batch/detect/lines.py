@@ -131,7 +131,7 @@ class LineDetectionProcessor(Processor):
 @click.option(
 	'--min-confidence',
 	type=float,
-	default=0.5)
+	default=0)
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),

@@ -30,9 +30,10 @@ def make_transformer():
             "regions/TABULAR", IsBelow()),
         seq_merger,
         OverlapMerger(0),
+        Dilation("rect"),
         DominanceOperator(
             filters="regions/TEXT, regions/TABULAR",
-            fringe=_fringe),
+            fringe=0),
         FixSpillOverH("regions/TEXT"),
         FixSpillOverV("regions/TEXT"),
         AreaFilter(0.005)

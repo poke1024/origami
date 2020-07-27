@@ -78,7 +78,7 @@ class ReadingOrderProcessor(Processor):
 
 		reliable_region_lines = collections.defaultdict(list)
 		for line_path, line in lines.items():
-			if line.confidence > min_confidence:
+			if line.confidence >= min_confidence:
 				reliable_region_lines[line_path[:3]].append((line_path, line))
 
 		sampler = ObstacleSampler(separators)
