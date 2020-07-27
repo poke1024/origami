@@ -1,0 +1,138 @@
+{
+	"annotations": {
+		"BACKGROUND": {
+			"rgbColor": [255, 255, 255],
+			"weight": 2
+		},
+		"FRAKTUR_BG": {
+			"rgbColor": [0, 249, 0],
+			"weight": 1
+		},
+		"FRAKTUR_SM": {
+			"rgbColor": [255, 64, 255],
+			"weight": 1
+		},
+		"ANTIQUA_BG": {
+			"rgbColor": [255, 251, 0],
+			"weight": 1
+		},
+		"ANTIQUA_SM": {
+			"rgbColor": [170, 121, 66],
+			"weight": 1
+		},
+		"TABTXT": {
+			"rgbColor": [255, 147, 0],
+			"weight": 1
+		},
+		"BORDER": {
+			"rgbColor": [168, 211, 170],
+			"weight": 1
+		},
+		"TABCOL": {
+			"rgbColor": [242, 148, 138],
+			"weight": 3,
+			"separator": {
+				"orientation": "v"
+			}
+		},
+		"H": {
+			"rgbColor": [255, 38, 0],
+			"weight": 4,
+			"separator": {
+				"orientation": "h"
+			}
+		},
+		"V": {
+			"rgbColor": [0, 48, 255],
+			"weight": 5,
+			"separator": {
+				"orientation": "v"
+			}
+		},
+		"H_SM": {
+			"rgbColor": [0, 253, 255],
+			"weight": 1
+		},
+		"ILLUSTRATION": {
+			"rgbColor": [163, 215, 223],
+			"weight": 1
+		},
+		"LINE": {
+			"rgbColor": [80, 200, 20],
+			"weight": 1
+		}
+	},
+	"groups": {
+		"BACKGROUND": ["BACKGROUND"],
+		"TEXT": ["FRAKTUR_BG", "FRAKTUR_SM", "ANTIQUA_BG", "ANTIQUA_SM"],
+		"TABULAR": ["TABTXT"],
+		"ILLUSTRATION": ["BORDER", "ILLUSTRATION", "H_SM"],
+		"T": ["TABCOL"],
+		"H": ["H"],
+		"V": ["V"]
+	},
+	"postprocessing_IGNORE": {
+		"painter": {
+			"segment_thickness": 2,
+			"segment_extend": {
+				"V": 0.02,
+				"H": 0.2
+			}
+		},
+		"joiner": {
+			"overrides": [
+				{
+					"for": "TABCOL",
+					"override": "TABTXT"
+				},
+				{
+					"for": "H",
+					"override": "TABTXT"
+				},
+				{
+					"for": "V",
+					"override": "ANTIQUA_SM"
+				},
+				{
+					"override": "BORDER"
+				}
+			]
+		},
+		"merge": [
+			{
+				"strategy": "by_distance",
+				"args": {
+					"distances": {
+						"TABCOL": 500,
+						"H": 500,
+						"V": 500
+					}
+				}
+			},
+			{
+				"strategy": "parallel",
+				"args": {
+					"overlap_buffer": 1,
+					"close_distance": 5
+				}
+			},
+			{
+				"strategy": "by_length",
+				"args": {
+					"lengths": {
+						"TABCOL": 0,
+						"H": 10,
+						"V": 10
+					}
+				}
+			},
+			{
+				"strategy": "by_quality",
+				"args": {
+					"max_error": 0.1,
+					"min_length": 1e-3
+				}
+			}
+		]
+	}
+}
