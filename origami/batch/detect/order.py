@@ -52,18 +52,18 @@ class ReadingOrderProcessor(Processor):
 							minx = min(p1[0], p2[0])
 							maxx = max(p1[0], p2[0])
 							y = (p1[1] + p2[1]) / 2
-							line_y[line_path] = y
 							tess_data = line.info["tesseract_data"]
 							ascent = abs(tess_data['ascent'])
 							descent = abs(tess_data['descent'])
 							ratio = 0.5  # reduce height
 							items.append((line_path, (
 								minx, y - ascent * ratio, maxx, y + descent * ratio)))
+							line_y[line_path] = y + ascent / 2
 					else:
 						bounds = contours[g].bounds
+						items.append((g, bounds))
 						_, miny, _, maxy = bounds
 						line_y[g] = (miny + maxy) / 2
-						items.append((g, bounds))
 
 				for g in bounds_order(items, score=sampler, mode="grouped"):
 					if len(g) <= 1:
