@@ -94,7 +94,7 @@ def non_empty_contours(contours):
 
 
 class Regions:
-	def __init__(self, page, warped_lines, contours, separators, union):
+	def __init__(self, page, warped_lines, contours, separators):
 		self._page = page
 
 		self._contours = dict(non_empty_contours(contours))
@@ -105,7 +105,7 @@ class Regions:
 
 		self._line_counts = LineCounts(warped_lines)
 		self._warped_lines = warped_lines
-		self._union = union
+		self._union = None
 		self._mapped_from = collections.defaultdict(list)
 
 		max_labels = collections.defaultdict(int)
@@ -120,6 +120,9 @@ class Regions:
 			if contour.geom_type not in allowed:
 				raise ValueError("%s not in %s" % (
 					contour.geom_type, allowed))
+
+	def set_union_operator(self, u):
+		self._union = u
 
 	@property
 	def page(self):
@@ -467,7 +470,11 @@ class DominanceOperator:
 		return graph
 
 	def _resolve(self, regions, nodes):
+		if len(nodes) <= 1:
+			return False
+
 		fringe = regions.geometry.rel_length(self._fringe)
+		changed = False
 
 		# phase 1. larger areas consume smaller areas.
 
@@ -499,31 +506,35 @@ class DominanceOperator:
 							del remaining[x]
 					remaining[largest_path] = regions.contours[largest_path].area
 					done = False
+					changed = True
 					break
 
 		# phase 2. resolve remaining overlaps.
 
-		def shrink(path, shrinking, other):
-			intersection = shrinking.intersection(other)
+		def shrink(shrinked_path, constant_path):
+			polygon = regions.contours[shrinked_path]
+			other = regions.contours[constant_path]
+
+			intersection = polygon.intersection(other)
 			if intersection.area < 1:
 				return False
 
-			polygon = shrinking.difference(other)
+			polygon = polygon.difference(other)
 			if polygon.is_empty:
-				regions.remove_contour(path)
-				del remaining[path]
+				regions.remove_contour(shrinked_path)
+				del remaining[shrinked_path]
 			elif polygon.geom_type == "MultiPolygon":
-				regions.remove_contour(path)
-				del remaining[path]
+				regions.remove_contour(shrinked_path)
+				del remaining[shrinked_path]
 				for geom in polygon.geoms:
-					new_path = regions.add_contour(path[:2], geom)
+					new_path = regions.add_contour(shrinked_path[:2], geom)
 					remaining[new_path] = geom.area
 			elif polygon.geom_type != "Polygon":
 				raise RuntimeError(
 					"illegal shape %d" % polygon.geom_type)
 			else:
-				regions.modify_contour(path, polygon)
-				remaining[path] = polygon.area
+				regions.modify_contour(shrinked_path, polygon)
+				remaining[shrinked_path] = polygon.area
 
 			return True
 
@@ -534,18 +545,21 @@ class DominanceOperator:
 
 			done = True
 			largest_path = by_area[-1]
-			largest = regions.contours[largest_path]
-			for path in by_area[:-1]:
-				polygon = regions.contours[path]
+			for smaller_path in by_area[:-1]:
 				if self._strategy == "take_from_large":
-					if shrink(largest_path, largest, polygon):
+					if shrink(largest_path, smaller_path):
+						print(largest_path, smaller_path)
 						done = False
+						changed = True
 						break
 				elif self._strategy == "take_from_small":
-					if shrink(path, polygon, largest):
+					if shrink(smaller_path, largest_path):
 						done = False
+						changed = True
 				else:
 					raise ValueError(self._strategy)
+
+		return changed
 
 	def __call__(self, regions):
 		f_contours = [
@@ -623,6 +637,14 @@ class UnionOperator:
 			u = shapes[0]
 
 		return self._dilation(page, u)
+
+
+class SetUnionOperator:
+	def __init__(self, spec):
+		self._union = UnionOperator(spec)
+
+	def __call__(self, regions):
+		regions.set_union_operator(self._union)
 
 
 class SequentialMerger:
@@ -1129,7 +1151,6 @@ class LayoutDetectionProcessor(Processor):
 		except ModuleNotFoundError as e:
 			raise click.UsageError("layout %s not found in origami.custom.layouts" % layout_name)
 
-		self._union = getattr(imported_module, "make_union_operator")()
 		self._transformer = getattr(imported_module, "make_transformer")()
 
 		self._table_column_detector = TableLayoutDetector(
@@ -1168,8 +1189,7 @@ class LayoutDetectionProcessor(Processor):
 
 		regions = Regions(
 			page, warped.lines.by_path,
-			contours, separators,
-			self._union)
+			contours, separators)
 		self._transformer(regions)
 
 		# we split table cells into separate regions so that the

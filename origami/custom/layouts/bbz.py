@@ -3,10 +3,6 @@ from origami.batch.detect.layout import *
 _fringe = 0.001
 
 
-def make_union_operator():
-    return UnionOperator("convex")
-
-
 def make_transformer():
     seq_merger = SequentialMerger(
         filters="regions/TABULAR",
@@ -17,6 +13,7 @@ def make_transformer():
         obstacles=["separators/V"])
 
     return Transformer([
+        SetUnionOperator("convex"),
         Dilation("none"),
         AdjacencyMerger(
             "regions/TEXT",
@@ -31,6 +28,7 @@ def make_transformer():
         seq_merger,
         OverlapMerger(0),
         Dilation("rect"),
+        SetUnionOperator("none"),
         DominanceOperator(
             filters="regions/TEXT, regions/TABULAR",
             fringe=0,
