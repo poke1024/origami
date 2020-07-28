@@ -33,7 +33,8 @@ def make_transformer():
         Dilation("rect"),
         DominanceOperator(
             filters="regions/TEXT, regions/TABULAR",
-            fringe=0),
+            fringe=0,
+            strategy="take_from_large"),
         FixSpillOverH("regions/TEXT"),
         FixSpillOverV("regions/TEXT"),
         AreaFilter(0.005)

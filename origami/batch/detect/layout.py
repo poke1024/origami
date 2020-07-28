@@ -445,9 +445,10 @@ class Overlap:
 
 
 class DominanceOperator:
-	def __init__(self, filters, fringe):
+	def __init__(self, filters, fringe, strategy="take_from_large"):
 		self._filter = RegionsFilter(filters)
 		self._fringe = fringe
+		self._strategy = strategy
 
 	def _graph(self, contours):
 		graph = nx.Graph()
@@ -502,6 +503,30 @@ class DominanceOperator:
 
 		# phase 2. resolve remaining overlaps.
 
+		def shrink(path, shrinking, other):
+			intersection = shrinking.intersection(other)
+			if intersection.area < 1:
+				return False
+
+			polygon = shrinking.difference(other)
+			if polygon.is_empty:
+				regions.remove_contour(path)
+				del remaining[path]
+			elif polygon.geom_type == "MultiPolygon":
+				regions.remove_contour(path)
+				del remaining[path]
+				for geom in polygon.geoms:
+					new_path = regions.add_contour(path[:2], geom)
+					remaining[new_path] = geom.area
+			elif polygon.geom_type != "Polygon":
+				raise RuntimeError(
+					"illegal shape %d" % polygon.geom_type)
+			else:
+				regions.modify_contour(path, polygon)
+				remaining[path] = polygon.area
+
+			return True
+
 		done = len(remaining) < 2
 		while not done:
 			by_area = [x[0] for x in sorted(
@@ -512,25 +537,15 @@ class DominanceOperator:
 			largest = regions.contours[largest_path]
 			for path in by_area[:-1]:
 				polygon = regions.contours[path]
-				intersection = polygon.intersection(largest)
-				if intersection.area > 1:
-					done = False
-					polygon = polygon.difference(largest)
-					if polygon.is_empty:
-						regions.remove_contour(path)
-						del remaining[path]
-					elif polygon.geom_type == "MultiPolygon":
-						regions.remove_contour(path)
-						del remaining[path]
-						for geom in polygon.geoms:
-							new_path = regions.add_contour(path[:2], geom)
-							remaining[new_path] = geom.area
-					elif polygon.geom_type != "Polygon":
-						raise RuntimeError(
-							"illegal shape %d" % polygon.geom_type)
-					else:
-						regions.modify_contour(path, polygon)
-						remaining[path] = polygon.area
+				if self._strategy == "take_from_large":
+					if shrink(largest_path, largest, polygon):
+						done = False
+						break
+				elif self._strategy == "take_from_small":
+					if shrink(path, polygon, largest):
+						done = False
+				else:
+					raise ValueError(self._strategy)
 
 	def __call__(self, regions):
 		f_contours = [
