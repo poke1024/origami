@@ -285,7 +285,7 @@ class Transformer:
 					operator.__class__.__name__, 1 + i))
 
 
-def _alignment(a0, a1, b0, b1):
+def alignment(a0, a1, b0, b1):
 	span_a = portion.closed(a0, a1)
 	span_b = portion.closed(b0, b1)
 	shared = span_a & span_b
@@ -322,7 +322,7 @@ class IsOnSameLine:
 		_, ay0, _, ay1 = a.bounds
 		_, by0, _, by1 = b.bounds
 
-		if _alignment(ay0, ay1, by0, by1) < self._min_alignment:
+		if alignment(ay0, ay1, by0, by1) < self._min_alignment:
 			return False
 
 		if a.distance(b) > regions.geometry.rel_length(self._max_distance):
@@ -352,7 +352,7 @@ class IsBelow:
 		if not (0 < minyb - maxya < h):
 			return False
 
-		if _alignment(minxa, maxxa, minxb, maxxb) < self._min_alignment:
+		if alignment(minxa, maxxa, minxb, maxxb) < self._min_alignment:
 			return False
 
 		return True
@@ -448,7 +448,7 @@ class Overlap:
 
 
 class DominanceOperator:
-	def __init__(self, filters, fringe, strategy="take_from_large"):
+	def __init__(self, filters, fringe, strategy):
 		self._filter = RegionsFilter(filters)
 		self._fringe = fringe
 		self._strategy = strategy
@@ -463,9 +463,10 @@ class DominanceOperator:
 			for other in tree.query(contour):
 				if contour.name == other.name:
 					continue
-				graph.add_edge(
-					tuple(contour.name.split("/")),
-					tuple(other.name.split("/")))
+				if contour.intersects(other):
+					graph.add_edge(
+						tuple(contour.name.split("/")),
+						tuple(other.name.split("/")))
 
 		return graph
 
@@ -481,6 +482,13 @@ class DominanceOperator:
 		remaining = dict([
 			(k, regions.contours[k].area)
 			for k in nodes])
+
+		def merge(union, agg_path):
+			regions.combine(union, agg_path=agg_path)
+			for x in union:
+				if x != agg_path:
+					del remaining[x]
+			remaining[agg_path] = regions.contours[agg_path].area
 
 		done = False
 		while not done:
@@ -500,11 +508,7 @@ class DominanceOperator:
 					elif largest.contains(polygon):
 						union.append(path)
 				if len(union) > 1:
-					regions.combine(union, agg_path=largest_path)
-					for x in union:
-						if x != largest_path:
-							del remaining[x]
-					remaining[largest_path] = regions.contours[largest_path].area
+					merge(union, largest_path)
 					done = False
 					changed = True
 					break
@@ -540,23 +544,22 @@ class DominanceOperator:
 
 		done = len(remaining) < 2
 		while not done:
-			by_area = [x[0] for x in sorted(
-				list(remaining.items()), key=lambda x: x[-1])]
+			neighbors_ = neighbors(dict(
+				(k, regions.contours[k]) for k in remaining.keys()))
 
 			done = True
-			largest_path = by_area[-1]
-			for smaller_path in by_area[:-1]:
-				if self._strategy == "take_from_large":
-					if shrink(largest_path, smaller_path):
+			for pk, qk in neighbors_.edges():
+				if pk in regions.contours and qk in regions.contours:
+					r = self._strategy(regions.contours, pk, qk)
+
+					if r[0] == "merge":
+						merge([pk, qk], r[1])
 						done = False
 						changed = True
-						break
-				elif self._strategy == "take_from_small":
-					if shrink(smaller_path, largest_path):
-						done = False
-						changed = True
-				else:
-					raise ValueError(self._strategy)
+					elif r[0] == "split":
+						shrink(r[1], r[2])
+					else:
+						raise ValueError(r)
 
 		return changed
 

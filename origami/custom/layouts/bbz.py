@@ -3,6 +3,32 @@ from origami.batch.detect.layout import *
 _fringe = 0.001
 
 
+def y_aligned(contours, a, b):
+    _, miny1, _, maxy1 = contours[a].bounds
+    _, miny2, _, maxy2 = contours[b].bounds
+    return alignment(miny1, maxy1, miny2, maxy2) > 0.9
+
+
+_region_code = {
+    ("regions", "TEXT"): "txt",
+    ("regions", "TABULAR"): "tab"
+}
+
+
+def dominance_strategy(contours, a, b):
+    if y_aligned(contours, a, b):
+        code = tuple([_region_code[x[:2]] for x in (a, b)])
+        if code == ("txt", "tab"):
+            return "merge", b
+        elif code == ("tab", "txt"):
+            return "merge", a
+
+    if contours[a].area < contours[b].area:
+        return "split", b, a
+    else:
+        return "split", a, b
+
+
 def make_transformer():
     seq_merger = SequentialMerger(
         filters="regions/TABULAR",
@@ -32,7 +58,7 @@ def make_transformer():
         DominanceOperator(
             filters="regions/TEXT, regions/TABULAR",
             fringe=0,
-            strategy="take_from_large"),
+            strategy=dominance_strategy),
         FixSpillOverH("regions/TEXT"),
         FixSpillOverV("regions/TEXT"),
         AreaFilter(0.0025)
