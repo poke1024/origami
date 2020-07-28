@@ -43,6 +43,7 @@ class ReadingOrderProcessor(Processor):
 				order.extend(group)
 			else:
 				items = []
+				line_y = dict()
 
 				for g in group:
 					if self._splittable(g) and not _is_table_path(g):
@@ -51,6 +52,7 @@ class ReadingOrderProcessor(Processor):
 							minx = min(p1[0], p2[0])
 							maxx = max(p1[0], p2[0])
 							y = (p1[1] + p2[1]) / 2
+							line_y[line_path] = y
 							tess_data = line.info["tesseract_data"]
 							ascent = abs(tess_data['ascent'])
 							descent = abs(tess_data['descent'])
@@ -58,10 +60,16 @@ class ReadingOrderProcessor(Processor):
 							items.append((line_path, (
 								minx, y - ascent * ratio, maxx, y + descent * ratio)))
 					else:
-						items.append((g, contours[g].bounds))
+						bounds = contours[g].bounds
+						_, miny, _, maxy = bounds
+						line_y[g] = (miny + maxy) / 2
+						items.append((g, bounds))
 
-				for line_path in bounds_order(items, score=sampler):
-					order.append(line_path)
+				for g in bounds_order(items, score=sampler, mode="grouped"):
+					if len(g) <= 1:
+						order.extend(g)
+					else:
+						order.extend(sorted(g, key=lambda k: line_y[k]))
 
 		return order
 
