@@ -18,8 +18,6 @@ import skimage.morphology
 import skimage.measure
 import semantic_version
 import scipy.optimize
-import PIL.Image
-import PIL.ImageDraw
 
 from heapq import heappush, heappop
 from cached_property import cached_property
@@ -27,6 +25,7 @@ from cached_property import cached_property
 import origami.core.geometry as geometry
 from origami.core.skeleton import FastSkeleton
 from origami.core.mask import Mask
+from origami.core.neighbors import neighbors
 
 
 def _without_closing_point(pts):
@@ -638,20 +637,23 @@ class Agglomerate:
 
 
 class HeuristicFrameDetector:
-	def __init__(self, size, threshold):
+	def __init__(self, size, width_threshold, distance_threshold):
 		super().__init__()
 		self._size = size
-		self._threshold = threshold
+		self._width_threshold = width_threshold
+		self._distance_threshold = distance_threshold
 
 	def filter(self, polygons):
 		w, h = self._size
-		width_threshold = w * self._threshold
+		width_threshold = w * self._width_threshold
+		distance_threshold = w * self._distance_threshold
 
-		def _is_noise(polygon):
+		def _is_potential_noise(polygon):
 			x0, y0, x1, y1 = polygon.bounds
 			return x1 - x0 < width_threshold
 
 		n_polygons = len(polygons)
+		potential_noise = []
 
 		for axis, direction in ((0, 1), (1, -1)):
 			heap = []
@@ -660,9 +662,26 @@ class HeuristicFrameDetector:
 					int(p.bounds[axis * 2] * direction),
 					int(p.bounds[2] - p.bounds[0]),
 					i, p))
-			while heap and _is_noise(heap[0][-1]):
+			while heap and _is_potential_noise(heap[0][-1]):
+				potential_noise.append(heap[0][-1])
 				heappop(heap)
 			polygons = [x[-1] for x in heap]
+
+		if potential_noise and polygons:
+			items = dict()
+			items["frame"] = shapely.ops.cascaded_union(polygons).convex_hull
+			for i, x in enumerate(potential_noise):
+				items[("noise", i)] = x
+
+			neighbors_ = neighbors(items)
+			graph = nx.Graph()
+			for a, b in neighbors_.edges():
+				if items[a].distance(items[b]) < distance_threshold:
+					graph.add_edge(a, b)
+			for nodes in nx.connected_components(graph):
+				if "frame" in nodes:
+					polygons.extend([items[x] for x in nodes if x != "frame"])
+					break
 
 		if len(polygons) < n_polygons:
 			logging.info("removed %s polygons." % (n_polygons - len(polygons)))

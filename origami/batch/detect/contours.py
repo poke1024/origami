@@ -37,8 +37,13 @@ class ContoursProcessor(Processor):
 				contours.multi_class_constructor(
 					pipeline=pipeline,
 					classes=[c for c in prediction.classes if c != prediction.classes.BACKGROUND]),
+
+				# frame detection might be best done after dewarping,
+				# but for historic reasons it is here for now.
 				contours.HeuristicFrameDetector(
-					annotations.size, self._options["margin_noise"]).multi_class_filter
+					annotations.size,
+					self._options["margin_width"],
+					self._options["margin_distance"]).multi_class_filter
 			]))
 
 		for prediction_class, shapes in region_contours.items():
@@ -125,10 +130,15 @@ class ContoursProcessor(Processor):
 	default=0.0025,  # might be a single word.
 	help="Ignore regions below this relative size.")
 @click.option(
-	'--margin-noise',
+	'--margin-width',
 	type=float,
 	default=0.075,
-	help="Max. relative width of margin noise.")
+	help="Maximum width of margin noise.")
+@click.option(
+	'--margin-distance',
+	type=float,
+	default=0.015,
+	help="Minimum distance of margin noise.")
 @click.option(
 	'--separator-threshold',
 	type=float,
