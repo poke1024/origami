@@ -548,7 +548,6 @@ class DominanceOperator:
 			for smaller_path in by_area[:-1]:
 				if self._strategy == "take_from_large":
 					if shrink(largest_path, smaller_path):
-						print(largest_path, smaller_path)
 						done = False
 						changed = True
 						break
