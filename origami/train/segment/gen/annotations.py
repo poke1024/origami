@@ -2,13 +2,14 @@ import numpy as np
 import PIL.Image
 import itertools
 import cv2
+import importlib
 
 from psd_tools import PSDImage
 from psd_tools.constants import BlendMode
 
-from .merger import Merger
-from .regions import Regions
+from .merger import SegmentMerger
 from .transform import Resize
+from .regions import AnnotationsGenerator
 
 
 class Annotations:
@@ -36,6 +37,10 @@ class Annotations:
 	def labels(self):
 		return self._labels
 
+	@property
+	def mutable_labels(self):
+		return self._labels
+
 	def apply_lut(self, lut):
 		return Annotations(
 			self._label_set, lut[self._labels], self._img_path)
@@ -46,6 +51,31 @@ class Annotations:
 		for label in labels:
 			lut[label.index] = True
 		return lut[self._labels]
+
+	def mask_by_name(self, *names):
+		return self.mask(*[
+			self._label_set.label_from_name(name) for name in names])
+
+	def _selected_labels(self, masked_labels):
+		h, w = self.shape
+		labels = np.empty((h, w), dtype=np.uint8)
+		labels.fill(self._label_set.background.index)
+
+		m = self.mask(*masked_labels)
+		labels[m] = self._labels[m]
+		return labels
+
+	@property
+	def separator_labels(self):
+		return self._selected_labels([
+			label for label in self._label_set.labels
+			if label.is_separator])
+
+	@property
+	def non_separator_labels(self):
+		return self._selected_labels([
+			label for label in self._label_set.labels
+			if not label.is_separator])
 
 	def _find_segment_components(self, *labels):
 		mask = self.mask(*labels)
@@ -82,30 +112,14 @@ class Annotations:
 				index += 1
 
 	def merger(self, merge_spec):
-		return Merger(
+		return SegmentMerger(
 			merge_spec,
 			self._label_set,
 			self._labels,
 			list(self.unprocessed_segments))
 
-	@property
-	def clabels(self):
-		h, w = self.shape
-		labels = np.empty((h, w), dtype=np.uint8)
-		labels.fill(self._label_set.background.index)
-
-		m = self.mask(*[
-			label for label in self._label_set.labels
-			if not label.is_separator])
-		labels[m] = self._labels[m]
-		return labels
-
 	def repaired_segments(self, merge_spec):
 		return self.merger(merge_spec).segments
-
-	def regions(self, merge_spec):
-		segments = self.repaired_segments(merge_spec)
-		return Regions(self._label_set, self.clabels, segments)
 
 	def transform(self, t):
 		return Annotations(self._label_set, t.labels(self._labels))
@@ -253,13 +267,16 @@ class Loader:
 
 		if self._merge_spec:
 			try:
-				regions = annotations.regions(self._merge_spec)
-				regions.hmerge(ground_truth.unbinarized)
+				segments = annotations.repaired_segments(self._merge_spec)
+
+				gen = AnnotationsGenerator(
+					self._label_set, self._merge_spec, annotations, segments)
+
+				gen_module = importlib.import_module(self._merge_spec["generator"])
+				ann = gen_module.generate(gen, ground_truth.unbinarized)
 			except:
 				print("error on generating data for ", ground_truth.path)
 				raise
-
-			ann = regions.to_annotations()
 		else:
 			ann = annotations  # don't do any postprocessing of annotations.
 

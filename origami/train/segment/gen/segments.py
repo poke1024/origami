@@ -430,14 +430,14 @@ class SegmentJoiner:
 		for label in ignore:
 			counts[label.index] = 0
 
-		for item in self._spec["overrides"]:
-			if dominant_label.name == item.get("for"):
-				l1 = self._label_set.label_from_name(item["for"])
-				l2 = self._label_set.label_from_name(item["override"])
+		for item in self._spec:
+			if dominant_label.name == item.get("separator"):
+				l1 = self._label_set.label_from_name(item["separator"])
+				l2 = self._label_set.label_from_name(item["may_cross"])
 				if counts[l1.index] > counts[l2.index]:
 					counts[l2.index] = 0
-			elif "for" not in item:
-				l2 = self._label_set.label_from_name(item["override"])
+			elif "separator" not in item:
+				l2 = self._label_set.label_from_name(item["may_cross"])
 				counts[l2.index] = 0
 
 		counts[self._label_set.background.index] = 0

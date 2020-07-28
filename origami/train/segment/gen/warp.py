@@ -176,9 +176,11 @@ def warp_images(ground_truth, label_set, name):
 			remap = Remap(image_x_coords, image_y_coords)
 
 			if kind == "labels":
-				return remap.labels(im, label_set.label_weights, border=0)
+				return remap.labels(
+					im, label_set.label_weights, border=label_set.background.index)
 			elif kind == "image":
-				return remap.grayscale(im, border=(255, 255, 255)).astype(im.dtype)
+				return remap.grayscale(
+					im, border=(255, 255, 255)).astype(im.dtype)
 			else:
 				raise RuntimeError("unsupported data type %s" % kind)
 

@@ -71,68 +71,69 @@
 		"H": ["H"],
 		"V": ["V"]
 	},
-	"postprocessing_IGNORE": {
-		"painter": {
-			"segment_thickness": 2,
-			"segment_extend": {
-				"V": 0.02,
-				"H": 0.2
-			}
-		},
-		"joiner": {
-			"overrides": [
+	"postprocessing": {
+		"generator": "origami.train.segment.custom.bbz",
+		"segments": {
+			"pipeline": [
 				{
-					"for": "TABCOL",
-					"override": "TABTXT"
+					"strategy": "by_distance",
+					"args": {
+						"distances": {
+							"TABCOL": 500,
+							"H": 500,
+							"V": 500
+						}
+					}
 				},
 				{
-					"for": "H",
-					"override": "TABTXT"
+					"strategy": "parallel",
+					"args": {
+						"overlap_buffer": 1,
+						"close_distance": 5
+					}
 				},
 				{
-					"for": "V",
-					"override": "ANTIQUA_SM"
+					"strategy": "by_length",
+					"args": {
+						"lengths": {
+							"TABCOL": 0,
+							"H": 10,
+							"V": 10
+						}
+					}
 				},
 				{
-					"override": "BORDER"
-				}
-			]
-		},
-		"merge": [
-			{
-				"strategy": "by_distance",
-				"args": {
-					"distances": {
-						"TABCOL": 500,
-						"H": 500,
-						"V": 500
+					"strategy": "by_quality",
+					"args": {
+						"max_error": 0.1,
+						"min_length": 1e-3
 					}
 				}
-			},
-			{
-				"strategy": "parallel",
-				"args": {
-					"overlap_buffer": 1,
-					"close_distance": 5
+			],
+			"obstacles": [
+				{
+					"separator": "TABCOL",
+					"may_cross": "TABTXT"
+				},
+				{
+					"separator": "H",
+					"may_cross": "TABTXT"
+				},
+				{
+					"separator": "V",
+					"may_cross": "ANTIQUA_SM"
+				},
+				{
+					"may_cross": "BORDER"
 				}
-			},
-			{
-				"strategy": "by_length",
-				"args": {
-					"lengths": {
-						"TABCOL": 0,
-						"H": 10,
-						"V": 10
-					}
-				}
-			},
-			{
-				"strategy": "by_quality",
-				"args": {
-					"max_error": 0.1,
-					"min_length": 1e-3
+			],
+			"painter": {
+				"segment_thickness": 2,
+				"segment_extend": {
+					"V": 0.02,
+					"H": 0.2
 				}
 			}
-		]
+		}
 	}
 }

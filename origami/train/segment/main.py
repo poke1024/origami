@@ -374,11 +374,10 @@ class Preprocessor:
 			with open(out_path / kind / "weights.json", "w") as f:
 				f.write(json.dumps(w))
 
-	def gen(self):
+	def gen(self, json_path):
 		corpus_path = Path(self._data_path / "corpus")
 
-		script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
-		with open(script_dir / "labels.json", "r") as f:
+		with open(json_path, "r") as f:
 			json_spec = json.loads(f.read())
 
 		self._label_set = labels.LabelSet(json_spec)
@@ -417,4 +416,6 @@ if __name__ == "__main__":
 	binarize.gen_binarized(data_path)
 
 	p = Preprocessor(data_path)
-	p.gen()
+
+	script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
+	p.gen(script_dir / "custom" / "bbz.json")

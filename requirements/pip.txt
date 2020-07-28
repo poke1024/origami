@@ -21,3 +21,4 @@ pyvoronoi>=1.0.5
 sqlalchemy>=1.3.18
 pypng>=0.0.20
 psd-tools>=1.9.15
+rtree>=0.9.4

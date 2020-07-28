@@ -88,6 +88,10 @@ class LabelSet:
 	def labels(self):
 		return self._by_name.values()
 
+	@property
+	def labels_by_name(self):
+		return self._by_name
+
 	def label_from_name(self, name):
 		return self._by_name[name]
 
