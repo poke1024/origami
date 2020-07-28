@@ -18,7 +18,7 @@ import origami.core.binarize
 def reliable_contours(all_contours, all_lines, min_confidence, ignore=None):
 	block_lines = collections.defaultdict(list)
 	for path, line in all_lines.items():
-		if line.confidence > min_confidence:
+		if line.confidence >= min_confidence:
 			block_lines[path[:3]].append(line)
 
 	reliable = dict()
