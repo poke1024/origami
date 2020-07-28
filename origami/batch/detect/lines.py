@@ -120,7 +120,7 @@ class LineDetectionProcessor(Processor):
 	help='compensate underestimated line descent')
 @click.option(
 	'--contours-buffer',
-	default=0.0015,
+	default=0.001,
 	type=float,
 	help='expand contours by specified relative amount')
 @click.option(
