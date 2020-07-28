@@ -35,5 +35,5 @@ def make_transformer():
             strategy="take_from_large"),
         FixSpillOverH("regions/TEXT"),
         FixSpillOverV("regions/TEXT"),
-        AreaFilter(0.005)
+        AreaFilter(0.0025)
     ])
