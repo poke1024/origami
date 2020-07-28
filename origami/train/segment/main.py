@@ -12,6 +12,7 @@ import json
 import sys
 import itertools
 import skimage.filters
+import click
 
 from tqdm import tqdm
 from pathlib import Path
@@ -20,6 +21,7 @@ from. gen import annotations
 from .gen import labels
 from .gen import binarize
 from .gen import warp
+from .gen import folds
 
 
 IMG_INTERPOLATION = PIL.Image.LANCZOS
@@ -317,25 +319,26 @@ class Converter:
 		return weights
 
 
-class Preprocessor:
-	def __init__(self, data_path):
+class TileProcessor:
+	def __init__(self, data_path, n_folds):
 		self._data_path = Path(data_path)
 
-		if not (data_path / "preprocessed").exists():
-			(data_path / "preprocessed").mkdir()
+		if not (data_path / "tiles").exists():
+			(data_path / "tiles").mkdir()
 
 		self._label_set = None
+		self._n_folds = n_folds
 
-	def _gen_valid(self, inputs, p=0.2):
+	def _gen_valid(self, inputs):
 		import random
 
 		random.seed(1036536561063490465169)
 		files = list(map(lambda x: x.document_path, inputs))
 		random.shuffle(files)
 
-		for i, valid in enumerate(np.array_split(range(len(files)), math.ceil(1 / p))):
+		for i, valid in enumerate(np.array_split(range(len(files)), self._n_folds)):
 
-			valid_path = Path(self._data_path / "preprocessed" / ("valid%d.txt" % (i + 1)))
+			valid_path = Path(self._data_path / "tiles" / ("valid%d.txt" % (i + 1)))
 			if valid_path.is_file():
 				continue
 
@@ -349,7 +352,7 @@ class Preprocessor:
 		else:
 			size_desc = "%dx%d_T%dx%d" % (*image_size, *tile_size)
 
-		out_path = Path(self._data_path / ("preprocessed/%s_%s" % (model_name, size_desc)))
+		out_path = Path(self._data_path / ("tiles/%s_%s" % (model_name, size_desc)))
 		out_path.mkdir(exist_ok=True)
 
 		# actual processing.
@@ -399,23 +402,39 @@ class Preprocessor:
 		create_training_data((1280, 2400), (1280, 896))
 
 
-if __name__ == "__main__":
-	assert len(sys.argv) == 2
+@click.command()
+@click.argument(
+	'data_path',
+	type=click.Path(exists=True),
+	required=True)
+@click.option(
+	'--n-folds',
+	type=int,
+	default=5)
+def main(data_path, n_folds, **kwargs):
+	data_path = Path(data_path)
 
-	data_path = Path(sys.argv[1])
-
-	(data_path / "preprocessed").mkdir(exist_ok=True)
+	(data_path / "tiles").mkdir(exist_ok=True)
+	(data_path / "training").mkdir(exist_ok=False)
 
 	logging.basicConfig(
 		level=logging.ERROR,
 		format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
 		datefmt='%m-%d %H:%M',
-		filename=data_path / "preprocessed/build.log",
+		filename=data_path / "tiles/build.log",
 		filemode='w')
 
 	binarize.gen_binarized(data_path)
 
-	p = Preprocessor(data_path)
-
+	p = TileProcessor(data_path, n_folds)
 	script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
 	p.gen(script_dir / "custom" / "bbz.json")
+
+	for training_data_path in (data_path / "tiles").iterdir():
+		if training_data_path.is_dir():
+			g = folds.FoldsGenerator(training_data_path)
+			g.generate_all_folds(n_folds)
+
+
+if __name__ == "__main__":
+	main()
