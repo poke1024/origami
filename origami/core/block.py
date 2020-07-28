@@ -363,10 +363,12 @@ class Block:
 	def is_empty(self):
 		return self._image_space_polygon.is_empty
 
-	def image(self, text_area):
+	def image(self, text_area, background=None):
 		mask = Mask(text_area)
+		if background is None:
+			background = self.background
 		return mask.extract_image(
-			self.page_pixels, background=self.background)
+			self.page_pixels, background=background)
 
 	@property
 	def image_space_polygon(self):
@@ -411,13 +413,13 @@ class TextAreaFactory:
 		return polygon
 
 
-def padded(im, pad=32, background_color=255):
+def padded(im, pad=32, background=255):
 	im = im.convert("L")
 	width, height = im.size
 	result = PIL.Image.new(
 		im.mode,
 		(width, height + 2 * pad),
-		int(background_color))
+		int(background))
 	result.paste(im, (0, pad))
 	return result
 
@@ -432,7 +434,8 @@ class LineDetector:
 		block_size_minimum=4,
 		text_area_factory=TextAreaFactory(),
 		extend_baselines=True,
-		binarizer=sauvola(31)):
+		binarizer=sauvola(31),
+		tesseract_pad=32):
 
 		self._force_parallel_baselines = force_parallel_lines
 		self._force_lines = force_lines
@@ -444,6 +447,7 @@ class LineDetector:
 		self._extend_baselines = extend_baselines
 		self._binarizer = binarizer
 		self._block_size_minimum = block_size_minimum
+		self._tesseract_pad = tesseract_pad
 
 	def create_fake_line(self, block, text_area):
 		minx, miny, maxx, maxy = block.image_space_polygon.bounds
@@ -483,19 +487,18 @@ class LineDetector:
 			else:
 				bg = block.background
 
-			pad = 32
-			im, pos = block.image(text_area)
+			im, pos = block.image(text_area, background=bg)
 			if min(im.width, im.height) < self._block_size_minimum:
 				return []
-			im = padded(im, pad=pad, background_color=bg)
+			im = padded(im, pad=self._tesseract_pad, background=bg)
 
 			if self._binarizer is not None:
 				# binarizing Tesseract's input detects some correct baselines
-				# that are omitted on grayscale input.
+				# that are not detected when giving it grayscale input.
 				im = self._binarizer(im)
 
 			api.SetImage(im)
-			pos = np.array(pos) - np.array([0, pad])
+			pos = np.array(pos) - np.array([0, self._tesseract_pad])
 
 			api.AnalyseLayout()
 			ri = api.GetIterator()
