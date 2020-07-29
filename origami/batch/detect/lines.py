@@ -49,7 +49,8 @@ class ConfidenceSampler:
 		sum_all = np.sum(counts)
 		if sum_all > 0:
 			for k in predictor.classes:
-				evidence["%s/%s" % (prediction_name, k.name)] = counts[k.value] / sum_all
+				key = "%s/%s" % (prediction_name, k.name)
+				evidence[key] = counts[k.value] / sum_all
 
 		return evidence
 

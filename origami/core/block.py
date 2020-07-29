@@ -69,14 +69,19 @@ class Line:
 
 	@property
 	def confidence(self):
-		if self._confidence:
-			return max(self._confidence.values())
+		values = [
+			v for k, v in self._confidence.items()
+			if not k.endswith("/BACKGROUND")]
+		if values:
+			return max(values)
 		else:
 			return 0
 
 	@property
 	def predicted_path(self):
-		items = list(self._confidence.items())
+		items = [
+			(k, v) for k, v in self._confidence.items()
+			if not k.endswith("/BACKGROUND")]
 		if items:
 			i = np.argmax([x[1] for x in items])
 			return tuple(items[i][0].split("/"))
