@@ -13,6 +13,7 @@ from origami.core.page import Page, Annotations
 import origami.core.contours as contours
 from origami.core.block import Block
 from origami.core.predict import PredictorType
+from origami.batch.core.utils import RegionsFilter
 
 
 class ContoursProcessor(Processor):
@@ -31,6 +32,10 @@ class ContoursProcessor(Processor):
 			contours.FilterByArea(annotations.geometry.rel_area(self._options["region_area"]))
 		]
 
+		propagators = set()
+		for x in self._options["frame_propagators"].split(","):
+			propagators.add(prediction.classes[x.strip()])
+
 		region_contours = annotations.create_multi_class_contours(
 			prediction.labels,
 			contours.fold_operator([
@@ -43,7 +48,8 @@ class ContoursProcessor(Processor):
 				contours.HeuristicFrameDetector(
 					annotations.size,
 					self._options["margin_width"],
-					self._options["margin_distance"]).multi_class_filter
+					self._options["margin_distance"],
+					propagators).multi_class_filter
 			]))
 
 		for prediction_class, shapes in region_contours.items():
@@ -132,13 +138,18 @@ class ContoursProcessor(Processor):
 @click.option(
 	'--margin-width',
 	type=float,
-	default=0.075,
+	default=0.05,
 	help="Maximum width of margin noise.")
 @click.option(
 	'--margin-distance',
 	type=float,
-	default=0.015,
+	default=0.01,
 	help="Minimum distance of margin noise.")
+@click.option(
+	'--frame-propagators',
+	type=str,
+	default="TEXT, TABULAR",
+	help="Regions of this type extend the frame.")
 @click.option(
 	'--separator-threshold',
 	type=float,

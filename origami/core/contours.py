@@ -637,13 +637,14 @@ class Agglomerate:
 
 
 class HeuristicFrameDetector:
-	def __init__(self, size, width_threshold, distance_threshold):
+	def __init__(self, size, width_threshold, distance_threshold, propagators):
 		super().__init__()
 		self._size = size
 		self._width_threshold = width_threshold
 		self._distance_threshold = distance_threshold
+		self._propagators = propagators
 
-	def filter(self, polygons):
+	def filter(self, polygons, classes):
 		w, h = self._size
 		width_threshold = w * self._width_threshold
 		distance_threshold = w * self._distance_threshold
@@ -676,7 +677,14 @@ class HeuristicFrameDetector:
 			neighbors_ = neighbors(items)
 			graph = nx.Graph()
 			for a, b in neighbors_.edges():
-				if items[a].distance(items[b]) < distance_threshold:
+				propagate = True
+				for x in (a, b):
+					if x == "frame":
+						continue
+					if classes[id(items[x])] not in self._propagators:
+						propagate = False
+						break
+				if propagate and items[a].distance(items[b]) < distance_threshold:
 					graph.add_edge(a, b)
 			for nodes in nx.connected_components(graph):
 				if "frame" in nodes:
@@ -693,7 +701,9 @@ class HeuristicFrameDetector:
 			id(p), k)
 			for p in class_polygons] for k, class_polygons in polygons.items()]))
 
-		f_polygons = self.filter(list(itertools.chain(*list(polygons.values()))))
+		f_polygons = self.filter(
+			list(itertools.chain(*list(polygons.values()))),
+			classes)
 
 		r = collections.defaultdict(list)
 		for p in f_polygons:
