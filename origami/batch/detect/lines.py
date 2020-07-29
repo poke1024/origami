@@ -59,7 +59,7 @@ class LineDetectionProcessor(Processor):
 		super().__init__(options)
 		self._options = options
 		self._allow_conflicts = RegionsFilter(options["allow_conflicts"])
-		self._min_confidence = options["min_confidence"]
+		self._min_confidence = 0
 
 	@property
 	def processor_name(self):
@@ -152,10 +152,6 @@ class LineDetectionProcessor(Processor):
 	default="regions/ILLUSTRATION",
 	type=str,
 	help='regions types that may overlap without being resolved')
-@click.option(
-	'--min-confidence',
-	type=float,
-	default=0.1)
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),
