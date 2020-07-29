@@ -367,8 +367,8 @@ def render_warped_line_paths(pixmap, lines, predictors, resolution=0.1):
 		qp.setOpacity(0.9)
 
 		for i, (line_path, line) in enumerate(lines.items()):
-			if line.confidence < 0.5:
-				continue  # ignore
+			#if line.confidence < 0.5:
+			#	continue  # ignore
 
 			classifier, label, block_id, line_id = line_path
 
@@ -398,8 +398,8 @@ def render_warped_line_confidence(pixmap, lines):
 		fm = QtGui.QFontMetrics(font)
 
 		for i, (line_path, line) in enumerate(lines.items()):
-			if line.confidence < 0.5:
-				continue  # ignore
+			#if line.confidence < 0.5:
+			#	continue  # ignore
 
 			path, height = line.warped_path(0.1)
 
