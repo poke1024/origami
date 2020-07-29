@@ -430,7 +430,7 @@ class Document:
 			return None
 		else:
 			raise RuntimeError(
-				"no text found for %s, line confidences are: %s" % (
+				"no text found for region %s, line confidences are: %s" % (
 					str(block_path), ", ".join(["%.2f" % x for x in confidences])))
 
 	@property
@@ -581,7 +581,7 @@ class ComposeProcessor(Processor):
 				Artifact.OCR,
 				Artifact.ORDER,
 				Artifact.TABLES,
-				stage=Stage.AGGREGATE)),
+				stage=Stage.RELIABLE)),
 			("output", Output(Artifact.COMPOSE)),
 		]
 

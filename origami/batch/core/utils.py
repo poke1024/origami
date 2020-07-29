@@ -40,17 +40,23 @@ class TableRegionCombinator:
 	def mapping(self):
 		return self._mapping
 
+	def contours_from_blocks(self, blocks):
+		contours = dict([
+			(k, b.image_space_polygon)
+			for k, b in blocks.items()])
+		return self.contours(contours)
+
 	def contours(self, contours):
 		combined = dict()
 		for k, v in self._mapping.items():
 			if len(v) == 1:
-				combined[k] = (contours[v[0]], v)
+				combined[k] = contours[v[0]]
 			else:
 				geom = shapely.ops.cascaded_union([
 					contours[x] for x in v])
 				if geom.geom_type != "Polygon":
 					geom = geom.convex_hull
-				combined[k] = (geom, v)
+				combined[k] = geom
 		return combined
 
 	def lines(self, lines):

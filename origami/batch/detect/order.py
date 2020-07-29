@@ -110,17 +110,20 @@ class ReadingOrderProcessor(Processor):
 		min_confidence = reliable.lines.min_confidence
 
 		min_area = page.geometry(True).rel_area(self._options["region_area"])
-		reliable_contours = reliable.regions.by_path
-		reliable_contours = dict(
-			(k, v.image_space_polygon)
-			for k, v in reliable_contours.items()
-			if v.image_space_polygon.area >= min_area and not self._ignore(k))
+
+		combinator = TableRegionCombinator(reliable.regions.by_path.keys())
+		combined_contours = combinator.contours_from_blocks(reliable.regions.by_path)
+
+		combined_contours = dict(
+			(k, v)
+			for k, v in combined_contours.items()
+			if v.area >= min_area and not self._ignore(k))
 
 		separators = Separators(
 			warped.segmentation, dewarped.separators)
 
 		orders = self.xycut_orders(
-			page, reliable_contours, reliable.lines.by_path, separators, min_confidence)
+			page, combined_contours, reliable.lines.by_path, separators, min_confidence)
 
 		orders = dict(
 			("/".join(k), ["/".join(map(str, p)) for p in ps])

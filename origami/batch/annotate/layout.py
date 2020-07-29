@@ -19,6 +19,7 @@ from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 from origami.core.page import Page
 from origami.batch.annotate.utils import render_contours, render_lines, render_paths
+from origami.batch.core.utils import TableRegionCombinator
 
 
 def linestrings(geom):
@@ -86,9 +87,9 @@ class DebugLayoutProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, warped, reliable, output):
-		contours = dict([
-			(k, b.image_space_polygon)
-			for k, b in reliable.regions.by_path.items()])
+		combinator = TableRegionCombinator(reliable.regions.by_path.keys())
+		contours = combinator.contours_from_blocks(reliable.regions.by_path)
+
 		rendered_contours = contours
 		rendered_lines = []
 
