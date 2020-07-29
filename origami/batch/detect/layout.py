@@ -28,6 +28,7 @@ from origami.core.xycut import polygon_order
 from origami.core.neighbors import neighbors
 from origami.core.utils import build_func_from_string
 from origami.batch.core.utils import RegionsFilter
+from origami.core.mask import Mask
 
 
 def overlap_ratio(a, b):
@@ -142,7 +143,16 @@ class Regions:
 
 		thresh_sauvola = skimage.filters.threshold_sauvola(
 			grayscale, window_size)
-		return (grayscale > thresh_sauvola).astype(np.float32)
+		binary = grayscale > thresh_sauvola
+
+		h, w = grayscale.shape
+		content_regions = Mask(shapely.geometry.MultiPolygon(
+			self._unmodified_contours.values()), (0, 0, w, h))
+		binary = np.logical_not(np.logical_and(
+			np.logical_not(binary),
+			content_regions.binary))
+
+		return binary.astype(np.float32)
 
 	@cached_property
 	def geometry(self):
