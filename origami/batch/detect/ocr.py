@@ -34,9 +34,9 @@ class OCRProcessor(Processor):
 		self._line_height = None
 
 		self._ignored = RegionsFilter(options["ignore"])
-		self._dry_run = self._options["dry_run"]
+		self._ocr = self._options["ocr"]
 
-		if self._dry_run:
+		if self._ocr != "FULL":
 			logging.getLogger().setLevel(logging.INFO)
 
 	@property
@@ -71,22 +71,22 @@ class OCRProcessor(Processor):
 
 	def artifacts(self):
 		return [
-			("aggregate", Input(
+			("reliable", Input(
 				Artifact.LINES, Artifact.TABLES,
-				stage=Stage.AGGREGATE)),
+				stage=Stage.RELIABLE)),
 			("output", Output(Artifact.OCR)),
 		]
 
-	def process(self, page_path: Path, aggregate, output):
+	def process(self, page_path: Path, reliable, output):
 		self._load_models()
 
-		lines = aggregate.lines.by_path
+		lines = reliable.lines.by_path
 
 		extractor = LineExtractor(
-			aggregate.tables,
+			reliable.tables,
 			self._line_height,
 			self._options,
-			min_confidence=aggregate.lines.min_confidence)
+			min_confidence=reliable.lines.min_confidence)
 
 		names = []
 		images = []
@@ -94,7 +94,7 @@ class OCRProcessor(Processor):
 			names.append("/".join(stem))
 			images.append(np.array(im))
 
-		if self._dry_run:
+		if self._ocr == "DRY":
 			logging.info("will ocr the following lines:\n%s" % "\n".join(sorted(names)))
 			return
 
@@ -103,13 +103,18 @@ class OCRProcessor(Processor):
 			chunk_size = len(images)
 
 		texts = []
-		for i in range(0, len(images), chunk_size):
-			for prediction in self._predictor.predict_raw(
-				images[i:i + chunk_size], progress_bar=False, **self._predict_kwargs):
 
-				if self._voter is not None:
-					prediction = self._voter.vote_prediction_result(prediction)
-				texts.append(prediction.sentence)
+		if self._ocr == "FAKE":
+			for name in names:
+				texts.append("text for %s." % name)
+		else:
+			for i in range(0, len(images), chunk_size):
+				for prediction in self._predictor.predict_raw(
+					images[i:i + chunk_size], progress_bar=False, **self._predict_kwargs):
+
+					if self._voter is not None:
+						prediction = self._voter.vote_prediction_result(prediction)
+					texts.append(prediction.sentence)
 
 		with output.ocr() as zf:
 			for name, text in zip(names, texts):
@@ -143,9 +148,9 @@ class OCRProcessor(Processor):
 	type=str,
 	default="regions/ILLUSTRATION")
 @click.option(
-	'--dry-run',
-	is_flag=True,
-	default=False)
+	'--ocr',
+	type=click.Choice(['FULL', 'DRY', 'FAKE'], case_sensitive=False),
+	default="OFF")
 def segment(data_path, **kwargs):
 	""" Perform OCR on all recognized lines in DATA_PATH. """
 	processor = OCRProcessor(kwargs)
