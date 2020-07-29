@@ -3,51 +3,49 @@
 import numpy as np
 import multiprocessing.pool
 import collections
-import json
 import click
 import shapely.ops
 import functools
 import logging
 
-from pathlib import Path
-from functools import partial
-
 import origami.core.binarize
+from origami.batch.core.utils import TableRegionCombinator
 
 
-def reliable_contours(all_contours, all_lines, free_lines, detected_lines, ignore=None):
-	reliable = dict()
+def reliable_contours(blocks, free_lines, detected_lines):
+	all_contours = dict(
+		(k, v.image_space_polygon) for k, v in blocks.items())
+
+	combinator = TableRegionCombinator(blocks.keys())
+	combined_lines = combinator.lines(detected_lines)
+	mapping = combinator.mapping
 
 	max_ids = collections.defaultdict(int)
 	for k in all_contours.keys():
-		max_ids[k[:2]] = max(max_ids[k[:2]], int(k[2]))
+		max_ids[k[:2]] = max(max_ids[k[:2]], int(k[2].split(".")[0]))
 
 	for pred_path, line in free_lines:
 		new_id = max_ids[pred_path] + 1
 		max_ids[pred_path] = new_id
 		new_path = pred_path + (new_id,)
-		reliable[new_path] = line.image_space_polygon
+		all_contours[new_path] = line.image_space_polygon
 		detected_lines[new_path + (0,)] = line
 
 	block_lines = collections.defaultdict(list)
-	for path, line in all_lines.items():
+	for path, line in combined_lines.items():
 		block_lines[path[:3]].append(line)
 
 	for path, lines in block_lines.items():
-		if ignore is None or not ignore(path):
-			hull = shapely.ops.cascaded_union([
-				line.image_space_polygon for line in lines]).convex_hull
-			geom = hull.intersection(all_contours[path])
-			if geom.geom_type != "Polygon":
-				geom = geom.convex_hull
-			reliable[path] = geom
+		hull = shapely.ops.cascaded_union([
+			line.image_space_polygon for line in lines]).convex_hull
 
-	# for contours, for which we have to lines at all, we keep
-	# the contour as is.
-	for k in set(all_contours.keys()) - set(reliable.keys()):
-		reliable[k] = all_contours[k]
+		for k in mapping[path]:
+			shape = all_contours[k].intersection(hull)
+			if shape.geom_type != "Polygon":
+				shape = shape.convex_hull
+			all_contours[k] = shape
 
-	return reliable
+	return all_contours
 
 
 class LineRewriter:

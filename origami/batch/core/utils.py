@@ -44,13 +44,13 @@ class TableRegionCombinator:
 		combined = dict()
 		for k, v in self._mapping.items():
 			if len(v) == 1:
-				combined[k] = contours[v[0]]
+				combined[k] = (contours[v[0]], v)
 			else:
 				geom = shapely.ops.cascaded_union([
 					contours[x] for x in v])
 				if geom.geom_type != "Polygon":
 					geom = geom.convex_hull
-				combined[k] = geom
+				combined[k] = (geom, v)
 		return combined
 
 	def lines(self, lines):

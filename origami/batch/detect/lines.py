@@ -13,7 +13,6 @@ from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.block import ConcurrentLineDetector, TextAreaFactory
 from origami.batch.core.utils import RegionsFilter
 from origami.batch.core.lines import reliable_contours
-from origami.batch.core.utils import TableRegionCombinator
 
 
 def scale_grid(s0, s1, grid):
@@ -114,11 +113,8 @@ class LineDetectionProcessor(Processor):
 					line_path = (prediction_name, class_name, block_id, line_id)
 					detected_lines[line_path] = line
 
-		combinator = TableRegionCombinator(blocks.keys())
-		combined_lines = combinator.lines(detected_lines)
-		contours = combinator.contours(dict(
-			(k, v.image_space_polygon) for k, v in blocks.items()))
-		reliable = reliable_contours(contours, combined_lines, free_lines, detected_lines)
+		reliable = reliable_contours(
+			blocks, free_lines, detected_lines)
 
 		with output.lines() as zf:
 			info = dict(version=1, min_confidence=self._min_confidence)
