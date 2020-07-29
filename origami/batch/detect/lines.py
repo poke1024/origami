@@ -4,6 +4,7 @@ import click
 import json
 import numpy as np
 import cv2
+import logging
 
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.core.block import ConcurrentLineDetector, TextAreaFactory
 from origami.batch.core.utils import RegionsFilter
+from origami.batch.core.lines import reliable_contours
+from origami.batch.core.utils import TableRegionCombinator
 
 
 def scale_grid(s0, s1, grid):
@@ -33,7 +36,6 @@ class ConfidenceSampler:
 		prediction_name, predictor_class = path[:2]
 
 		predictor = self._predictions[prediction_name]
-		lineclass = predictor.classes[predictor_class]
 
 		grid = line.warped_grid(xres=res, yres=res)
 
@@ -41,11 +43,15 @@ class ConfidenceSampler:
 		labels = cv2.remap(predictor.labels, grid, None, cv2.INTER_NEAREST)
 
 		counts = np.bincount(labels.flatten(), minlength=len(predictor.classes))
-		counts[predictor.classes["BACKGROUND"].value] = 0
+
+		evidence = dict()
+
 		sum_all = np.sum(counts)
-		if sum_all < 1:
-			return 0
-		return counts[lineclass.value] / sum_all
+		if sum_all > 0:
+			for k in predictor.classes:
+				evidence["%s/%s" % (prediction_name, k.name)] = counts[k.value] / sum_all
+
+		return evidence
 
 
 class LineDetectionProcessor(Processor):
@@ -63,7 +69,7 @@ class LineDetectionProcessor(Processor):
 		return [
 			("warped", Input(Artifact.SEGMENTATION, stage=Stage.WARPED)),
 			("aggregate", Input(Artifact.CONTOURS, stage=Stage.AGGREGATE)),
-			("output", Output(Artifact.LINES, stage=Stage.AGGREGATE))
+			("output", Output(Artifact.CONTOURS, Artifact.LINES, stage=Stage.RELIABLE))
 		]
 
 	def process(self, page_path: Path, warped, aggregate, output):
@@ -86,25 +92,46 @@ class LineDetectionProcessor(Processor):
 			extra_height=self._options["extra_height"],
 			extra_descent=self._options["extra_descent"])
 
-		block_lines = detector(blocks)
+		detected_lines_by_block = detector(blocks)
 
-		for block_path, lines in block_lines.items():
+		for block_path, lines in detected_lines_by_block.items():
 			for line in lines:
 				line.update_confidence(sampler(block_path, line))
+
+		detected_lines = dict()
+		free_lines = []
+		for parts, lines in detected_lines_by_block.items():
+			prediction_name = parts[0]
+			class_name = parts[1]
+			block_id = parts[2]
+
+			for line_id, line in enumerate(lines):
+				pred_path = line.predicted_path
+				if pred_path != (prediction_name, class_name):
+					free_lines.append((pred_path, line))
+				else:
+					line_path = (prediction_name, class_name, block_id, line_id)
+					detected_lines[line_path] = line
+
+		combinator = TableRegionCombinator(blocks.keys())
+		combined_lines = combinator.lines(detected_lines)
+		contours = combinator.contours(dict(
+			(k, v.image_space_polygon) for k, v in blocks.items()))
+		reliable = reliable_contours(contours, combined_lines, free_lines, detected_lines)
 
 		with output.lines() as zf:
 			info = dict(version=1, min_confidence=self._min_confidence)
 			zf.writestr("meta.json", json.dumps(info))
 
-			for parts, lines in block_lines.items():
-				prediction_name = parts[0]
-				class_name = parts[1]
-				block_id = parts[2]
+			for line_path, line in detected_lines.items():
+				zf.writestr("%s.json" % "/".join(map(str, line_path)), json.dumps(line.info))
 
-				for line_id, line in enumerate(lines):
-					line_name = "%s/%s/%s/%d" % (
-						prediction_name, class_name, block_id, line_id)
-					zf.writestr("%s.json" % line_name, json.dumps(line.info))
+		with output.contours(copy_meta_from=aggregate) as zf:
+			for k, contour in reliable.items():
+				if contour.geom_type != "Polygon" and not contour.is_empty:
+					logging.error(
+						"reliable contour %s is %s" % (k, contour.geom_type))
+				zf.writestr("/".join(map(str, k)) + ".wkt", contour.wkt)
 
 
 @click.command()

@@ -15,13 +15,24 @@ from functools import partial
 import origami.core.binarize
 
 
-def reliable_contours(all_contours, all_lines, min_confidence, ignore=None):
+def reliable_contours(all_contours, all_lines, free_lines, detected_lines, ignore=None):
+	reliable = dict()
+
+	max_ids = collections.defaultdict(int)
+	for k in all_contours.keys():
+		max_ids[k[:2]] = max(max_ids[k[:2]], int(k[2]))
+
+	for pred_path, line in free_lines:
+		new_id = max_ids[pred_path] + 1
+		max_ids[pred_path] = new_id
+		new_path = pred_path + (new_id,)
+		reliable[new_path] = line.image_space_polygon
+		detected_lines[new_path + (0,)] = line
+
 	block_lines = collections.defaultdict(list)
 	for path, line in all_lines.items():
-		if line.confidence >= min_confidence:
-			block_lines[path[:3]].append(line)
+		block_lines[path[:3]].append(line)
 
-	reliable = dict()
 	for path, lines in block_lines.items():
 		if ignore is None or not ignore(path):
 			hull = shapely.ops.cascaded_union([

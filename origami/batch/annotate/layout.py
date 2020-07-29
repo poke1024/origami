@@ -78,16 +78,14 @@ class DebugLayoutProcessor(Processor):
 	def artifacts(self):
 		return [
 			("warped", Input(Artifact.SEGMENTATION)),
-			("aggregate", Input(
-				Artifact.LINES, stage=Stage.AGGREGATE)),
 			("reliable", Input(
-				Artifact.CONTOURS,
+				Artifact.CONTOURS, Artifact.LINES,
 				Artifact.TABLES, Artifact.ORDER,
 				stage=Stage.RELIABLE)),
 			("output", Output(Annotation("layout"))),
 		]
 
-	def process(self, page_path: Path, warped, aggregate, reliable, output):
+	def process(self, page_path: Path, warped, reliable, output):
 		contours = dict([
 			(k, b.image_space_polygon)
 			for k, b in reliable.regions.by_path.items()])
@@ -107,7 +105,7 @@ class DebugLayoutProcessor(Processor):
 
 			rendered_line_paths = set([x for x in order if len(x) == 4])
 			rendered_lines = dict(
-				(k, v) for k, v in aggregate.lines.by_path.items()
+				(k, v) for k, v in reliable.lines.by_path.items()
 				if k in rendered_line_paths)
 
 			order = dict(

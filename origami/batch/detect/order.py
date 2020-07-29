@@ -3,14 +3,11 @@
 import click
 import collections
 import logging
-import shapely.ops
 
 from pathlib import Path
-from itertools import chain
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
-from origami.batch.core.lines import reliable_contours
 from origami.batch.core.utils import RegionsFilter, TableRegionCombinator
 from origami.core.xycut import polygon_order, bounds_order
 from origami.core.separate import Separators, ObstacleSampler
@@ -99,46 +96,31 @@ class ReadingOrderProcessor(Processor):
 		return [
 			("warped", Input(Artifact.SEGMENTATION, stage=Stage.WARPED)),
 			("dewarped", Input(Artifact.CONTOURS, stage=Stage.DEWARPED)),
-			("aggregate", Input(Artifact.CONTOURS, Artifact.LINES, stage=Stage.AGGREGATE)),
-			("output", Output(Artifact.ORDER, Artifact.CONTOURS, stage=Stage.RELIABLE)),
+			("aggregate", Input(Artifact.CONTOURS, stage=Stage.AGGREGATE)),
+			("reliable", Input(Artifact.CONTOURS, Artifact.LINES, stage=Stage.RELIABLE)),
+			("output", Output(Artifact.ORDER, stage=Stage.RELIABLE)),
 		]
 
-	def process(self, page_path: Path, warped, dewarped, aggregate, output):
+	def process(self, page_path: Path, warped, dewarped, aggregate, reliable, output):
 		blocks = aggregate.regions.by_path
 		if not blocks:
 			return
 
 		page = aggregate.page
-		min_confidence = aggregate.lines.min_confidence
-
-		combinator = TableRegionCombinator(blocks.keys())
-		contours = combinator.contours(dict(
-			(k, v.image_space_polygon) for k, v in blocks.items()))
-		combined_lines = combinator.lines(aggregate.lines.by_path)
-		reliable = reliable_contours(
-			contours,
-			combined_lines,
-			min_confidence=min_confidence,
-			ignore=self._ignore)
+		min_confidence = reliable.lines.min_confidence
 
 		min_area = page.geometry(True).rel_area(self._options["region_area"])
-		reliable = dict(
-			(k, v)
-			for k, v in reliable.items()
-			if v.area >= min_area)
+		reliable_contours = reliable.regions.by_path
+		reliable_contours = dict(
+			(k, v.image_space_polygon)
+			for k, v in reliable_contours.items()
+			if v.image_space_polygon.area >= min_area and not self._ignore(k))
 
 		separators = Separators(
 			warped.segmentation, dewarped.separators)
 
-		with output.contours(copy_meta_from=aggregate) as zf:
-			for k, contour in reliable.items():
-				if contour.geom_type != "Polygon" and not contour.is_empty:
-					logging.error(
-						"reliable contour %s is %s" % (k, contour.geom_type))
-				zf.writestr("/".join(k) + ".wkt", contour.wkt)
-
 		orders = self.xycut_orders(
-			page, reliable, aggregate.lines.by_path, separators, min_confidence)
+			page, reliable_contours, reliable.lines.by_path, separators, min_confidence)
 
 		orders = dict(
 			("/".join(k), ["/".join(map(str, p)) for p in ps])

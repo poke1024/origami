@@ -69,7 +69,19 @@ class Line:
 
 	@property
 	def confidence(self):
-		return self._confidence
+		if self._confidence:
+			return max(self._confidence.values())
+		else:
+			return 0
+
+	@property
+	def predicted_path(self):
+		items = list(self._confidence.items())
+		if items:
+			i = np.argmax([x[1] for x in items])
+			return tuple(items[i][0].split("/"))
+		else:
+			return None
 
 	def update_confidence(self, confidence):
 		self._confidence = confidence

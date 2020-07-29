@@ -51,8 +51,8 @@ class Artifact(enum.Enum):
 	LINES = ("lines.%s.zip", {
 		Stage.WARPED: 0,
 		#Stage.DEWARPED  # not supported
-		Stage.AGGREGATE: 2,
-		#Stage.RELIABLE  # not supported
+		#Stage.AGGREGATE  # not supported
+		Stage.RELIABLE: 3  # not supported
 	})
 
 	def __init__(self, filename, stages=None):

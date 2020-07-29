@@ -27,19 +27,19 @@ class DebugLinesProcessor(Processor):
 	def artifacts(self):
 		return [
 			("warped", Input(Artifact.SEGMENTATION)),
-			("aggregate", Input(
-				Artifact.LINES, stage=Stage.AGGREGATE)),
+			("reliable", Input(
+				Artifact.CONTOURS, Artifact.LINES, stage=Stage.RELIABLE)),
 			("output", Output(Annotation("lines")))
 		]
 
-	def process(self, page_path: Path, warped, aggregate, output):
-		blocks = aggregate.regions.by_path
-		lines = aggregate.lines.by_path
+	def process(self, page_path: Path, warped, reliable, output):
+		blocks = reliable.regions.by_path
+		lines = reliable.lines.by_path
 
 		if not blocks:
 			return
 
-		page = aggregate.page
+		page = reliable.page
 		predictors = warped.predictors
 
 		qt_im = ImageQt(page.warped)
