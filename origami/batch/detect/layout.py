@@ -501,7 +501,7 @@ class DominanceOperator:
 				largest = regions.contours[largest_path]
 				largest = largest.buffer(fringe)
 				union = [largest_path]
-				for path in by_area[:i - 1]:
+				for path in by_area[:i]:
 					polygon = regions.contours[path]
 					if polygon.is_empty:
 						union.append(path)
