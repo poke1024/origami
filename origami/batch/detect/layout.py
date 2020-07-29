@@ -285,15 +285,25 @@ class Transformer:
 					operator.__class__.__name__, 1 + i))
 
 
-def alignment(a0, a1, b0, b1):
+def alignment(a0, a1, b0, b1, mode="min"):
 	span_a = portion.closed(a0, a1)
 	span_b = portion.closed(b0, b1)
 	shared = span_a & span_b
 	if shared.empty:
 		return 0
 
-	return (shared.upper - shared.lower) / min(
-		a1 - a0, b1 - b0)
+	da = a1 - a0
+	db = b1 - b0
+	if mode == "min":
+		d = min(da, db)
+	elif mode == "a":
+		d = da
+	elif mode == "b":
+		d = db
+	else:
+		raise ValueError(mode)
+
+	return (shared.upper - shared.lower) / d
 
 
 class IsOnSameLine:

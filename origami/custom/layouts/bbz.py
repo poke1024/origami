@@ -3,10 +3,10 @@ from origami.batch.detect.layout import *
 _fringe = 0.001
 
 
-def y_aligned(contours, a, b):
-    _, miny1, _, maxy1 = contours[a].bounds
-    _, miny2, _, maxy2 = contours[b].bounds
-    return alignment(miny1, maxy1, miny2, maxy2) > 0.9
+def y_aligned(contours, text, table):
+    _, miny1, _, maxy1 = contours[text].bounds
+    _, miny2, _, maxy2 = contours[table].bounds
+    return alignment(miny1, maxy1, miny2, maxy2, mode="a") > 0.9
 
 
 _region_code = {
@@ -16,12 +16,11 @@ _region_code = {
 
 
 def dominance_strategy(contours, a, b):
-    if y_aligned(contours, a, b):
-        code = tuple([_region_code[x[:2]] for x in (a, b)])
-        if code == ("txt", "tab"):
-            return "merge", b
-        elif code == ("tab", "txt"):
-            return "merge", a
+    code = tuple([_region_code[x[:2]] for x in (a, b)])
+    if code == ("txt", "tab") and y_aligned(contours, a, b):
+        return "merge", b
+    elif code == ("tab", "txt") and y_aligned(contours, b, a):
+        return "merge", a
 
     if contours[a].area < contours[b].area:
         return "split", b, a
