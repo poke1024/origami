@@ -68,7 +68,7 @@ class DewarpProcessor(Processor):
 			return
 
 		lines = warped.lines.by_path
-		separators = warped.separators
+		separators = warped.separators.by_path
 
 		page = warped.page
 

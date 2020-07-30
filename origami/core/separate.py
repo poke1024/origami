@@ -15,7 +15,7 @@ from origami.core.math import inset_bounds, outset_bounds
 
 
 class Separators:
-	def __init__(self, segmentation, separators):
+	def __init__(self, segmentation, separators, widths):
 		self._predictions = dict()
 		for p in segmentation.predictions:
 			if p.type == PredictorType.SEPARATOR:
@@ -27,11 +27,21 @@ class Separators:
 			prediction_name, prediction_type = k[:2]
 			prediction = self._predictions[prediction_name]
 			parsed_seps[prediction.classes[prediction_type]].append(geom)
-			geom.name = "/".join(k[:2])
+			geom.name = "/".join(k)
 			all_seps.append(geom)
 
+		self._by_path = separators
 		self._all_seps = all_seps
 		self._parsed_seps = parsed_seps
+		self._widths = widths  # sep width on warped page
+
+	@property
+	def by_path(self):
+		return self._by_path
+
+	@property
+	def geoms(self):
+		return self._all_seps
 
 	@cached_property
 	def _tree(self):
@@ -41,7 +51,7 @@ class Separators:
 		return self._tree.query(shape)
 
 	def label(self, name):
-		prediction_name, prediction_label = name.split("/")
+		prediction_name, prediction_label = name.split("/")[:2]
 		return self._predictions[prediction_name].classes[prediction_label]
 
 	def for_label(self, name):
@@ -56,6 +66,9 @@ class Separators:
 				if box.intersects(sep):
 					return True
 		return False
+
+	def width(self, name):
+		return self._widths.get(tuple(name.split("/")), 1)
 
 
 def extract_segments(geom):
@@ -77,9 +90,10 @@ def extract_segments(geom):
 
 
 class ObstacleSampler:
-	def __init__(self, separators):
+	def __init__(self, separators, thickness_delta=None):
 		self._separators = separators
 		self._label = separators.label
+		self._thickness_delta = thickness_delta
 
 		self._direction = {
 			self._label("separators/H"): 0,
@@ -96,6 +110,9 @@ class ObstacleSampler:
 
 		flow = intervaltree.IntervalTree()
 		obst = intervaltree.IntervalTree()
+
+		flow_widths = []
+		flow_width_weights = []
 
 		for sep in self._separators.query(box):
 			intersection = sep.intersection(box)
@@ -117,11 +134,20 @@ class ObstacleSampler:
 					vax = 1 - gap.axis
 					flow.addi(smin[vax], smax[vax] + 1, True)
 
+					flow_widths.append(self._separators.width(sep.name))
+					flow_width_weights.append(smax[vax] - smin[vax])
+
 		flow.merge_overlaps(strict=False)
 		obst.merge_overlaps(strict=False)
 
 		flow_score = sum(i.length() for i in flow) / gap.dv
 		obst_score = sum(i.length() for i in obst) / gap.du
+
+		if self._thickness_delta and flow_widths:
+			w = np.average(flow_widths, weights=flow_width_weights)
+			delta_t = self._thickness_delta(w)
+			obst_score -= delta_t
+			flow_score += delta_t
 
 		score = gap.du * gap.dv  # i.e. largest whitespace area
 		score = (score * (1 - obst_score)) * (1 + flow_score)

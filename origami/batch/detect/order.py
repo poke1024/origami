@@ -10,7 +10,7 @@ from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
 from origami.batch.core.utils import RegionsFilter, TableRegionCombinator
 from origami.core.xycut import polygon_order, bounds_order
-from origami.core.separate import Separators, ObstacleSampler
+from origami.core.separate import ObstacleSampler
 
 
 def _is_table_path(path):
@@ -24,6 +24,7 @@ class ReadingOrderProcessor(Processor):
 		self._ignore = RegionsFilter(options["ignore"])
 		self._splittable = RegionsFilter(options["splittable"])
 		self._enable_region_splitting = not options["disable_region_splitting"]
+		self._separator_flow_width = options["separator_flow_width"]
 
 	@property
 	def processor_name(self):
@@ -86,11 +87,21 @@ class ReadingOrderProcessor(Processor):
 			if line.confidence >= min_confidence:
 				reliable_region_lines[line_path[:3]].append((line_path, line))
 
-		sampler = ObstacleSampler(separators)
+		sampler = ObstacleSampler(separators, self._thickness_delta)
 
 		return dict(
 			(p, self.compute_order(page, v, reliable_region_lines, sampler))
 			for p, v in by_labels.items())
+
+	def _thickness_delta(self, separator_width):
+		# this is a BBZ-specific thing. We sometimes want to divide along thicker
+		# separators instead of thinner ones. For an example, see the necessary
+		# horizontal split on page SNP2436020X-18780410-0-2-0-0 to separate the
+		# Marktbericht (top) from the Feuilleton (bottom). Splitting along vertical
+		# separators would produce the wrong reading order.
+
+		scale = 1
+		return max(0, separator_width - self._separator_flow_width) * scale
 
 	def artifacts(self):
 		return [
@@ -119,8 +130,7 @@ class ReadingOrderProcessor(Processor):
 			for k, v in combined_contours.items()
 			if v.area >= min_area and not self._ignore(k))
 
-		separators = Separators(
-			warped.segmentation, dewarped.separators)
+		separators = dewarped.separators
 
 		orders = self.xycut_orders(
 			page, combined_contours, reliable.lines.by_path, separators, min_confidence)
@@ -160,6 +170,10 @@ class ReadingOrderProcessor(Processor):
 	'--disable-region-splitting',
 	is_flag=True,
 	default=False)
+@click.option(
+	'--separator-flow-width',
+	type=float,
+	default=1.5)  # BBZ specific.
 @Processor.options
 def reading_order(data_path, **kwargs):
 	""" Detect reading order on all document images in DATA_PATH. """

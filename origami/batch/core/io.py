@@ -15,6 +15,7 @@ from atomicwrites import atomic_write
 from origami.core.page import Page
 from origami.core.predict import PredictorType
 from origami.core.block import Block, Line
+from origami.core.separate import Separators
 
 
 def find_data_path(page_path):
@@ -87,34 +88,58 @@ class Annotation(DebuggingArtifact):
 		super().__init__(filename)
 
 
+Contours = collections.namedtuple("Contours", ["items", "meta"])
+
+
 def read_contours(path: Path, pred_type, open=open):
+	items = []
+	pred_meta = dict()
+
 	with open(path, "rb") as f:
 		with zipfile.ZipFile(f, "r") as zf:
 			meta = json.loads(zf.read("meta.json"))
 
+			def filter_path(contours_path):
+				prediction_name = contours_path[0]
+				t = PredictorType[meta[prediction_name]["type"]]
+				return t == pred_type
+
 			for name in zf.namelist():
+				if name.endswith("/meta.json"):
+					parts = tuple(name.split("/"))
+					if filter_path(parts):
+						pred_meta[tuple(parts[:-1])] = json.loads(zf.read(name))
+
 				if not name.endswith(".wkt"):
 					continue
 
 				stem = name.rsplit('.', 1)[0]
 				parts = tuple(stem.split("/"))
-				prediction_name = parts[0]
-
-				t = PredictorType[meta[prediction_name]["type"]]
-				if t != pred_type:
+				if not filter_path(parts):
 					continue
 
-				yield parts, shapely.wkt.loads(zf.read(name).decode("utf8"))
+				items.append((
+					parts,
+					shapely.wkt.loads(zf.read(name).decode("utf8"))))
+
+	return Contours(items, pred_meta)
 
 
 def read_separators(path: Path, open=open):
+	contours = read_contours(
+		path, PredictorType.SEPARATOR, open=open)
+
 	separators = dict()
+	for sep_path, polygon in contours.items:
+		separators[sep_path] = polygon
 
-	for parts, polygon in read_contours(
-		path, PredictorType.SEPARATOR, open=open):
-		separators[parts] = polygon
+	widths = dict()
+	if contours.meta:
+		for k, data in contours.meta.items():
+			for i, w in enumerate(data["width"]):
+				widths[k + (str(i),)] = w
 
-	return separators
+	return separators, widths
 
 
 class Regions:
@@ -124,7 +149,7 @@ class Regions:
 		for parts, polygon in read_contours(
 			path,
 			PredictorType.REGION,
-			open=open):
+			open=open).items:
 
 			blocks[parts] = Block(
 				page, polygon, stage)
@@ -184,6 +209,8 @@ class Reader:
 
 		if Artifact.LINES in artifacts:
 			artifacts.add(Artifact.CONTOURS)
+		if Artifact.CONTOURS in artifacts:
+			artifacts.add(Artifact.SEGMENTATION)
 		if stage and stage.is_dewarped and Artifact.CONTOURS in artifacts:
 			artifacts.add(Artifact.DEWARPING_TRANSFORM)
 
@@ -226,10 +253,14 @@ class Reader:
 		return Segmentation.read_predictors(self.path(Artifact.SEGMENTATION))
 
 	@cached_property
-	def segmentation(self):
-		assert self._stage is None or self._stage == Stage.WARPED
+	def _segmentation(self):
 		from origami.core.segment import Segmentation
 		return Segmentation.open(self.path(Artifact.SEGMENTATION))
+
+	@cached_property
+	def segmentation(self):
+		assert self._stage is None or self._stage == Stage.WARPED
+		return self._segmentation
 
 	@cached_property
 	def regions(self):
@@ -241,9 +272,13 @@ class Reader:
 
 	@cached_property
 	def separators(self):
-		return read_separators(
+		geoms, widths = read_separators(
 			self.path(Artifact.CONTOURS),
 			open=self._open)
+		return Separators(
+			self._segmentation,
+			geoms,
+			widths)
 
 	@cached_property
 	def lines(self):
@@ -355,6 +390,9 @@ class Writer:
 				path = copy_meta_from.path(Artifact.CONTOURS)
 				with zipfile.ZipFile(path, "r") as zf:
 					f.writestr("meta.json", zf.read("meta.json"))
+					for name in zf.namelist():
+						if name.endswith("/meta.json"):
+							f.writestr(name, zf.read(name))
 
 			yield f
 

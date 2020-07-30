@@ -1228,8 +1228,7 @@ class LayoutDetectionProcessor(Processor):
 		if not blocks:
 			return
 
-		separators = Separators(
-			warped.segmentation, dewarped.separators)
+		separators = dewarped.separators
 
 		page = dewarped.page
 		contours = [(k, block.image_space_polygon) for k, block in blocks.items()]
