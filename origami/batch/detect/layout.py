@@ -535,30 +535,34 @@ class DominanceOperator:
 
 		# phase 2. resolve remaining overlaps.
 
+		def modify(key, shape):
+			if shape.geom_type == "Polygon":
+				regions.modify_contour(key, shape)
+				remaining[key] = shape.area
+			elif shape.geom_type == "MultiPolygon":
+				regions.remove_contour(key)
+				del remaining[key]
+				for geom in shape.geoms:
+					new_path = regions.add_contour(key[:2], geom)
+					remaining[new_path] = geom.area
+			else:
+				raise RuntimeError(
+					"illegal shape geom_type %s" % shape.geom_type)
+
 		def shrink(shrinked_path, constant_path):
-			polygon = regions.contours[shrinked_path]
+			shape = regions.contours[shrinked_path]
 			other = regions.contours[constant_path]
 
-			intersection = polygon.intersection(other)
+			intersection = shape.intersection(other)
 			if intersection.area < 1:
 				return False
 
-			polygon = polygon.difference(other)
-			if polygon.is_empty:
+			remaining_shape = shape.difference(other)
+			if remaining_shape.is_empty:
 				regions.remove_contour(shrinked_path)
 				del remaining[shrinked_path]
-			elif polygon.geom_type == "MultiPolygon":
-				regions.remove_contour(shrinked_path)
-				del remaining[shrinked_path]
-				for geom in polygon.geoms:
-					new_path = regions.add_contour(shrinked_path[:2], geom)
-					remaining[new_path] = geom.area
-			elif polygon.geom_type != "Polygon":
-				raise RuntimeError(
-					"illegal shape %d" % polygon.geom_type)
 			else:
-				regions.modify_contour(shrinked_path, polygon)
-				remaining[shrinked_path] = polygon.area
+				modify(shrinked_path, remaining_shape)
 
 			return True
 
@@ -569,17 +573,28 @@ class DominanceOperator:
 
 			done = True
 			for pk, qk in neighbors_.edges():
-				if pk in regions.contours and qk in regions.contours:
-					r = self._strategy(regions.contours, pk, qk)
+				if pk not in regions.contours or qk not in regions.contours:
+					continue
 
-					if r[0] == "merge":
-						merge([pk, qk], r[1])
-						done = False
-						changed = True
-					elif r[0] == "split":
-						shrink(r[1], r[2])
-					else:
-						raise ValueError(r)
+				intersection = regions.contours[pk].intersection(regions.contours[qk])
+				if intersection.area < 1:
+					continue
+
+				done = False
+				changed = True
+
+				r = self._strategy(regions.contours, pk, qk)
+
+				if r[0] == "merge":
+					merge([pk, qk], r[1])
+				elif r[0] == "split":
+					shrink(r[1], r[2])
+				elif r[0] == "custom":
+					ps, qs = r[1]
+					modify(pk, ps)
+					modify(qk, qs)
+				else:
+					raise ValueError(r)
 
 		return changed
 
