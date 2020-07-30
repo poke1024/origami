@@ -59,6 +59,7 @@ class LineDetectionProcessor(Processor):
 		super().__init__(options)
 		self._options = options
 		self._text_regions = RegionsFilter(options["text_regions"])
+		self._reclassify_lines_threshold = options["reclassify_lines_threshold"]
 		self._min_confidence = 0
 
 	@property
@@ -106,8 +107,9 @@ class LineDetectionProcessor(Processor):
 			block_id = parts[2]
 
 			for line_id, line in enumerate(lines):
-				pred_path = line.predicted_path
-				if pred_path != (prediction_name, class_name):
+				error = line.predicted_path_error((prediction_name, class_name))
+				if error > self._reclassify_lines_threshold:
+					pred_path = line.predicted_path
 					free_lines.append((pred_path, line))
 				else:
 					line_path = (prediction_name, class_name, block_id, line_id)
@@ -152,6 +154,11 @@ class LineDetectionProcessor(Processor):
 	default="regions/TEXT, regions/TABULAR",
 	type=str,
 	help='regions types that may overlap without being resolved')
+@click.option(
+	'--reclassify-lines-threshold',
+	default=0.5,
+	type=float,
+	help='threshold for reclassifying lines based on segmentation evidence')
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),

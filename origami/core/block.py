@@ -88,6 +88,19 @@ class Line:
 		else:
 			return None
 
+	def predicted_path_error(self, path):
+		items = [
+			(k, v) for k, v in self._confidence.items()
+			if not k.endswith("/BACKGROUND")]
+		if items:
+			i = np.argmax([x[1] for x in items])
+			if tuple(items[i][0].split("/")) == path:
+				return 0
+			else:
+				return items[i][1] - self._confidence.get("/".join(path), 0)
+		else:
+			return 0
+
 	def update_confidence(self, confidence):
 		self._confidence = confidence
 
