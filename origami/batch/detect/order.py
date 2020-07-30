@@ -100,8 +100,10 @@ class ReadingOrderProcessor(Processor):
 		# Marktbericht (top) from the Feuilleton (bottom). Splitting along vertical
 		# separators would produce the wrong reading order.
 
-		scale = 1
-		return max(0, separator_width - self._separator_flow_width) * scale
+		if separator_width > self._separator_flow_width:
+			return 2
+		else:
+			return 0
 
 	def artifacts(self):
 		return [
@@ -173,7 +175,7 @@ class ReadingOrderProcessor(Processor):
 @click.option(
 	'--separator-flow-width',
 	type=float,
-	default=1.5)  # BBZ specific.
+	default=2)  # BBZ specific.
 @Processor.options
 def reading_order(data_path, **kwargs):
 	""" Detect reading order on all document images in DATA_PATH. """
