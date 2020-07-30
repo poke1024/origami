@@ -58,7 +58,7 @@ class LineDetectionProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
-		self._allow_conflicts = RegionsFilter(options["allow_conflicts"])
+		self._text_regions = RegionsFilter(options["text_regions"])
 		self._min_confidence = 0
 
 	@property
@@ -79,20 +79,20 @@ class LineDetectionProcessor(Processor):
 
 		sampler = ConfidenceSampler(blocks, warped.segmentation)
 
-		conflicting_blocks = [
-			block for path, block in blocks.items()
-			if not self._allow_conflicts(path)]
+		text_blocks = dict(
+			(path, block) for path, block in blocks.items()
+			if self._text_regions(path))
 
 		detector = ConcurrentLineDetector(
 			text_area_factory=TextAreaFactory(
-				conflicting_blocks,
+				text_blocks.values(),
 				buffer=self._options["contours_buffer"]),
 			force_parallel_lines=False,
 			force_lines=True,
 			extra_height=self._options["extra_height"],
 			extra_descent=self._options["extra_descent"])
 
-		detected_lines_by_block = detector(blocks)
+		detected_lines_by_block = detector(text_blocks)
 
 		for block_path, lines in detected_lines_by_block.items():
 			for line in lines:
@@ -148,8 +148,8 @@ class LineDetectionProcessor(Processor):
 	type=float,
 	help='expand contours by specified relative amount')
 @click.option(
-	'--allow-conflicts',
-	default="regions/ILLUSTRATION",
+	'--text-regions',
+	default="regions/TEXT, regions/TABULAR",
 	type=str,
 	help='regions types that may overlap without being resolved')
 @click.argument(
