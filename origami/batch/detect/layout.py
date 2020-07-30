@@ -11,11 +11,14 @@ import shapely.geometry
 import shapely.ops
 import sklearn.cluster
 import skimage.filters
+import skimage.morphology
 import networkx as nx
 import collections
 import portion
 import logging
 import importlib
+import cv2
+import PIL.Image
 
 from pathlib import Path
 from functools import partial
@@ -28,7 +31,7 @@ from origami.core.xycut import polygon_order
 from origami.core.neighbors import neighbors
 from origami.core.utils import build_func_from_string
 from origami.batch.core.utils import RegionsFilter
-from origami.core.mask import Mask
+from origami.core.predict import PredictorType
 
 
 def overlap_ratio(a, b):
@@ -95,14 +98,15 @@ def non_empty_contours(contours):
 
 
 class Regions:
-	def __init__(self, page, warped_lines, contours, separators):
+	def __init__(self, page, warped_lines, contours, separators, segmentation):
 		self._page = page
 
 		self._contours = dict(non_empty_contours(contours))
 		self._unmodified_contours = self._contours.copy()
 		for k, contour in contours:
 			contour.name = "/".join(k)
-		self.separators = separators
+		self._separators = separators
+		self._segmentation = segmentation
 
 		self._line_counts = LineCounts(warped_lines)
 		self._warped_lines = warped_lines
@@ -129,6 +133,10 @@ class Regions:
 	def page(self):
 		return self._page
 
+	@property
+	def separators(self):
+		return self._separators
+
 	@cached_property
 	def binarized(self):
 		grayscale = np.array(
@@ -145,12 +153,19 @@ class Regions:
 			grayscale, window_size)
 		binary = grayscale > thresh_sauvola
 
-		h, w = grayscale.shape
-		content_regions = Mask(shapely.geometry.MultiPolygon(
-			self._unmodified_contours.values()), (0, 0, w, h))
-		binary = np.logical_not(np.logical_and(
-			np.logical_not(binary),
-			content_regions.binary))
+		dewarper = self._page.dewarper
+
+		for prediction in self._segmentation.predictions:
+			if prediction.type == PredictorType.SEPARATOR:
+				bg = prediction.background_label.value
+				mask = PIL.Image.fromarray(
+					(prediction.labels != bg).astype(np.uint8) * 255)
+				mask = dewarper.dewarp_image(mask, cv2.INTER_NEAREST)
+				mask = skimage.morphology.binary_dilation(
+					np.array(mask) > 0, skimage.morphology.square(3))
+				binary = np.logical_or(binary, mask)
+
+		#PIL.Image.fromarray(binary).save("/Users/arbeit/tmp.png")
 
 		return binary.astype(np.float32)
 
@@ -849,7 +864,7 @@ class FixSpillOver:
 class FixSpillOverH(FixSpillOver):
 	def __init__(
 			self, filters,
-			level=0.1, band=0.01, peak=0.8, whratio=1.5,
+			level=0.05, peak=0.95, whratio=1.5,
 			min_line_count=3, min_area=0.2):
 
 		# "whratio" is measured in line height (lh). examples:
@@ -858,7 +873,6 @@ class FixSpillOverH(FixSpillOver):
 
 		self._filter = RegionsFilter(filters)
 		self._level = level
-		self._band = band
 		self._peak = peak
 		self._whratio = whratio
 		self._min_line_count = min_line_count
@@ -874,12 +888,6 @@ class FixSpillOverH(FixSpillOver):
 		# if we detect a whitespace region in a column,
 		# we split the polygon. since we dewarped, we know
 		# columns are unskewed.
-
-		m_lh = regions.median_line_height
-
-		kernel_w = max(
-			m_lh / 5,  # pixels in dewarped image space
-			int(np.ceil(regions.geometry.rel_length(self._band))))
 
 		splits = []
 		binarized = regions.binarized
@@ -899,14 +907,16 @@ class FixSpillOverH(FixSpillOver):
 			int_line_height = max(6, int(line_height))
 
 			crop, (minx, miny) = self._binarized_crop(regions, contour)
+			assert crop.dtype == np.float32
 
 			ink_v = scipy.ndimage.convolve(
-				crop, kernel(int_line_height, 1), mode="constant", cval=1)
+				crop, kernel(int_line_height * 3, 1), mode="constant", cval=1)
 
 			ink_h = np.quantile(ink_v, self._level, axis=0)
 
-			ink_h = np.convolve(
-				ink_h, kernel(kernel_w), mode="same")
+			# ignore leftmost and rightmost 10%.
+			ink_h[:len(ink_h) // 10] = 0
+			ink_h[-len(ink_h) // 10:] = 0
 
 			peaks, info = scipy.signal.find_peaks(
 				ink_h,
@@ -1226,7 +1236,8 @@ class LayoutDetectionProcessor(Processor):
 
 		regions = Regions(
 			page, warped.lines.by_path,
-			contours, separators)
+			contours, separators,
+			warped.segmentation)
 		self._transformer(regions)
 
 		# we split table cells into separate regions so that the

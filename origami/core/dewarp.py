@@ -811,6 +811,7 @@ class Grid:
 
 		return f
 
+
 class Dewarper:
 	def __init__(self, im, grid):
 		self._im = im
@@ -847,3 +848,16 @@ class Dewarper:
 		return PIL.Image.fromarray(cv2.remap(
 			np.array(self._im), x_grid_hv.astype(np.float32),
 			None, interpolation=cv2.INTER_LINEAR))
+
+	def dewarp_image(self, im, interpolation=cv2.INTER_LINEAR):
+		w0, h0 = self._im.size
+		w1, h1 = im.size
+
+		pixels = np.array(im)
+		x_grid_hv = self._grid.points("full")
+		x_grid_hv[:, :, 0] *= w1 / w0
+		x_grid_hv[:, :, 1] *= h1 / h0
+
+		return PIL.Image.fromarray(cv2.remap(
+			pixels, x_grid_hv.astype(np.float32),
+			None, interpolation=interpolation))
