@@ -69,7 +69,7 @@ class LineDetectionProcessor(Processor):
 	def artifacts(self):
 		return [
 			("warped", Input(Artifact.SEGMENTATION, stage=Stage.WARPED)),
-			("aggregate", Input(Artifact.CONTOURS, stage=Stage.AGGREGATE)),
+			("aggregate", Input(Artifact.CONTOURS, Artifact.TABLES, stage=Stage.AGGREGATE)),
 			("output", Output(Artifact.CONTOURS, Artifact.LINES, stage=Stage.RELIABLE))
 		]
 
@@ -99,6 +99,9 @@ class LineDetectionProcessor(Processor):
 			for line in lines:
 				line.update_confidence(sampler(block_path, line))
 
+		table_columns = aggregate.tables["columns"]
+		c_tables = set([tuple(x.split("/")) for x in table_columns.keys()])
+
 		detected_lines = dict()
 		free_lines = []
 		for parts, lines in detected_lines_by_block.items():
@@ -108,6 +111,13 @@ class LineDetectionProcessor(Processor):
 
 			for line_id, line in enumerate(lines):
 				error = line.predicted_path_error((prediction_name, class_name))
+				if (prediction_name, class_name) == ("regions", "TABULAR"):
+					has_columns = (prediction_name, class_name, block_id) in c_tables
+					if not has_columns:
+						# never reclassify lines from a table that has no columns, we
+						# would work more havoc than good by producing clutter.
+						error = 0
+
 				if error > self._reclassify_lines_threshold:
 					pred_path = line.predicted_path
 					free_lines.append((pred_path, line))
