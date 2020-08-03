@@ -186,12 +186,16 @@ class Schema:
 	default=".gt.txt",
 	help='which text files to process',
 	required=True)
-def cli(gt_path, schema_name, schema_file, output_path, extension):
+@click.option(
+	'--overwrite',
+	is_flag=True,
+	default=False)
+def cli(gt_path, schema_name, schema_file, output_path, extension, overwrite):
 	output_path = Path(output_path).resolve()
 	gt_path = Path(gt_path).resolve()
 	assert gt_path != output_path
 
-	if output_path.exists():
+	if output_path.exists() and not overwrite:
 		raise ValueError("%s already exists." % output_path)
 
 	if not schema_name and not schema_file:
@@ -220,7 +224,7 @@ def cli(gt_path, schema_name, schema_file, output_path, extension):
 			click.echo("Error in line %s." % p.name)
 			raise
 
-	output_path.mkdir()
+	output_path.mkdir(exist_ok=overwrite)
 
 	for line_name, annotation in tqdm(normalized.items(), desc="writing"):
 		with open(output_path / line_name, "w") as f:
