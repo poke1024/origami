@@ -22,9 +22,9 @@
 				"digits": "1234567890",
 				"currency": "€£",
 
-				"symbols": "§&",
+				"symbols": "§&†",
 				"poetry": "⏓⏑",
-				"greek": "Ἰϰχεάα",
+				"greek": "Ἰϰχεάαμ",
 				"rotunda": "ꝛ",
 				"eth": "ð"
 			},
@@ -64,6 +64,7 @@
 			("str", "―", "--"),
 
 			# normalize visually highly similar symbols.
+			# ignore some uncommon accents.
 			("str", "Ʒ", "3"),  # in gt4hist prediction
 			("str", "ʒ", "3"),  # in gt4hist prediction
 			("str", "ꝗ", "q"),  # in gt4hist prediction
@@ -71,12 +72,21 @@
 			("str", "ꝑ", "p"),  # in tesseract prediction
 			("str", ("chr", 868), "e"),  # upper e
 			("str", "ꝰ", "9"),  # upper 9
+			("str", ("chr", 0x1de3), "2"),  # upper 2
 			("str", "ν", "v"),
 			("str", "ꝝ", "?"),
 			("str", "ι", "l"),
+			("str", "ł", "l"),
+			("str", "ἀ", "ά"),
+			("str", "ÿ", "y"),
+			("str", "ꝙ", "q"),
 
 			# remove esoteric symbols.
+			("str", "¶", ""),  # in tesseract prediction
+			("str", ("chr", 0x303), ""),  # in tesseract prediction
 			("str", "⁊", ""),
+			("str", ("chr", 0x308), ""),
+			("str", ("chr", 0x1dd3), ""),
 
 			# normalize quotes and apostrophes.
 			("str", "’", "'"),
@@ -94,10 +104,6 @@
 
 			("re", r"''([^'\s])", r"'' \g<1>"),
 			("re", r"\s+''", "''"),
-
-			# ignore esoteric symbols.
-			("str", "¶", ""),  # in tesseract prediction
-			("str", ("chr", 0x303), ""),  # in tesseract prediction
 
 			# normalize Fraktur-s.
 			("str", "ſ", "s"),
