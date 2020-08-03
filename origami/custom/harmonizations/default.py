@@ -10,7 +10,7 @@
 				"uppercase": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
 
 				"ligatures": "æÆœ",
-				"lowercase_diacritic": "äöüàáâåãéèëêẽôòõîĩůûùũñç",
+				"lowercase_diacritic": "äöüàáâåãéèëêẽôòóõîĩůûùũñç",
 				"uppercase_diacritic": "ÄÖÜÅÊÇÙÛÚÒ",
 
 				"punctuation": "_-?!.,:; ",
@@ -24,7 +24,7 @@
 
 				"symbols": "§&",
 				"poetry": "⏓⏑",
-				"greek": "Ἰϰχεά",
+				"greek": "Ἰϰχεάα",
 				"rotunda": "ꝛ",
 				"eth": "ð"
 			},
@@ -72,7 +72,11 @@
 			("str", ("chr", 868), "e"),  # upper e
 			("str", "ꝰ", "9"),  # upper 9
 			("str", "ν", "v"),
+			("str", "ꝝ", "?"),
+			("str", "ι", "l"),
 
+			# remove esoteric symbols.
+			("str", "⁊", ""),
 
 			# normalize quotes and apostrophes.
 			("str", "’", "'"),
