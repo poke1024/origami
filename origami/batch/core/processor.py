@@ -13,6 +13,9 @@ import traceback
 import imghdr
 import multiprocessing
 import functools
+import threading
+import time
+import sys
 
 from pathlib import Path
 from functools import partial
@@ -45,10 +48,58 @@ def is_image(path):
 	return imghdr.what(path) is not None
 
 
+class WatchdogState(enum.Enum):
+	RUNNING = 0
+	DONE = 1
+	CANCEL = 2
+
+
+class Watchdog(threading.Thread):
+	def __init__(self, pool, timeout=1000):
+		threading.Thread.__init__(self)
+		self._pool = pool
+		self._timeout = timeout
+		self._last_ping = time.time()
+		self._state = WatchdogState.RUNNING
+
+	def _cancel(self, dt):
+		if self._state != WatchdogState.CANCEL:
+			logging.error("no new results after %d s. stopping." % dt)
+			self._state = WatchdogState.CANCEL
+			self._pool.terminate()
+			t = threading.Thread(target=lambda: self._pool.join(), args=())
+			t.start()
+			self._last_ping = time.time()
+		elif self._state == WatchdogState.CANCEL:
+			logging.error("stopping failed. killing process.")
+			os._exit(1)
+
+	def run(self):
+		while True:
+			time.sleep(self._timeout // 2)
+			if self._state == WatchdogState.DONE:
+				break
+			dt = time.time() - self._last_ping
+			if dt > self._timeout:
+				self._cancel(dt)
+
+	def ping(self):
+		self._last_ping = time.time()
+
+	def set_is_done(self):
+		if self._state == WatchdogState.RUNNING:
+			self._state = WatchdogState.DONE
+
+	def is_cancelled(self):
+		return self._state == WatchdogState.CANCEL
+
+
+
 class Processor:
 	def __init__(self, options, needs_qt=False):
 		self._overwrite = options.get("overwrite", False)
 		self._processes = options.get("processes", 1)
+		self._timeout = options.get("alive", 300)
 		self._name = options.get("name", "")
 		self._verbose = False
 
@@ -87,6 +138,11 @@ class Processor:
 				type=int,
 				default=1,
 				help="Number of parallel processes to employ."),
+			click.option(
+				'--alive',
+				type=int,
+				default=300,
+				help="Seconds to wait after inactive process is killed."),
 			click.option(
 				'--name',
 				type=str,
@@ -205,10 +261,20 @@ class Processor:
 
 			if self._processes > 1:
 				with multiprocessing.Pool(self._processes) as pool:
+					watchdog = Watchdog(pool=pool, timeout=self._timeout)
+					watchdog.start()
+
 					with tqdm(total=len(squeue)) as progress:
 						for _ in pool.imap_unordered(
 							self._trigger_process_star, squeue):
 							progress.update(1)
+							watchdog.ping()
+
+				if watchdog.is_cancelled():
+					watchdog.kill()
+					sys.exit(1)
+				else:
+					watchdog.set_is_done()
 			else:
 				for p, kwargs in tqdm(squeue):
 					self._trigger_process(p, kwargs)
