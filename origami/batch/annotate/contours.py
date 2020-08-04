@@ -38,7 +38,7 @@ class AnnotateContoursProcessor(Processor):
 
 	def process(self, page_path: Path, warped, input, output):
 		blocks = input.regions.by_path
-		separators = input.separators
+		separators = input.separators.by_path
 
 		if not blocks:
 			logging.info("no blocks for %s" % page_path)
