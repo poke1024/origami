@@ -77,17 +77,25 @@ class ResetProcessor(Processor):
 	type=str,
 	required=True,
 	help="one or multiple artifacts, e.g. \"contours, order, lines, dewarping_transform, tables, compose\"")
+@click.option(
+	'-y', '--yes',
+	is_flag=True,
+	default=False)
 @Processor.options
-def reset(data_path, artifacts, **kwargs):
+def reset(data_path, artifacts, yes, **kwargs):
 	""" Delete certain artifacts for all document images in DATA_PATH. """
 	processor = ResetProcessor(artifacts, kwargs)
 
-	print("The following artifacts will get deleted for all documents:")
-	print("", flush=True)
-	processor.print_artifacts()
-	print("", flush=True)
+	if not yes:
+		print("The following artifacts will get deleted for all documents:")
+		print("", flush=True)
+		processor.print_artifacts()
+		print("", flush=True)
 
-	if click.confirm('Are you sure?'):
+		if click.confirm('Are you sure?'):
+			yes = True
+
+	if yes:
 		processor.traverse(data_path)
 
 
