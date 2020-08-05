@@ -60,6 +60,13 @@ class Artifact(enum.Enum):
 		self._filename = filename
 		self._stages = stages
 
+	@property
+	def stages(self):
+		if self._stages:
+			return self._stages.keys()
+		else:
+			return None
+
 	def filename(self, stage=None):
 		s = self._filename
 		if self._stages is not None:
@@ -204,7 +211,7 @@ class Lines:
 
 
 class Reader:
-	def __init__(self, artifacts, stage, page_path, open=open):
+	def __init__(self, artifacts, stage, page_path, take_any, open=open):
 		artifacts = set(artifacts)
 
 		if Artifact.LINES in artifacts:
@@ -218,6 +225,7 @@ class Reader:
 		self._stage = stage
 		self._page_path = page_path
 		self._data_path = find_data_path(page_path)
+		self._take_any = take_any
 		self._open = open
 
 	@property
@@ -230,7 +238,10 @@ class Reader:
 		return self._data_path / artifact.filename(self._stage)
 
 	def is_ready(self):
-		return all(p.exists() for p in self.paths)
+		if self._take_any:
+			return True
+		else:
+			return all(p.exists() for p in self.paths)
 
 	@property
 	def missing(self):
@@ -333,13 +344,17 @@ class Reader:
 
 
 class Input:
-	def __init__(self, *artifacts, stage=None):
+	def __init__(self, *artifacts, stage=None, take_any=False):
 		assert all(isinstance(x, (Artifact, DebuggingArtifact)) for x in artifacts)
 		self._artifacts = set(artifacts)
 		self._stage = stage
+		self._take_any = take_any
 
 	def instantiate(self, processor, overwrite, **kwargs):
-		return Reader(self._artifacts, self._stage, open=processor.lock_or_open, **kwargs)
+		return Reader(
+			self._artifacts, self._stage,
+			take_any=self._take_any,
+			open=processor.lock_or_open, **kwargs)
 
 
 class Writer:
@@ -440,13 +455,18 @@ class Output:
 def parse_artifact(name):
 	if "/" in name:
 		parts = list(map(
-			lambda s: s.strip(), name.split("/")))
+			lambda s: s.strip().upper(), name.split("/")))
 		if len(parts) != 2:
 			raise ValueError(name)
-		t, name = parts
-		if t != "annotation":
+		t1, t2 = parts
+		if t1 in Artifact:
+			artifact = Artifact[t1]
+			stage = Stage[t2]
+			return artifact, stage
+		elif t1 == "ANNOTATION":
+			artifact = Annotation(name)
+		else:
 			raise ValueError(name)
-		artifact = Annotation(name)
 	else:
 		try:
 			artifact = Artifact[name.upper()]
@@ -454,4 +474,4 @@ def parse_artifact(name):
 			raise click.UsageError(
 				"illegal artifact name %s" % name)
 
-	return artifact
+	return artifact, None
