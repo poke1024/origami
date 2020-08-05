@@ -1,5 +1,4 @@
 import cv2
-import skgeom as sg
 import numpy as np
 import networkx as nx
 import shapely.geometry
@@ -8,7 +7,6 @@ import shapely.strtree
 import shapely.affinity
 import functools
 import types
-import sympy
 import itertools
 import logging
 import collections
@@ -20,12 +18,11 @@ import semantic_version
 import scipy.optimize
 
 from heapq import heappush, heappop
-from cached_property import cached_property
 
-import origami.core.geometry as geometry
-from origami.core.skeleton import FastSkeleton
-from origami.core.mask import Mask
 from origami.core.neighbors import neighbors
+
+from origami.core.polyline import FastPolylineFactory
+from origami.core.polyline.skgeom import extract_simple_polygons, SkGeomMultiPolylineFactory
 
 
 def _without_closing_point(pts):
@@ -33,22 +30,6 @@ def _without_closing_point(pts):
 		pts = pts[:-1]
 
 	return pts
-
-
-def _shapely_to_skgeom(polygon):
-	pts = _without_closing_point(list(polygon.exterior.coords))
-	return sg.Polygon(list(reversed(pts)))
-
-
-def _skgeom_to_shapely(polygon):
-	return shapely.geometry.Polygon(list(reversed(polygon.coords)))
-
-
-def _as_wl(x):
-	if isinstance(x, (list, tuple, np.ndarray)):
-		return "{%s}" % ",".join(_as_wl(y) for y in x)
-	else:
-		return str(x)
 
 
 def blowup(shape, area):
@@ -176,9 +157,7 @@ class Contours:
 class Decompose:
 	def __call__(self, polygon):
 		if not polygon.is_valid:
-			for q in _extract_simple_polygons(
-					_without_closing_point(polygon.exterior.coords)):
-				q = _skgeom_to_shapely(q)
+			for q in extract_simple_polygons(polygon.exterior.coords):
 				assert q.is_valid
 				yield q
 		else:
@@ -297,6 +276,9 @@ class Offset:
 		self._offset = offset
 		self._cache = cache
 
+		import skgeom as sg
+		self._sg = sg
+
 	def __call__(self, polygon):
 		cache_key = ("offset", self._offset, polygon.wkt)
 		if self._cache is not None and cache_key in self._cache:
@@ -306,7 +288,7 @@ class Offset:
 		else:
 			cache_data = []
 
-		skeleton = sg.skeleton.create_interior_straight_skeleton(
+		skeleton = self._sg.skeleton.create_interior_straight_skeleton(
 			_shapely_to_skgeom(polygon))
 		for p in skeleton.offset_polygons(self._offset):
 			yield shapely.geometry.Polygon(p.coords)
@@ -318,285 +300,18 @@ class Offset:
 			self._cache.set(cache_key, cache_data)
 
 
-
-def _point_to_tuple(p):
-	return float(p.x()), float(p.y())
-
-
-def _longest_path(G, orientation):
-	digraph = nx.DiGraph()
-	digraph.add_nodes_from(G.nodes)
-
-	for a, b in G.edges:
-		va = np.array(a)
-		vb = np.array(b)
-		xa = np.dot(va, orientation)
-		xb = np.dot(vb, orientation)
-		d = np.linalg.norm(va - vb)
-		if xa < xb:
-			digraph.add_edge(a, b, distance=d)
-		elif xa > xb:
-			digraph.add_edge(b, a, distance=d)
-		else:
-			pass  # do not break DAG by adding edge
-
-	return nx.algorithms.dag.dag_longest_path(
-		digraph, weight="distance")
-
-
-def _clip_path(origin, radius, path):
-	path = np.array(path)
-	prev_pt = origin
-	while len(path) > 0:
-		next_pt = path[0]
-		d = np.linalg.norm(next_pt - origin)
-		if d < radius:
-			path = path[1:]
-		else:
-			intersections = sympy.intersection(
-				sympy.Segment(prev_pt, next_pt),
-				sympy.Circle(origin, radius))
-
-			# intersection might not actually happen due to limited
-			# fp precision in np.linalg.norm. if not, continue.
-
-			if intersections:
-				pt = intersections[0].evalf()
-				origin = np.array([pt.x, pt.y], dtype=path.dtype)
-				return np.vstack([[origin], path])
-			else:
-				path = path[1:]
-
-	return path
-
-
-def _clip_path_2(path, radius):
-	path = _clip_path(path[0], radius, path[1:])
-
-	if len(path) > 0:
-		path = list(reversed(
-			_clip_path(path[-1], radius, list(reversed(path[:-1])))))
-
-	return path
-
-
-def _expand_path(G, path):
-	expanded_path = []
-	for p, q in zip(path, path[1:]):
-		cont = G[p][q]["path"]
-		if expanded_path:
-			while cont and cont[0] == expanded_path[-1]:
-				cont = cont[1:]
-		if cont:
-			expanded_path.extend(cont)
-
-	return expanded_path
-
-
-class Polyline:
-	def __init__(self, coords, width):
-		self._coords = np.array(coords)
-		self._width = width
-
-	def affine_transform(self, matrix):
-		coords = shapely.affinity.affine_transform(
-			self.line_string, matrix)
-		return Polyline(coords, self._width)
-
-	@staticmethod
-	def joined(lines):
-		lines = [l for l in lines if l is not None]
-		if not lines:
-			return None
-		return Polyline(
-			np.vstack([l.coords for l in lines]),
-			np.max([l.width for l in lines]))
-
-	@property
-	def line_string(self):
-		return shapely.geometry.LineString(self.coords)
-
-	@property
-	def coords(self):
-		return self._coords
-
-	@cached_property
-	def centroid(self):
-		return tuple(shapely.geometry.LineString(self._coords).centroid.coords[0])
-
-	@property
-	def width(self):
-		return self._width
-
-	@property
-	def is_empty(self):
-		return False
-
-	def mapped(self, m):
-		pts = self._coords
-		for a, b in zip(pts, pts[1:]):
-			yield (m[tuple(a)], m[tuple(b)])
-
-	def oriented(self, v):
-		u = self._coords[-1] - self._coords[0]
-		if np.dot(u, np.array(v)) < 0:
-			return Polyline(list(reversed(self._coords)), self._width)
-		else:
-			return self
-
-	def simplify(self, tolerance):
-		if len(self._coords) < 2:
-			return None
-		else:
-			l = shapely.geometry.LineString(self._coords).simplify(tolerance)
-			if not l.is_empty:
-				return Polyline(l.coords, self._width)
-			else:
-				return None
-
-	@property
-	def segments(self):
-		return list(zip(self.coords, self.coords[1:]))
-
-	@cached_property
-	def length(self):
-		return sum([np.linalg.norm(b - a) for a, b in self.segments])
-
-
-def _extract_simple_polygons(coords, orientation=None):
-	assert coords[0] != coords[-1]
-
-	arr = sg.arrangement.Arrangement()
-	for a, b in zip(coords, coords[1:] + [coords[0]]):
-		arr.insert(sg.Segment2(sg.Point2(*a), sg.Point2(*b)))
-
-	polygons = []
-
-	for _, boundary in geometry.face_boundaries(arr):
-		polygons.append(sg.Polygon(
-			list(reversed(_without_closing_point(boundary)))))
-
-	if len(polygons) > 1 and orientation is not None:
-		polygons = sorted(polygons, key=lambda p: np.dot(p.coords[0], orientation))
-
-	return polygons
-
-
 class EstimatePolyline:
 	def __init__(self, orientation=None):
-		self._orientation = orientation
-		self._fast_skeleton = FastSkeleton()
-		self._skeleton_path = dict(
-			fast=self._fast_skeleton_path,
-			best=self._best_skeleton_path)
-		self._tolerance = 0.5
-		self._quality = "fast"
-
-	def _best_skeleton_path(self, polygon):
-		try:
-			skeleton = sg.skeleton.create_interior_straight_skeleton(polygon)
-		except RuntimeError as e:
-			logging.error("skeleton failed on %s" % polygon)
-			return None
-
-		G = nx.Graph()
-		G.add_nodes_from([_point_to_tuple(v.point) for v in skeleton.vertices])
-
-		if len(G) < 2:
-			return None, 0
-
-		uvs = [(_point_to_tuple(h.vertex.point), _point_to_tuple(h.opposite.vertex.point))
-			for h in skeleton.halfedges if h.is_bisector]
-
-		G.add_weighted_edges_from([
-			(u, v, np.linalg.norm(np.array(u) - np.array(v))) for u, v in uvs], weight="distance")
-
-		path = _longest_path(G, self._orientation)
-		line_width = float(max(v.time for v in skeleton.vertices))
-
-		path = list(shapely.geometry.LineString(
-			path).simplify(self._tolerance).coords)
-
-		return np.array(path), line_width
-
-	def _fast_skeleton_path(self, polygon):
-		# need buffer of 1 to fix time computation (otherwise there might be no border background).
-		mask = Mask(_skgeom_to_shapely(polygon), buffer=1)
-		G = self._fast_skeleton(mask.binary, time=True)
-
-		if len(G) < 2:
-			return None, 0
-
-		path = _longest_path(G, self._orientation)
-		path = _expand_path(G, path)
-
-		simplified = shapely.geometry.LineString(
-			path).simplify(self._tolerance)
-		if simplified.is_empty:
-			return None, 0
-
-		if simplified.geom_type != "LineString":
-			logging.warning("unexpected line geometry %s" % simplified.geom_type)
-
-		path = list(simplified.coords)
-
-		origin = np.array(mask.bounds[:2])
-		path = [np.array(p) + origin for p in path]
-
-		line_width = float(max(G.nodes[v]["time"] for v in G))
-
-		return np.array(path), line_width
-
-	def _simple_polyline(self, polygon):
-		if polygon.orientation() == sg.Sign.NEGATIVE:
-			logging.error("encountered negative orientation polygon")
-			return None
-
-		if polygon.orientation() != sg.Sign.POSITIVE:
-			return None
-
-		path, line_width = self._skeleton_path[self._quality](polygon)
-
-		if path is None:
-			return None
-
-		if self._quality == "best":
-			path = _clip_path_2(path, line_width)
-			if not path:
-				return None
-
-		polyline = Polyline(path, line_width)
-
-		if self._orientation is not None:
-			polyline = polyline.oriented(self._orientation)
-
-		return polyline		
+		self._factory = SkGeomMultiPolylineFactory(
+			# BestPolylineFactor
+			FastPolylineFactory(
+				orientation=orientation,
+				tolerance=0.5))
 
 	def __call__(self, polygon):
-		sk_polygon = _shapely_to_skgeom(polygon)
-
-		if not sk_polygon.is_simple():
-			coords = list(polygon.exterior.coords)
-
-			simple_polygons = _extract_simple_polygons(
-				_without_closing_point(coords), self._orientation)
-
-			if len(simple_polygons) == 0:
-				# logging.error("no simple polygons")
-				return
-			elif len(simple_polygons) > 1:
-				if self._orientation is None:
-					# logging.error("multiple simple polygons without orientation")
-					return
-
-				joined = Polyline.joined(
-					[self._simple_polyline(p) for p in simple_polygons])
-
-				yield joined
-			else:
-				yield self._simple_polyline(simple_polygons[0])
-		else:
-			yield self._simple_polyline(sk_polygon)
+		r = self._factory(polygon)
+		if r is not None:
+			yield r
 
 
 class Instantiate:
