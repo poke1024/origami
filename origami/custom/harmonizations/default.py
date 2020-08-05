@@ -11,7 +11,7 @@
 
 				"ligatures": "æÆœ",
 				"lowercase_diacritic": "äöüàáâåãéèëêẽôòóõîĩůûùũñç",
-				"uppercase_diacritic": "ÄÖÜÅÊÇÙÛÚÒ",
+				"uppercase_diacritic": "ÄÖÜÅÊÇÙÛÚÒØ",
 
 				"punctuation": "_-?!.,:; ",
 				"quotes": "‚'",
@@ -80,6 +80,7 @@
 			("str", "ἀ", "ά"),
 			("str", "ÿ", "y"),
 			("str", "ꝙ", "q"),
+			("str", "ꝭ", "f"),
 
 			# remove esoteric symbols.
 			("str", "¶", ""),  # in tesseract prediction
