@@ -864,17 +864,22 @@ class FixSpillOver:
 class FixSpillOverH(FixSpillOver):
 	def __init__(
 			self, filters,
-			level=0.05, peak=0.95, whratio=1.5,
+			black_level=0.05, peak=0.95,
 			min_line_count=3, min_area=0.2):
 
-		# "whratio" is measured in line height (lh). examples:
-		# good split: w=90, lh=35, whratio=2.5
-		# bad split: w=30, lh=40, whratio=0.75
+		# typical whitespace widths:
+
+		# good split: w=90, lh=35, ratio=2.5
+		# (2436020X_1876-03-29_0_150_008)
+
+		# good split: w=12, lh=18, ratio=0.66
+		# (SNP2436020X-18920409-1-24-0-0)
+
+		# bad split: w=30, lh=40, ratio=0.75
 
 		self._filter = RegionsFilter(filters)
-		self._level = level
+		self._black_level = black_level
 		self._peak = peak
-		self._whratio = whratio
 		self._min_line_count = min_line_count
 		self._min_area = min_area
 
@@ -909,20 +914,44 @@ class FixSpillOverH(FixSpillOver):
 			crop, (minx, miny) = self._binarized_crop(regions, contour)
 			assert crop.dtype == np.float32
 
-			ink_v = scipy.ndimage.convolve(
-				crop, kernel(int_line_height * 3, 1), mode="constant", cval=1)
+			ink_h = np.quantile(crop, self._black_level, axis=0)
+
+			ink_h = scipy.ndimage.convolve(
+				ink_h,
+				kernel(int_line_height // 2),
+				mode="constant", cval=0)
+
+			'''
+			similar approach, but much slower:
+			
+			ink_v = scipy.signal.fftconvolve(
+				crop,
+				kernel(int_line_height * 3, int_line_height // 2),
+				mode="same")
 
 			ink_h = np.quantile(ink_v, self._level, axis=0)
+			'''
 
 			# ignore leftmost and rightmost 10%.
 			ink_h[:len(ink_h) // 10] = 0
 			ink_h[-len(ink_h) // 10:] = 0
 
 			peaks, info = scipy.signal.find_peaks(
-				ink_h,
-				height=self._peak,
-				width=line_height * self._whratio,
-				rel_height=1)
+				ink_h, height=self._peak)
+
+			if False:
+				import json
+
+				k_name = "_".join(k)
+
+				PIL.Image.fromarray((crop * 255).astype(np.uint8)).save(
+					DEBUG_PATH / ("%s_bin.png" % k_name))
+
+				#PIL.Image.fromarray(np.clip(ink_v * 255, 0, 255).astype(np.uint8)).save(
+				#	DEBUG_PATH / ("%s_ink_hv.png" % k_name))
+
+				with open(DEBUG_PATH / ("%s_ink_v.json" % k_name), "w") as f:
+					f.write(json.dumps(ink_h.tolist()))
 
 			if len(peaks) > 0:
 				i = np.argmax(info["peak_heights"])
