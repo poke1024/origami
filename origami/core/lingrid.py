@@ -201,9 +201,9 @@ class InterpolatorFactory:
 		box = Box(*self._bounds)
 
 		if not isinstance(values[0], np.ndarray):
-			self._squeeze = True
+			self._squeeze = True  # scalar values
 		else:
-			self._squeeze = False
+			self._squeeze = False  # multi-dimensional values
 
 		try:
 			hull = scipy.spatial.ConvexHull(points)
@@ -240,7 +240,11 @@ class InterpolatorFactory:
 
 		for pt in box.points:
 			extra_pts.append(pt[:2])
-			extra_val.append(pt[2:])
+			if self._squeeze:
+				assert len(pt[2:]) == 1
+				extra_val.extend(pt[2:])
+			else:
+				extra_val.append(pt[2:])
 
 		self._extra_pts = np.array(extra_pts)
 		self._extra_val = np.array(extra_val)
