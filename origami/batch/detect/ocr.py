@@ -150,7 +150,7 @@ class OCRProcessor(Processor):
 @click.option(
 	'--ocr',
 	type=click.Choice(['FULL', 'DRY', 'FAKE'], case_sensitive=False),
-	default="OFF")
+	default="FULL")
 def segment(data_path, **kwargs):
 	""" Perform OCR on all recognized lines in DATA_PATH. """
 	processor = OCRProcessor(kwargs)
