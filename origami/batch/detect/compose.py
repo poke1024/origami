@@ -43,7 +43,7 @@ class MergedTextRegion:
 		self._transform = document.rewarp
 		self._lines = lines
 
-	def export_page_xml(self, px_document):
+	def export_page_xml(self, px_document, only_regions):
 		if self._polygon is None:
 			return
 
@@ -52,12 +52,18 @@ class MergedTextRegion:
 		px_region.append_coords(self._transform(
 			self._polygon.exterior.coords))
 
-		for i, (line_path, line) in enumerate(self._lines):
-			line_text = self._document.get(line_path[:3]).get_line_text(line_path)
-			px_line = px_region.append_text_line(id_="-".join(self._block_path + (str(i),)))
-			px_line.append_coords(self._transform(
-				line.image_space_polygon.exterior.coords))
-			px_line.append_text_equiv(line_text)
+		if only_regions:
+			texts = []
+			for i, (line_path, line) in enumerate(self._lines):
+				texts.append(self._document.get(line_path[:3]).get_line_text(line_path))
+			px_region.append_text_equiv("\n".join(texts))
+		else:
+			for i, (line_path, line) in enumerate(self._lines):
+				line_text = self._document.get(line_path[:3]).get_line_text(line_path)
+				px_line = px_region.append_text_line(id_="-".join(self._block_path + (str(i),)))
+				px_line.append_coords(self._transform(
+					line.image_space_polygon.exterior.coords))
+				px_line.append_text_equiv(line_text)
 
 
 class TextRegion:
@@ -91,13 +97,14 @@ class TextRegion:
 		composition.append_text(
 			line_path, self._line_texts[line_path])
 
-	def export_page_xml(self, px_document):
+	def export_page_xml(self, px_document, only_regions):
 		px_region = px_document.append_region(
 			"TextRegion", id_="-".join(self._block_path))
 
 		px_region.append_coords(self._transform(
 			self._polygon.exterior.coords))
 
+		line_paths = []
 		for line_path in self._order:
 			line = self._lines[line_path]
 
@@ -108,10 +115,19 @@ class TextRegion:
 							str(line_path), self._line_texts[line_path], line.confidence))
 				continue
 
-			px_line = px_region.append_text_line(id_="-".join(line_path))
-			px_line.append_coords(self._transform(
-				line.image_space_polygon.exterior.coords))
-			px_line.append_text_equiv(self._line_texts[line_path])
+			line_paths.append((line_path, line))
+
+		if only_regions:
+			texts = []
+			for line_path, line in line_paths:
+				texts.append(self._line_texts[line_path])
+			px_region.append_text_equiv("\n".join(texts))
+		else:
+			for line_path, line in line_paths:
+				px_line = px_region.append_text_line(id_="-".join(line_path))
+				px_line.append_coords(self._transform(
+					line.image_space_polygon.exterior.coords))
+				px_line.append_text_equiv(self._line_texts[line_path])
 
 	def add_text(self, line_path, text):
 		self._order.append(line_path)
@@ -183,7 +199,7 @@ class TableRegion:
 
 		return line_shape
 
-	def export_page_xml(self, px_document):
+	def export_page_xml(self, px_document, only_regions):
 		table_id = "-".join(self._block_path)
 		px_table_region = px_document.append_region(
 			"TableRegion", id_=table_id)
@@ -323,7 +339,7 @@ class GraphicRegion:
 		self._block_path = block_path
 		self._transform = document.rewarp
 
-	def export_page_xml(self, px_document):
+	def export_page_xml(self, px_document, only_regions):
 		px_region = px_document.append_region(
 			"GraphicRegion", id_="-".join(self._block_path))
 		px_region.append_coords(self._transform(
@@ -331,11 +347,13 @@ class GraphicRegion:
 
 
 class Document:
-	def __init__(self, page_path, input):
+	def __init__(self, page_path, input, block_filter, text_filter):
 		self._page_path = page_path
 		self._input = input
 		self._grid = self.page.dewarper.grid
 		self._rewriter = LineRewriter(input.tables)
+		self._block_filter = block_filter
+		self._text_filter = text_filter
 
 		combinator = TableRegionCombinator(input.regions.by_path.keys())
 		self._mapping = combinator.mapping
@@ -349,8 +367,9 @@ class Document:
 
 		# add lines and line texts in correct order.
 		for line_path, ocr_text in input.sorted_ocr:
-			block_path = line_path[:3]
+			ocr_text = self._text_filter(ocr_text)
 
+			block_path = line_path[:3]
 			table_path = block_path[2].split(".")
 			if len(table_path) > 1:
 				assert block_path[:2] == ("regions", "TABULAR")
@@ -375,8 +394,9 @@ class Document:
 	@property
 	def reading_order(self):
 		order_data = self._input.order
-		return list(map(
+		paths = list(map(
 			lambda x: tuple(x.split("/")), order_data["orders"]["*"]))
+		return list(filter(self._block_filter, paths))
 
 	def rewrite_lines(self, lines):
 		return self._rewriter(lines)
@@ -558,11 +578,19 @@ class ComposeProcessor(Processor):
 		super().__init__(options)
 		self._options = options
 		self._page_xml = options["page_xml"]
+		self._only_page_xml_regions = options["only_page_xml_regions"]
 
 		if options["regions"]:
 			self._block_filter = RegionsFilter(options["regions"])
 		else:
 			self._block_filter = None
+
+		if options["ignore_letters"]:
+			ignored = set(options["ignore_letters"])
+			self._text_filter = lambda t: "".join([
+				c for c in t if c not in ignored])
+		else:
+			self._text_filter = lambda t: t
 
 		# see https://stackoverflow.com/questions/4020539/
 		# process-escape-sequences-in-a-string-in-python
@@ -608,7 +636,9 @@ class ComposeProcessor(Processor):
 				index=i, region_ref="-".join(path))
 
 		for region in ro.regions:
-			region.export_page_xml(px_document)
+			region.export_page_xml(
+				px_document,
+				self._only_page_xml_regions)
 
 		with io.BytesIO() as f:
 			px_document.write(f, overwrite=True, validate=True)
@@ -640,7 +670,7 @@ class ComposeProcessor(Processor):
 		if not input.regions.by_path:
 			return
 
-		document = Document(page_path, input)
+		document = Document(page_path, input, self._block_filter, self._text_filter)
 
 		with output.compose() as zf:
 			zf.writestr("page.txt", self.export_plain_text(document))
@@ -671,6 +701,14 @@ class ComposeProcessor(Processor):
 	'--page-xml',
 	is_flag=True,
 	default=False)
+@click.option(
+	'--only-page-xml-regions',
+	is_flag=True,
+	default=False)
+@click.option(
+	'--ignore-letters',
+	type=str,
+	default="")
 @Processor.options
 def compose(data_path, **kwargs):
 	""" Produce text composed in a single text file for each page in DATA_PATH. """

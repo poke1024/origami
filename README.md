@@ -12,7 +12,12 @@ Some of origami's features are:
 * reading order detection
 * simple table support
 * Page-XML export
-* various additional tools
+
+Additional tools for:
+
+* annotating ground truth
+* debugging
+* creating annotated images
 
 # Installation 
 
@@ -215,3 +220,13 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 Batch processes can be run concurrently. Origami supports file-based locking or by using a database (see `--lock-strategy`). The latter strategy is more compatible and set by default.
 Use `--lock-database` to specify the path to a lock database (if none is specified, Origami will create one in your data folder).
 
+## Dinglehopper
+
+To create Page XMLs for Dinglehopper, you probably want to use:
+
+```
+python -m origami.batch.detect.compose DATA_PATH \
+    --page-xml --only-page-xml-regions \
+    --regions regions/TEXT \
+    --ignore-letters "{}[]"
+```
