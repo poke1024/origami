@@ -694,10 +694,6 @@ class ComposeProcessor(Processor):
 	default=None,
 	help="Only export text from given regions path, e.g. -f \"regions/TEXT\".")
 @click.option(
-	'--fringe',
-	type=float,
-	default=0.001)
-@click.option(
 	'--page-xml',
 	is_flag=True,
 	default=False)

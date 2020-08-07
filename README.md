@@ -222,7 +222,13 @@ Use `--lock-database` to specify the path to a lock database (if none is specifi
 
 ## Dinglehopper
 
-To create Page XMLs for Dinglehopper, you probably want to use:
+To evaluate performance using Dinglehopper, you probably want to use:
+
+```
+python -m origami.batch.utils.evaluate DATA_PATH
+```
+
+Alternatively, you can create PAGE XMLs manually:
 
 ```
 python -m origami.batch.detect.compose DATA_PATH \

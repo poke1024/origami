@@ -56,6 +56,9 @@ class Artifact(enum.Enum):
 		Stage.RELIABLE: 3  # not supported
 	})
 
+	# for debugging.
+	DINGLEHOPPER = ("dinglehopper.xml")
+
 	def __init__(self, filename, stages=None):
 		self._filename = filename
 		self._stages = stages
@@ -314,7 +317,11 @@ class Reader:
 
 	@property
 	def signature(self):
-		return zipfile.Zipfile(self.path(Artifact.SIGNATURE), "rb")
+		return zipfile.ZipFile(self.path(Artifact.SIGNATURE), "r")
+
+	@property
+	def compose(self):
+		return zipfile.ZipFile(self.path(Artifact.COMPOSE), "r")
 
 	@cached_property
 	def ocr(self):
