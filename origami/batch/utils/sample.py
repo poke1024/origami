@@ -6,12 +6,13 @@ import logging
 import shutil
 import enum
 import zipfile
+import collections
 
 from pathlib import Path
 from tqdm import tqdm
 
 from origami.batch.core.processor import Processor
-from origami.batch.core.io import Artifact, Stage, Input, Annotation, parse_artifact
+from origami.batch.core.io import Artifact, Stage, Input, parse_artifact
 
 
 class DirectoryTarget:
@@ -90,10 +91,9 @@ _namers = {
 
 class SampleProcessor(Processor):
 	def __init__(self, options):
-		options["nolock"] = True
+		options["lock_strategy"] = "NONE"
 		super().__init__(options)
 		self._options = options
-		self._stage = Stage.ANY
 
 		self._out_path = Path(self._options["output_path"])
 		if self._out_path.suffix == ".zip":
@@ -104,14 +104,16 @@ class SampleProcessor(Processor):
 		self._namer = _namers[NamingScheme[
 			self._options["filename"].upper()]]
 
-		self._artifacts = []
+		self._artifacts = collections.defaultdict(list)
 		self._copy_page = False
 		for spec in options["artifacts"].split(","):
 			s = spec.strip()
 			if s.upper() == "PAGE":
 				self._copy_page = True
 			else:
-				artifact = parse_artifact(s)
+				artifact, stage = parse_artifact(s)
+				if stage is None:
+					stage = Stage.ANY
 
 				if self._options["do_not_unpack"]:
 					copy = self._target.default_copy
@@ -120,7 +122,7 @@ class SampleProcessor(Processor):
 				else:
 					copy = self._target.default_copy
 
-				self._artifacts.append((artifact, copy))
+				self._artifacts[stage].append((artifact, copy))
 
 		self._queue = []
 
@@ -128,9 +130,12 @@ class SampleProcessor(Processor):
 		self._target.close()
 
 	def artifacts(self):
-		return [
-			("data", Input(*[a for a, _ in self._artifacts], stage=self._stage))
-		]
+		args = []
+		for stage, artifacts in self._artifacts.items():
+			args.append((
+				"stage_%s" % stage.name.lower(),
+				Input(*[a for a, copy in artifacts], stage=stage)))
+		return args
 
 	def should_process(self, p: Path) -> bool:
 		return True
@@ -141,18 +146,20 @@ class SampleProcessor(Processor):
 		else:
 			self._queue.append(copy_args)
 
-	def process(self, page_path: Path, data):
-		for artifact, copy in self._artifacts:
-			self._enqueue(artifact, data.path(artifact), copy)
+	def process(self, page_path: Path, **kwargs):
+		for stage, artifacts in self._artifacts.items():
+			data = kwargs["stage_%s" % stage.name.lower()]
+			for artifact, copy in artifacts:
+				self._enqueue(artifact, stage, data.path(artifact), copy)
 
 		if self._copy_page:
-			self._enqueue(None, page_path, self._target.default_copy)
+			self._enqueue(None, None, page_path, self._target.default_copy)
 
-	def _copy(self, artifact, path, copy):
+	def _copy(self, artifact, stage, path, copy):
 		if artifact is None:
 			renamed_path = path
 		else:
-			suffix = "." + artifact.filename(self._stage)
+			suffix = "." + artifact.filename(stage)
 			renamed_path = path.parent.with_suffix(suffix)
 		copy(path, self._namer(renamed_path))
 

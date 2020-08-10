@@ -471,7 +471,7 @@ def parse_artifact(name):
 			stage = Stage[t2]
 			return artifact, stage
 		elif t1 == "ANNOTATION":
-			artifact = Annotation(name)
+			artifact = Annotation(t2.lower())
 		else:
 			raise ValueError(name)
 	else:
