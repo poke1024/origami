@@ -5,6 +5,7 @@ import json
 import collections
 import numpy as np
 import pandas as pd
+import logging
 
 from pathlib import Path
 from tabulate import tabulate
@@ -38,7 +39,12 @@ class StatsProcessor(Processor):
 
 	def parse_runtime_data(self, page_path, path):
 		with open(path, "r") as f:
-			runtime_data = json.loads(f.read())
+			try:
+				runtime_data = json.loads(f.read())
+			except json.decoder.JSONDecodeError as e:
+				logging.warning("bad json at %s: %s" % (path, e))
+				return
+
 			for batch, data in runtime_data.items():
 				t = data.get("elapsed")
 				if t is None:

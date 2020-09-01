@@ -232,6 +232,10 @@ class Reader:
 		self._open = open
 
 	@property
+	def data_path(self):
+		return self._data_path
+
+	@property
 	def paths(self):
 		return [self.path(a) for a in self._artifacts]
 
