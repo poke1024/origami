@@ -368,24 +368,27 @@ class Processor:
 			data_path = find_data_path(page_path)
 			json_path = data_path / artifact.filename()
 
-			if not json_path.exists():
-				mode = "w+"
-			else:
-				mode = "r+"
+			new_json_path = json_path.parent / (
+				json_path.stem + ".updated" + json_path.suffix)
+			if new_json_path.exists():
+				os.remove(new_json_path)
 
-			with open(json_path, mode) as f:
-				f.seek(0)
-				file_data = f.read()
-				if file_data:
+			if json_path.exists():
+				with open(json_path, "r") as f:
+					file_data = f.read()
 					data = json.loads(file_data)
-				else:
-					data = dict()
-				for k, v in updates.items():
-					data[k] = v
+			else:
+				data = dict()
 
-				f.seek(0)
+			for k, v in updates.items():
+				data[k] = v
+
+			with open(new_json_path, "w") as f:
 				json.dump(data, f)
-				f.truncate()
+
+			os.remove(json_path)
+			os.rename(new_json_path, json_path)
+
 		except:
 			logging.error(traceback.format_exc())
 
