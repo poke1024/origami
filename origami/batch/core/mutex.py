@@ -9,7 +9,7 @@ from contextlib import contextmanager
 
 
 class DatabaseMutex:
-	def __init__(self, path, timeout=60):
+	def __init__(self, path, timeout=10):
 		self._db_uri = 'sqlite:///%s' % str(Path(path))
 		self._timeout = timeout
 
@@ -26,10 +26,11 @@ class DatabaseMutex:
 			logging.exception("Metadata creation failed.")
 
 	def __getstate__(self):
-		return dict(db_uri=self._db_uri)
+		return dict(db_uri=self._db_uri, timeout=self._timeout)
 
 	def __setstate__(self, newstate):
 		self._db_uri = newstate["db_uri"]
+		self._timeout = newstate["timeout"]
 		self._engine = None
 		self._metadata = None
 		self._mutex_table = None
