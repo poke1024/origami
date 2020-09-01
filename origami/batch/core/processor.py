@@ -76,7 +76,7 @@ class Watchdog(threading.Thread):
 
 	def run(self):
 		while True:
-			time.sleep(self._timeout // 2)
+			time.sleep(1)
 			if self._state == WatchdogState.DONE:
 				break
 			dt = time.time() - self._last_ping
