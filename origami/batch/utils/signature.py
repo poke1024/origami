@@ -34,6 +34,45 @@ def block_bounds(blocks):
 		np.max(bounds[:, 3]))
 
 
+class RegionSignature:
+	def __init__(self, regions):
+		self._page_bounds = block_bounds(regions)
+		minx, miny, maxx, maxy = self._page_bounds
+		self._total_area = (maxx - minx) * (maxy - miny)
+
+	def _cell(self, i, j, region_bounds):
+		pminx, pminy, pmaxx, pmaxy = self._page_bounds
+		rminx, rminy, rmaxx, rmaxy = region_bounds
+
+		xs = (pminx, rminx, rmaxx, pmaxx)
+		ys = (pminy, rminy, rmaxy, pmaxy)
+
+		assert -1 <= i <= 1
+		assert -1 <= j <= 1
+		i1 = i + 1
+		j1 = j + 1
+
+		return xs[i1], ys[j1], xs[i1 + 1], ys[j1 + 1]
+
+	def __call__(self, region):
+		signature = []
+
+		for i in (-1, 0, 1):
+			for j in (-1, 0, 1):
+				minx, miny, maxx, maxy = self._cell(i, j, region.bounds)
+				area = (maxx - minx) * (maxy - miny)
+				signature.append(area / self._total_area)
+
+		return signature
+
+
+def region_signatures(regions):
+	sig = RegionSignature(regions.values())
+
+	for k, region in regions.items():
+		sig(region)
+
+
 class SignatureProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
