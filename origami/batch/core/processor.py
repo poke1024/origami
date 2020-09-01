@@ -94,7 +94,6 @@ class Watchdog(threading.Thread):
 		return self._state == WatchdogState.CANCEL
 
 
-
 class Processor:
 	def __init__(self, options, needs_qt=False):
 		self._overwrite = options.get("overwrite", False)
@@ -105,6 +104,7 @@ class Processor:
 
 		self._lock_strategy = options.get("lock_strategy", "DB")
 		self._lock_level = options.get("lock_level", "PAGE")
+		self._lock_timeout = options.get("lock_timeout", "60")
 		self._mutex = None
 
 		if self._lock_strategy == "DB":
@@ -163,6 +163,12 @@ class Processor:
 				type=click.Path(),
 				required=False,
 				help="Mutex database path used for concurrent processing"),
+			click.option(
+				'--lock-timeout',
+				type=int,
+				default=60,
+				required=False,
+				help="Timeout for locking. NFS volumes might need high values."),
 			click.option(
 				'--overwrite',
 				is_flag=True,
@@ -326,7 +332,8 @@ class Processor:
 			else:
 				db_path = Path(path) / "origami.lock.db"
 
-			self._mutex = DatabaseMutex(db_path)
+			self._mutex = DatabaseMutex(
+				db_path, timeout=self._lock_timeout)
 		elif self._lock_strategy == "FILE":
 			self._mutex = FileMutex()
 		elif self._lock_strategy == "NONE":

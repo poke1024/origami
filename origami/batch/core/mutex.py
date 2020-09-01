@@ -9,8 +9,9 @@ from contextlib import contextmanager
 
 
 class DatabaseMutex:
-	def __init__(self, path):
+	def __init__(self, path, timeout=60):
 		self._db_uri = 'sqlite:///%s' % str(Path(path))
+		self._timeout = timeout
 
 		self._engine = None
 		self._metadata = None
@@ -36,7 +37,9 @@ class DatabaseMutex:
 
 	def _connect(self):
 		engine = sqlalchemy.create_engine(
-			self._db_uri, isolation_level="SERIALIZABLE")
+			self._db_uri,
+			isolation_level="SERIALIZABLE",
+			connect_args={"timeout": self._timeout})
 
 		# see https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#pysqlite-serializable
 		@sqlalchemy.event.listens_for(engine, "connect")
