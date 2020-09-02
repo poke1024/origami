@@ -18,23 +18,35 @@ from origami.batch.core.utils import RegionsFilter
 class OCRProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
-		self._model_path = Path(options["model"])
 		self._options = options
+		self._ocr = self._options["ocr"]
 
-		models = list(self._model_path.glob("*.json"))
-		if not options["legacy_model"]:
-			models = [m for m in models if m.with_suffix(".h5").exists()]
-		if len(models) < 1:
-			raise FileNotFoundError(
-				"no Calamari models found at %s" % self._model_path)
-		self._models = models
+		if self._ocr == "FAKE":
+			self._model_path = None
+			self._models = []
+			self._line_height = 48
+			self._chunk_size = 1
+		else:
+			if not options["model"]:
+				raise click.BadParameter(
+					"Please specify a model path", param="model")
+			self._model_path = Path(options["model"])
+
+			models = list(self._model_path.glob("*.json"))
+			if not options["legacy_model"]:
+				models = [m for m in models if m.with_suffix(".h5").exists()]
+			if len(models) < 1:
+				raise FileNotFoundError(
+					"no Calamari models found at %s" % self._model_path)
+			self._models = models
+
+			self._line_height = None
+			self._chunk_size = None
 
 		self._predictor = None
 		self._voter = None
-		self._line_height = None
 
 		self._ignored = RegionsFilter(options["ignore"])
-		self._ocr = self._options["ocr"]
 
 		if self._ocr != "FULL":
 			logging.getLogger().setLevel(logging.INFO)
@@ -45,6 +57,9 @@ class OCRProcessor(Processor):
 
 	def _load_models(self):
 		if self._predictor is not None:
+			return
+
+		if self._ocr == "FAKE":
 			return
 
 		batch_size = self._options["batch_size"]
@@ -126,7 +141,7 @@ class OCRProcessor(Processor):
 @LineExtractor.options
 @click.option(
 	'-m', '--model',
-	required=True,
+	required=False,
 	type=click.Path(exists=True),
 	help='path that contains Calamari model(s)')
 @click.option(
