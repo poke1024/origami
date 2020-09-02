@@ -42,7 +42,7 @@ class ThumbnailProcessor(Processor):
 @click.option(
 	'--size',
 	type=int,
-	default=384)
+	default=512)
 @click.option(
 	'--quality',
 	type=int,
