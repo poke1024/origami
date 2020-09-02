@@ -573,6 +573,19 @@ class PlainTextComposition:
 		return "".join(self._texts)
 
 
+class LetterFilter:
+	def __init__(self, ignored):
+		self._ignored = ignored
+
+	def __call__(self, t):
+		return "".join([c for c in t if c not in self._ignored])
+
+
+class NullFilter:
+	def __call__(self, t):
+		return t
+
+
 class ComposeProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
@@ -587,10 +600,9 @@ class ComposeProcessor(Processor):
 
 		if options["ignore_letters"]:
 			ignored = set(options["ignore_letters"])
-			self._text_filter = lambda t: "".join([
-				c for c in t if c not in ignored])
+			self._text_filter = LetterFilter(ignored)
 		else:
-			self._text_filter = lambda t: t
+			self._text_filter = NullFilter()
 
 		# see https://stackoverflow.com/questions/4020539/
 		# process-escape-sequences-in-a-string-in-python
