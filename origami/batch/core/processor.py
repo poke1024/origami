@@ -386,7 +386,8 @@ class Processor:
 			with open(new_json_path, "w") as f:
 				json.dump(data, f)
 
-			os.remove(json_path)
+			if json_path.exists():
+				os.remove(json_path)
 			os.rename(new_json_path, json_path)
 
 		except:
