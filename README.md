@@ -81,6 +81,197 @@ Given an OCR model, the necessary order of batches for performing OCR for a fold
 </tr>
 </table>
 
+Each batch creates and depends upon various files, as shown in the following table:
+
+<table class="table table-header-rotated">
+<thead>
+<tr>
+<th></th>
+<th class="rotate"><div><span>page.jpg</span></div></th>
+<th class="rotate"><div><span>segment.zip</span></div></th>
+<th class="rotate"><div><span>segment.jpg</span></div></th>
+<th class="rotate"><div><span>contours.0.zip</span></div></th>
+<th class="rotate"><div><span>flow.zip</span></div></th>
+<th class="rotate"><div><span>lines.0.zip</span></div></th>
+<th class="rotate"><div><span>contours.1.zip</span></div></th>
+<th class="rotate"><div><span>dewarp.zip</span></div></th>
+<th class="rotate"><div><span>contours.2.zip</span></div></th>
+<th class="rotate"><div><span>tables.json</span></div></th>
+<th class="rotate"><div><span>contours.3.zip</span></div></th>
+<th class="rotate"><div><span>lines.3.zip</span></div></th>
+<th class="rotate"><div><span>order.json</span></div></th>
+<th class="rotate"><div><span>ocr.zip</span></div></th>
+<th class="rotate"><div><span>compose.zip</span></div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th class="row-header">segment</th>
+<td>&#9711;</td>
+<td>&#11044;</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">contours</th>
+<td></td>
+<td></td>
+<td>&#9711;</td>
+<td>&#11044;</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">flow</th>
+<td>&#9711;</td>
+<td></td>
+<td></td>
+<td>&#9711;</td>
+<td>&#11044;</td>
+<td>&#11044;</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">dewarp</th>
+<td></td>
+<td></td>
+<td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td></td>
+<td>&#11044;</td>
+<td>&#11044;</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">layout</th>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td></td>
+<td>&#11044;</td>
+<td>&#11044;</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">lines</th>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td>&#11044;</td>
+<td>&#11044;</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">order</th>
+<td></td>
+<td>&#9711;</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td>&#11044;</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">ocr</th>
+<td>&#9711;</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+<td></td>
+<td>&#11044;</td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">compose</th>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td>&#11044;</td>
+</tr>
+</tbody>
+</table>
+
+## Default Batches
+
 <dl>
   <dt>origami.batch.detect.segment</dt>
   <dd>needs: images</dd>
