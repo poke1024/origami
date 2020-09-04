@@ -284,7 +284,7 @@ class FlowDetectionProcessor(Processor):
 	def artifacts(self):
 		return [
 			("warped", Input(Artifact.CONTOURS, stage=Stage.WARPED)),
-			("output", Output(Artifact.FLOW))
+			("output", Output(Artifact.FLOW, Artifact.LINES, stage=Stage.WARPED))
 		]
 
 	def add_line_skew_hq(self, samples, blocks, lines, max_phi, delta=0):
@@ -410,6 +410,20 @@ class FlowDetectionProcessor(Processor):
 		with output.flow() as zf:
 			samples_h.save(zf, "h")
 			samples_v.save(zf, "v")
+
+		with output.lines() as zf:
+			info = dict(version=1)
+			zf.writestr("meta.json", json.dumps(info))
+
+			for parts, lines in block_lines.items():
+				prediction_name = parts[0]
+				class_name = parts[1]
+				block_id = parts[2]
+
+				for line_id, line in enumerate(lines):
+					line_name = "%s/%s/%s/%d" % (
+						prediction_name, class_name, block_id, line_id)
+					zf.writestr("%s.json" % line_name, json.dumps(line.info))
 
 
 @click.command()
