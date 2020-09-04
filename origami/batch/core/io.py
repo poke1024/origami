@@ -36,6 +36,7 @@ class Stage(enum.Enum):
 
 class Artifact(enum.Enum):
 	SEGMENTATION = ("segment.zip",)
+	FLOW = ("flow.zip",)
 	DEWARPING_TRANSFORM = ("dewarp.zip",)
 	TABLES = ("tables.json",)
 	ORDER = ("order.json",)
@@ -320,6 +321,10 @@ class Reader:
 		return self.load_json(Artifact.ORDER)
 
 	@property
+	def flow(self):
+		return zipfile.ZipFile(self.path(Artifact.FLOW), "r")
+
+	@property
 	def signature(self):
 		return zipfile.ZipFile(self.path(Artifact.SIGNATURE), "r")
 
@@ -427,6 +432,9 @@ class Writer:
 
 	def ocr(self):
 		return self.write_zip_file(Artifact.OCR)
+
+	def flow(self):
+		return self.write_zip_file(Artifact.FLOW)
 
 	@contextmanager
 	def dewarping_transform(self):

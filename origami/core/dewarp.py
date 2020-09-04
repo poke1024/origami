@@ -9,8 +9,6 @@ In Proceedings of the Ninth International Conference on Document Analysis and Re
 (ICDAR ’07). IEEE Computer Society, USA, 113–117.
 """
 
-import skimage.filters
-import skimage.morphology
 import numpy as np
 import PIL.Image
 import cv2
@@ -28,232 +26,12 @@ import multiprocessing
 
 from cached_property import cached_property
 from functools import lru_cache
-from sklearn.decomposition import PCA
 
 from origami.core.lingrid import lininterp
-from origami.core.mask import Mask
-from origami.core.math import Geometry, divide_path
-
-
-class LineDetector:
-	def __init__(self):
-		pass
-
-	def binarize(self, im, window=15):
-		im = im.convert("L")
-		pixels = np.array(im)
-		thresh = skimage.filters.threshold_sauvola(pixels, window_size=window)
-		binarized = (pixels > thresh).astype(np.uint8) * 255
-		return binarized
-
-
-class OpeningLineDetector(LineDetector):
-	def __call__(self, im):
-		pix2 = self.binarize(im)
-
-		pix2 = scipy.ndimage.morphology.binary_dilation(
-			pix2, np.ones((1, 2)), iterations=2)
-
-		pix2 = scipy.ndimage.morphology.binary_opening(
-			pix2, np.ones((3, 7)), iterations=3)
-
-		pix2 = scipy.ndimage.morphology.binary_dilation(
-			pix2, np.ones((1, 2)), iterations=2)
-
-		pix2 = scipy.ndimage.morphology.binary_opening(
-			pix2, np.ones((5, 5)), iterations=1)
-
-		return pix2
-
-
-class SobelLineDetector(LineDetector):
-	def __init__(self, kernel=(16, 8)):
-		self._kernel_size = kernel
-		self._ellipse = self._make_ellipse()
-
-	def _make_ellipse(self):
-		w, h = self._kernel_size
-		structure = skimage.morphology.disk(max(w, h)).astype(np.float32)
-		structure = cv2.resize(structure, (w, h), interpolation=cv2.INTER_AREA)
-		return structure / np.sum(structure)
-
-	def __call__(self, im):
-		pix2 = self.binarize(im)
-
-		pix2 = skimage.filters.sobel_h(pix2)
-		pix2 = (pix2 == 1).astype(np.uint8) * 255
-
-		pix2 = skimage.filters.sobel_h(pix2)
-		pix2 = (pix2 == 1).astype(np.uint8) * 255
-
-		pix2 = scipy.ndimage.filters.convolve(
-			pix2.astype(np.float32) / 255, self._ellipse)
-
-		thresh = skimage.filters.threshold_sauvola(pix2, 3)
-		pix2 = (pix2 > thresh).astype(np.uint8) * 255
-
-		pix2 = np.logical_not(pix2)
-
-		return pix2
-
-
-class OcropyLineDetector(LineDetector):
-	def __init__(self, maxcolseps=3):
-		self._maxcolseps = maxcolseps
-
-	def __call__(self, im):
-		from ocrd_cis.ocropy.common import compute_hlines, compute_segmentation, binarize
-
-		im_bin, _ = binarize(np.array(im).astype(np.float32) / 255)
-		segm = compute_segmentation(im_bin, fullpage=True, maxcolseps=self._maxcolseps)
-		llabels, hlines, vlines, images, colseps, scale = segm
-		return hlines
-
-
-class LineSkewEstimator:
-	def __init__(self, line_det, max_phi, min_length=50, eccentricity=0.99):
-		self._line_detector = line_det
-		self._max_phi = max_phi * (math.pi / 180)
-		self._min_length = min_length
-		self._eccentricity = eccentricity
-
-	def __call__(self, im):
-		pix2 = self._line_detector(im)
-
-		pix3 = skimage.measure.label(np.logical_not(pix2), background=False)
-		props = skimage.measure.regionprops(pix3)
-
-		for prop in props:
-			if prop.major_axis_length < self._min_length:
-				# not enough evidence
-				continue
-			if prop.eccentricity < self._eccentricity:
-				# not line-shaped enough
-				continue
-
-			p = prop.centroid
-			phi = prop.orientation
-
-			phi = math.acos(math.cos(phi - math.pi / 2))
-			if phi > math.pi / 2:
-				phi -= math.pi
-
-			if abs(phi) > self._max_phi:
-				continue
-
-			yield p[::-1], phi
-
-	def annotate(self, im):
-		im = im.convert("RGB")
-		pixels = np.array(im)
-		for p, phi in self(im):
-			p = tuple(map(int, p))[::-1]
-			r = 50
-			v = np.array([math.cos(phi), math.sin(phi)]) * r
-
-			q = np.array(p) + v
-			q = tuple(map(int, q))
-			cv2.line(pixels, p, q, (255, 0, 0), 2)
-
-			q = np.array(p) - v
-			q = tuple(map(int, q))
-			cv2.line(pixels, p, q, (255, 0, 0), 2)
-
-		return PIL.Image.fromarray(pixels)
-
-
-class BorderEstimator:
-	def __init__(self, page, blocks, separators):
-		self._page = page
-
-		regions = [b.image_space_polygon for b in blocks.values()]
-		separators = list(separators.values()) if separators else []
-		hull = shapely.ops.cascaded_union(
-			regions + separators).convex_hull
-
-		coords = np.array(list(hull.exterior.coords))
-
-		while np.all(coords[0] == coords[-1]):
-			coords = coords[:-1]
-
-		dx = np.abs(np.diff(coords[:, 0], append=coords[0, 0]))
-		dy = np.abs(np.diff(coords[:, 1], append=coords[0, 1]))
-
-		self._coords = coords
-		self._vertical = dy - dx > 0
-
-	@cached_property
-	def unfiltered_paths(self):
-		coords = self._coords
-		mask = self._vertical
-
-		if np.min(mask) == np.max(mask):
-			return []
-
-		r = 0
-		while not mask[r]:
-			r += 1
-
-		rmask = np.roll(mask, -r)
-		rcoords = np.roll(coords, -r, axis=0)
-
-		paths = []
-		cur = None
-
-		for i in range(rmask.shape[0]):
-			if rmask[i]:
-				if cur is None:
-					cur = []
-					paths.append(cur)
-				cur.append(rcoords[i])
-			else:
-				cur = None
-
-		return paths
-
-	def filtered_paths(self, margin=0.01, max_variance=1e-5):
-		paths = self.unfiltered_paths
-
-		pca = PCA(n_components=2)
-
-		w, h = self._page.warped.size
-
-		def good(path):
-			pca.fit(path * (1 / w, 1 / h))
-			if min(pca.explained_variance_) > max_variance:
-				return False
-
-			if np.max(path[:, 0]) / w > 1 - margin:
-				return False
-			elif np.min(path[:, 0]) / w < margin:
-				return False
-			return True
-
-		return list(filter(good, map(np.array, paths)))
-
-	def paths(self, **kwargs):
-		paths = self.filtered_paths(**kwargs)
-
-		def downward(path):
-			if path[-1, 1] < path[0, 1]:
-				return path[::-1]
-			else:
-				return path
-
-		return list(map(downward, paths))
-
-
-def subdivide(coords):
-	for p, q in zip(coords, coords[1:]):
-		yield p
-		yield (p + q) / 2
-	yield coords[-1]
+from origami.core.math import Geometry
 
 
 class Samples:
-	horizontal_separators = ["H"]
-	vertical_separators = ["V", "T"]
-
 	def __init__(self, geometry):
 		self._points = []
 		self._values = []
@@ -262,6 +40,36 @@ class Samples:
 	def __len__(self):
 		return len(self._points)
 
+	@staticmethod
+	def open(zf, name):
+		info = json.loads(zf.read("%s.json" % name))
+		geometry = Geometry(*info["size"])
+
+		data = io.BytesIO(zf.read("%s.npy" % name))
+		array = np.load(data, allow_pickle=False)
+
+		samples = Samples(geometry)
+		samples._points = list(array[:, :2])
+		samples._values = list(array[:, 2])
+
+		return samples
+
+	def save(self, zf, name):
+		points = np.array(self._points)
+		values = np.array(self._values)
+		array = np.hstack([points, values[:, np.newaxis]])
+
+		data = io.BytesIO()
+		np.save(data, array.astype(np.float64), allow_pickle=False)
+
+		info = dict(version=1, size=self._geometry.size)
+		zf.writestr("%s.npy" % name, data.getvalue())
+		zf.writestr("%s.json" % name, json.dumps(info))
+
+	@property
+	def geometry(self):
+		return self._geometry
+
 	@property
 	def points(self):
 		return self._points
@@ -269,6 +77,14 @@ class Samples:
 	@property
 	def values(self):
 		return self._values
+
+	def append(self, point, value):
+		self._points.append(point)
+		self._values.append(value)
+
+	def extend(self, points, values):
+		self._points.extend(points)
+		self._values.extend(values)
 
 	@property
 	def std(self):
@@ -279,91 +95,6 @@ class Samples:
 
 	def print_stats(self):
 		print(np.min(self._values), np.max(self._values))
-
-	def _angles(self, coords, max_segment=0.05):
-		coords = np.array(coords)
-
-		# normalize. need to check against direction here.
-		# if coords[0, 1] > coords[-1, 1]:
-		#	coords = coords[::-1]
-
-		coords = divide_path(
-			coords, self._geometry.rel_length(max_segment))
-
-		# generate more coords since many steps further down
-		# in our processing pipeline will get confused if there
-		# are less than 4 or 5 points.
-
-		while len(coords) < 6:
-			coords = np.array(list(subdivide(coords)))
-
-		v = coords[1:] - coords[:-1]
-		phis = np.arctan2(v[:, 1], v[:, 0])
-
-		inner_phis = np.convolve(phis, np.ones(2) / 2, mode="valid")
-		phis = [phis[0]] + list(inner_phis) + [phis[-1]]
-
-		return coords, phis
-
-	def add_line_skew_hq(self, blocks, lines, max_phi, delta=0):
-		n_skipped = 0
-		for line in lines.values():
-			if abs(line.angle) < max_phi:
-				self._points.append(line.center)
-				self._values.append(line.angle + delta)
-			else:
-				n_skipped += 1
-		if n_skipped > 0:
-			logging.warning("skipped %d lines." % n_skipped)
-
-	def add_line_skew_lq(self, blocks, lines, max_phi):
-		estimator = LineSkewEstimator(
-			line_det=SobelLineDetector(),
-			max_phi=max_phi)
-
-		def add(im, pos):
-			for pt, phi in estimator(im):
-				self._points.append(np.array(pt) + np.array(pos))
-				self._values.append(phi)
-
-		if True:  # processing all blocks at once takes 1/2 time.
-			region = shapely.ops.cascaded_union([
-				block.text_area() for block in blocks.values()])
-
-			mask = Mask(region)
-			im = PIL.Image.open(page_path)
-			im, pos = mask.extract_image(np.array(im), background=255)
-			add(im, pos)
-		else:
-			for block in blocks.values():
-				im, pos = block.extract_image()
-				add(im, pos)
-
-	def add_separator_skew(self, separators, sep_types, max_std=0.1):
-		for path, polyline in separators.items():
-			if path[1] in sep_types:
-				sep_points, sep_values = self._angles(polyline.coords)
-
-				# in rare cases, separator detection goes wrong and will
-				# produce separators with mixed up coordinate order, e.g.
-				#  ----><-----. we sort out these cases by assuming some
-				#  maximum variance for the good ones.
-				std = np.std(sep_values)
-				if std > max_std:
-					logging.warning(
-						"ignored suspicious separator %s with std=%.1f" % (
-							str(path), std))
-					continue
-
-				self._points.extend(sep_points)
-				self._values.extend(sep_values)
-
-	def add_border_skew(self, page, blocks, separators, **kwargs):
-		estimator = BorderEstimator(page, blocks, separators)
-		for coords in estimator.paths(**kwargs):
-			sep_points, sep_values = self._angles(coords)
-			self._points.extend(sep_points)
-			self._values.extend(sep_values)
 
 
 class Field:
@@ -519,11 +250,10 @@ BatchIntersections = ShapelyBatchIntersections
 
 class GridFactory:
 	def __init__(
-			self, page, blocks, lines, separators,
-			grid_res=25, max_phi=30, max_std=0.1,
-			rescale_separators=False,
-			max_grid_size=1000,
-			num_threads=2):
+		self, page, samples_h, samples_v,
+		grid_res=25,
+		max_grid_size=1000,
+		num_threads=2):
 
 		size = page.warped.size
 
@@ -533,28 +263,8 @@ class GridFactory:
 		self._max_grid_size = max_grid_size
 		self._num_threads = num_threads
 
-		if separators is not None and rescale_separators:  # legacy mode
-			sx = self._width / 1280
-			sy = self._height / 2400
-			separators = dict((k, shapely.affinity.scale(
-				s, sx, sy, origin=(0, 0))) for k, s in separators.items())
-
-		self._samples_h = Samples(page.geometry(False))
-		self._samples_v = Samples(page.geometry(False))
-
-		if separators:
-			self._samples_h.add_separator_skew(
-				separators, Samples.horizontal_separators, max_std=max_std)
-			self._samples_v.add_separator_skew(
-				separators, Samples.vertical_separators, max_std=max_std)
-
-		if lines:
-			self._samples_h.add_line_skew_hq(
-				blocks, lines, max_phi=max_phi, delta=0)
-			self._samples_v.add_line_skew_hq(
-				blocks, lines, max_phi=max_phi, delta=math.pi / 2)
-
-		#self._samples_v.add_border_skew(page, blocks, separators)
+		self._samples_h = samples_h
+		self._samples_v = samples_v
 
 	@property
 	def res(self):

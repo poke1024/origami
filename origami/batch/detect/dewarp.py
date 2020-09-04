@@ -10,8 +10,7 @@ from pathlib import Path
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
-from origami.core.dewarp import Grid
-from origami.batch.core.utils import RegionsFilter
+from origami.core.dewarp import Grid, Samples
 
 
 def dewarped_contours(warped, transformer, min_areas):
@@ -53,7 +52,7 @@ class DewarpProcessor(Processor):
 		return [
 			("warped", Input(
 				Artifact.CONTOURS,
-				Artifact.LINES,
+				Artifact.FLOW,
 				stage=Stage.WARPED)),
 			("output", Output(
 				Artifact.DEWARPING_TRANSFORM,
@@ -67,34 +66,15 @@ class DewarpProcessor(Processor):
 		if not blocks:
 			return
 
-		lines = warped.lines.by_path
-		separators = warped.separators.by_path
-
 		page = warped.page
 
-		min_length = page.geometry(dewarped=False).rel_length(
-			self._options["min_line_length"])
-
-		def filter_geoms(geoms, length):
-			return dict(
-				(k, g) for k, g in geoms.items()
-				if length(g) > min_length)
-
-		lines = filter_geoms(lines, lambda l: l.unextended_length)
-		separators = filter_geoms(separators, lambda g: g.length)
-
-		r_filter = RegionsFilter(self._options["regions"])
-		lines = dict(
-			(k, g)
-			for k, g in lines.items()
-			if r_filter(k))
+		with warped.flow as zf:
+			samples_h = Samples.open(zf, "h")
+			samples_v = Samples.open(zf, "v")
 
 		grid = Grid.create(
-			page,
-			blocks, lines, separators,
-			grid_res=self._options["grid_cell_size"],
-			max_phi=self._options["max_phi"],
-			max_std=self._options["max_phi_std"])
+			page, samples_h, samples_v,
+			grid_res=self._options["grid_cell_size"])
 
 		min_areas = dict(
 			regions=grid.geometry.rel_area(
@@ -120,26 +100,6 @@ class DewarpProcessor(Processor):
 	type=int,
 	default=25,
 	help="grid cell size used for dewarping (smaller is better, but takes longer).")
-@click.option(
-	'--max-phi',
-	type=float,
-	default=30,
-	help="maximum allowed skewing angle.")
-@click.option(
-	'--max-phi-std',
-	type=float,
-	default=0.1,
-	help="maximum allowed standard deviation inside angle set.")
-@click.option(
-	'--min-line-length',
-	type=float,
-	default=0.05,
-	help="detect warp using baselines that are above this relative length.")
-@click.option(
-	'--regions',
-	type=str,
-	default="regions/TEXT, regions/TABULAR",
-	help="which regions to consider for warping estimation")
 @click.option(
 	'--region-area',
 	type=float,

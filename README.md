@@ -53,7 +53,7 @@ Given an OCR model, the necessary order of batches for performing OCR for a fold
 </tr>
 <tr>
 <td>3</td>
-<td>warp</td>
+<td>flow</td>
 </tr>
 <tr>
 <td>4</td>
@@ -109,7 +109,7 @@ Given an OCR model, the necessary order of batches for performing OCR for a fold
 </dl>
 
 <dl>
-  <dt>origami.batch.detect.xycut</dt>
+  <dt>origami.batch.detect.order</dt>
   <dd>needs: images, contours</dd>
   <dd>⁂ Tries to find a reading order using a variant of the XY Cut algorithm.</dd>
 </dl>
