@@ -113,10 +113,14 @@ class ContoursProcessor(Processor):
 		))
 
 		with output.contours() as zf:
-			info = dict(version=1)
+			info = dict(version=2)
+			predictions = []
 			for prediction in segmentation.predictions:
 				handlers[prediction.type](zf, annotations, prediction)
-				info[prediction.name] = dict(type=prediction.type.name)
+				predictions.append(dict(
+					name=prediction.name,
+					type=prediction.type.name))
+			info["predictions"] = predictions
 			zf.writestr("meta.json", json.dumps(info))
 
 

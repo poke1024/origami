@@ -109,10 +109,16 @@ def read_contours(path: Path, pred_type, open=open):
 	with open(path, "rb") as f:
 		with zipfile.ZipFile(f, "r") as zf:
 			meta = json.loads(zf.read("meta.json"))
+			if meta["version"] > 1:
+				predictions = dict()
+				for x in meta["predictions"]:
+					predictions[x["name"]] = x
+			else:
+				predictions = meta
 
 			def filter_path(contours_path):
 				prediction_name = contours_path[0]
-				t = PredictorType[meta[prediction_name]["type"]]
+				t = PredictorType[predictions[prediction_name]["type"]]
 				return t == pred_type
 
 			for name in zf.namelist():
