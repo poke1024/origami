@@ -42,211 +42,38 @@ The given data path should contain processed pages as images. Generated data is 
 
 ### Artifacts
 
-Origami works by running batches for various detection stages. Each batch creates
-and depends upon various files (also called artifacts), as shown in the following
+Origami's processing happens in separated stages, with batches that read and write
+information from well-defined files (also called artifacts). Each batch creates
+and depends upon various artifacts, as shown in the following
 table. Rows depict artifacts, columns depict detection batches (i.e. the batches
 found under `origami.batch.detect`). Blank circles indicate a read, filled
 circles indicate a write. As illustrated here, later batches depend on information
 provided by earlier batches.
 
-<table class="table table-header-rotated">
-<thead>
-<tr>
-<th></th>
-<th class="rotate"><div><span>segment</span></div></th>
-<th class="rotate"><div><span>contours</span></div></th>
-<th class="rotate"><div><span>flow</span></div></th>
-<th class="rotate"><div><span>dewarp</span></div></th>
-<th class="rotate"><div><span>layout</span></div></th>
-<th class="rotate"><div><span>lines</span></div></th>
-<th class="rotate"><div><span>order</span></div></th>
-<th class="rotate"><div><span>ocr</span></div></th>
-<th class="rotate"><div><span>compose</span></div></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<th class="row-header">page.jpg</th>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">segment.zip</th>
-<td>&#11044;</td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">segment.jpg</th>
-<td></td>
-<td>&#9711;</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">contours.0.zip</th>
-<td></td>
-<td>&#11044;</td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">flow.zip</th>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td>&#9711;</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">lines.0.zip</th>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td></td>
-<td>&#9711;</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">contours.1.zip</th>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">dewarp.zip</th>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">contours.2.zip</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">tables.json</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-</tr>
-<tr>
-<th class="row-header">contours.3.zip</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
-</tr>
-<tr>
-<th class="row-header">lines.3.zip</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-</tr>
-<tr>
-<th class="row-header">order.json</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td></td>
-<td>&#9711;</td>
-</tr>
-<tr>
-<th class="row-header">ocr.zip</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-<td>&#9711;</td>
-</tr>
-<tr>
-<th class="row-header">compose.zip</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#11044;</td>
-</tr>
-</tbody>
-</table>
+`page image` refers to the image file of the page being OCR-ed.
+
+It is possible to replace single Origami pipeline stages by custom implementations
+by simply reading and writing Origami's artifacts using the documented file formats.
+
+It is also possible to run Origami stages and then postprocess the generated artifacts
+before continuing with later stages.
+
+| |[segment](#segment)|[contours](#contours)|[flow](#flow)|[dewarp](#dewarp)|[layout](#layout)|[lines](#lines)|[order](#order)|[ocr](#ocr)|[compose](#compose)|
+|-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|
+|[page image](docs/formats.md#pageimage)|&#9711;| |&#9711;| |&#9711;|&#9711;| |&#9711;| |
+|[segment.zip](docs/formats.md#segmentzip)|&#11044;|&#9711;| | |&#9711;|&#9711;|&#9711;| | |
+|[contours.0.zip](docs/formats.md#contours0zip)| |&#11044;|&#9711;|&#9711;|&#9711;| | | | |
+|[flow.zip](docs/formats.md#flowzip)| | |&#11044;|&#9711;| | | | | |
+|[lines.0.zip](docs/formats.md#lines0zip)| | |&#11044;| |&#9711;| | | | |
+|[contours.1.zip](docs/formats.md#contours1zip)| | | |&#11044;|&#9711;| |&#9711;| | |
+|[dewarp.zip](docs/formats.md#dewarpzip)| | | |&#11044;| | | | | |
+|[contours.2.zip](docs/formats.md#contours2zip)| | | | |&#11044;|&#9711;|&#9711;| | |
+|[tables.json](docs/formats.md#tablesjson)| | | | |&#11044;|&#9711;| |&#9711;|&#9711;|
+|[contours.3.zip](docs/formats.md#contours3zip)| | | | | |&#11044;|&#9711;| |&#9711;|
+|[lines.3.zip](docs/formats.md#lines3zip)| | | | | |&#11044;|&#9711;|&#9711;|&#9711;|
+|[order.json](docs/formats.md#orderjson)| | | | | | |&#11044;| |&#9711;|
+|[ocr.zip](docs/formats.md#ocrzip)| | | | | | | |&#11044;|&#9711;|
+|[compose.zip](docs/formats.md#composezip)| | | | | | | | |&#11044;|
 
 ### Order of Batches
 
@@ -295,46 +122,64 @@ documents is:
 
 ### Detection Batches
 
+### segment
+
 <dl>
   <dt>origami.batch.detect.segment</dt>
   <dd>Performs segmentation (e.g. separation into text and background) on all images using a neural network model. By default, this uses <a href="https://github.com/poke1024/bbz-segment">origami’s own model.</a>. The predicted classes and labels are embedded in the downloaded model.</dd>
 </dl>
+
+### contours
 
 <dl>
   <dt>origami.batch.detect.contours</dt>
   <dd>From the pixelwise segmentation information, detects connected components to produce vectorized polygonal contours for blocks and separator lines.</dd>
 </dl>
 
+### flow
+
 <dl>
   <dt>origami.batch.detect.flow</dt>
   <dd>Detects baselines and warping in separators to produce an overall description of page curvature.</dd>
 </dl>
+
+### dewarp
 
 <dl>
   <dt>origami.batch.detect.dewarp</dt>
   <dd>Creates a dewarping transformation that is used in subsequent stages.</dd>
 </dl>
 
+### layout
+
 <dl>
   <dt>origami.batch.detect.layout</dt>
   <dd>Refines regions by fixing over- and under-segmentation via heuristic rules. </dd>
 </dl>
+
+### lines
 
 <dl>
   <dt>origami.batch.detect.lines</dt>
   <dd>Detects baselines and line boundaries for each text line.</dd>
 </dl>
 
+### order
+
 <dl>
   <dt>origami.batch.detect.order</dt>
   <dd>Finds a reading order using a variant of the XY Cut algorithm.</dd>
 </dl>
+
+### ocr
 
 <dl>
   <dt>origami.batch.detect.ocr</dt>
   <dd>Performs OCR on each detected line using the specified Calamari OCR model. Note that the binarization
   you can specify here in independent of the one performed in origami.batch.detect.binarize.</dd>
 </dl>
+
+### compose
 
 <dl>
   <dt>origami.batch.detect.compose</dt>
