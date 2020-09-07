@@ -40,50 +40,14 @@ The given data path should contain processed pages as images. Generated data is 
 
 ## Batches
 
-Given an OCR model, the necessary order of batches for performing OCR for a folder of documents is:
+### Artifacts
 
-<table>
-<tr>
-<td>1</td>
-<td>segment</td>
-</tr>
-<tr>
-<td>2</td>
-<td>contours</td>
-</tr>
-<tr>
-<td>3</td>
-<td>flow</td>
-</tr>
-<tr>
-<td>4</td>
-<td>dewarp</td>
-</tr>
-<tr>
-<td>5</td>
-<td>layout</td>
-</tr>
-<tr>
-<td>6</td>
-<td>lines</td>
-</tr>
-<tr>
-<td>7</td>
-<td>order</td>
-</tr>
-<tr>
-<td>8</td>
-<td>ocr</td>
-</tr>
-<tr>
-<td>9</td>
-<td>compose</td>
-</tr>
-</table>
-
-Each batch creates and depends upon various files, as shown in the following table.
-Columns depict files (also called artifacts), rows depict batches. Blank circles
-indicate a read, filled circles indicate a write.
+Origami works by running batches for various detection stages. Each batch creates
+and depends upon various files (also called artifacts), as shown in the following
+table. Columns depict artifacts, rows depict detection batches (i.e. the batches
+found under `origami.batch.detect`). Blank circles indicate a read, filled
+circles indicate a write. As illustrated here, later batches depend on information
+provided by earlier batches.
 
 <table class="table table-header-rotated">
 <thead>
@@ -272,76 +236,124 @@ indicate a read, filled circles indicate a write.
 </tbody>
 </table>
 
-## Default Batches
+### Order of Batches
+
+Given an OCR model, and as illustrated in the table from last section, the
+necessary order of detection batches for performing OCR for a folder of
+documents is:
+
+<table>
+<tr>
+<td>1</td>
+<td>segment</td>
+</tr>
+<tr>
+<td>2</td>
+<td>contours</td>
+</tr>
+<tr>
+<td>3</td>
+<td>flow</td>
+</tr>
+<tr>
+<td>4</td>
+<td>dewarp</td>
+</tr>
+<tr>
+<td>5</td>
+<td>layout</td>
+</tr>
+<tr>
+<td>6</td>
+<td>lines</td>
+</tr>
+<tr>
+<td>7</td>
+<td>order</td>
+</tr>
+<tr>
+<td>8</td>
+<td>ocr</td>
+</tr>
+<tr>
+<td>9</td>
+<td>compose</td>
+</tr>
+</table>
+
+### Detection Batches
 
 <dl>
   <dt>origami.batch.detect.segment</dt>
-  <dd>needs: images</dd>
-  <dd>⁂ Perform segmentation (e.g. separation into text and background) on all images using a neural network model. By default, this uses <a href="https://github.com/poke1024/bbz-segment">origami’s own model.</a>. The predicted classes and labels are embedded in the downloaded model.</dd>
+  <dd>Performs segmentation (e.g. separation into text and background) on all images using a neural network model. By default, this uses <a href="https://github.com/poke1024/bbz-segment">origami’s own model.</a>. The predicted classes and labels are embedded in the downloaded model.</dd>
 </dl>
 
 <dl>
   <dt>origami.batch.detect.contours</dt>
-  <dd>needs: images, binarize, segment</dd>
-  <dd>⁂ From the segmentation, detects connected components to produce vectorized polygonal contours for blocks and separator lines. 
-  Uses a couple of rule-based approaches to fix some issues inherent in pixel-based segmentation (see --region-spread,
-  --ink-spread and --ink-opening for details). Note that the separator detection is very slow and still work in progress.</dd>
+  <dd>From the pixelwise segmentation information, detects connected components to produce vectorized polygonal contours for blocks and separator lines.</dd>
+</dl>
+
+<dl>
+  <dt>origami.batch.detect.flow</dt>
+  <dd>Detects baselines and warping in separators to produce an overall description of page curvature.</dd>
+</dl>
+
+<dl>
+  <dt>origami.batch.detect.dewarp</dt>
+  <dd>Creates a dewarping transformation that is used in subsequent stages.</dd>
+</dl>
+
+<dl>
+  <dt>origami.batch.detect.layout</dt>
+  <dd>Refines regions by fixing over- and under-segmentation via heuristic rules. </dd>
 </dl>
 
 <dl>
   <dt>origami.batch.detect.lines</dt>
-  <dd>needs: images, segment</dd>
-  <dd>⁂ Detects baselines and line boundaries for each text line. For details, see  command line arguments. </dd>
-</dl>
-
-<dl>
-  <dt>origami.batch.detect.ocr</dt>
-  <dd>needs: images, lines</dd>
-  <dd>⁂ Performs OCR on each detected line using the specified Calamari OCR model. Note that the binarization
-  you can specify here in independent of the one performed in origami.batch.detect.binarize.</dd>
+  <dd>Detects baselines and line boundaries for each text line.</dd>
 </dl>
 
 <dl>
   <dt>origami.batch.detect.order</dt>
-  <dd>needs: images, contours</dd>
-  <dd>⁂ Tries to find a reading order using a variant of the XY Cut algorithm.</dd>
+  <dd>Finds a reading order using a variant of the XY Cut algorithm.</dd>
+</dl>
+
+<dl>
+  <dt>origami.batch.detect.ocr</dt>
+  <dd>Performs OCR on each detected line using the specified Calamari OCR model. Note that the binarization
+  you can specify here in independent of the one performed in origami.batch.detect.binarize.</dd>
 </dl>
 
 <dl>
   <dt>origami.batch.detect.compose</dt>
-  <dd>needs: images, lines, ocr, xycut</dd>
-  <dd>⁂ Composes text into one file using the detected reading order.</dd>
-</dl>
-
-<dl>
-  <dt>origami.batch.detect.stats</dt>
-  <dd>needs: nothing</dd>
-  <dd>⁂ Prints out statistics on computed artifacts and errors. This is useful for
-  understanding how many pages for processed, and for which stages this processing
-  is finished.</dd>
+  <dd>Composes text into one file using the detected reading order. Can also produce PageXML output.</dd>
 </dl>
 
 ## Debugging
 
 <dl>
+  <dt>origami.batch.detect.stats</dt>
+  <dd>Prints out statistics on computed artifacts and errors. This is useful for
+  understanding how many pages for processed, and for which stages this processing
+  is finished.</dd>
+</dl>
+
+<dl>
   <dt>origami.batch.annotate.contours</dt>
-  <dd>needs: stages 1, 2 (and maybe more, depending on `--stage`)</dd>
-  <dd>⁂ Produces debug images for understanding the result of the contours batch stage.
+  <dd>Produces debug images for understanding the result of the contours batch stage.
   <img src="/docs/img/sample-2436020X_1925-02-27_70_98_009.debug.contours.jpg"></dd>
 </dl>
 
 <dl>
   <dt>origami.batch.annotate.lines</dt>
-  <dd>needs: stages 1 - 6</dd>
-  <dd>⁂ Produces debug images for understanding the line detection stage.
+  <dd>Produces debug images for understanding the line detection stage.
   <img src="/docs/img/sample-SNP2436020X-18720410-1-12-0-0.lines.jpg">
   </dd>
 </dl>
 
 <dl>
   <dt>origami.batch.annotate.layout</dt>
-  <dd>needs: stages 1 - 7</dd>
-  <dd>⁂ Produces debug images for understanding the result of the layout and order
+  <dd>Produces debug images for understanding the result of the layout and order
   batch stage.</dd>
 </dl>
 
@@ -349,20 +361,17 @@ indicate a read, filled circles indicate a write.
 
 <dl>
   <dt>origami.tool.annotate</dt>
-  <dd>needs: images, lines</dd>
-  <dd>⁂ Tool for annotating, viewing and searching for ground truth. <img src="/docs/img/sample-annotation.jpg"></dd>
+  <dd>Tool for annotating, viewing and searching for ground truth. <img src="/docs/img/sample-annotation.jpg"></dd>
 </dl>
 
 <dl>
   <dt>origami.tool.pick</dt>
-  <dd>needs: images, lines</dd>
-  <dd>⁂ Tool for adding or removing single lines from the ground truth for fine tuning. <img src="/docs/img/sample-linepick.jpg"></dd>
+  <dd>Tool for adding or removing single lines from the ground truth for fine tuning. <img src="/docs/img/sample-linepick.jpg"></dd>
 </dl>
 
 <dl>
   <dt>origami.tool.sample</dt>
-  <dd>needs: images, lines</dd>
-  <dd>⁂ Create a new annotation database by randomly sampling lines from a corpus. The details of sampling (numbers of items
+  <dd>Create a new annotation database by randomly sampling lines from a corpus. The details of sampling (numbers of items
   for each segmentation label type per page) can be specified. Allows import of transcriptions stored in accompanying PageXML.
   See command line help for more details.</dd>
 </dl>
@@ -374,26 +383,24 @@ indicate a read, filled circles indicate a write.
 
 <dl>
   <dt>origami.tool.export</dt>
-  <dd>⁂ From the given annotation database, export line images of the specified height and binarization together with accompanying
+  <dd>From the given annotation database, export line images of the specified height and binarization together with accompanying
     ground truth text files. Annotation normalization through a schema is supported. Use this command to generate training data for
     <a href="https://github.com/Calamari-OCR/calamari">Calamari</a>. See command line for details.</dd>
 </dl>
 
 <dl>
   <dt>origami.tool.xycut</dt>
-  <dd>⁂ Debug internal X-Y cut implementation.</dd>
+  <dd>Debug internal X-Y cut implementation.</dd>
 </dl>
 
 <dl>
   <dt>origami.batch.export.lines (debugging only)</dt>
-  <dd>needs: images, lines</dd>
-  <dd>⁂ Export images of lines detected during lines batch.</dd>
+  <dd>Export images of lines detected during lines batch.</dd>
 </dl>
 
 <dl>
   <dt>origami.batch.export.pagexml  (debugging only)</dt>
-  <dd>needs: images, lines</dd>
-  <dd>⁂ Export polygons of lines detected during lines batch as PageXML.</dd>
+  <dd>Export polygons of lines detected during lines batch as PageXML.</dd>
 </dl>
 
 
@@ -413,9 +420,9 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 Batch processes can be run concurrently. Origami supports file-based locking or by using a database (see `--lock-strategy`). The latter strategy is more compatible and set by default.
 Use `--lock-database` to specify the path to a lock database (if none is specified, Origami will create one in your data folder).
 
-## Dinglehopper
+## Evalulation via Dinglehopper
 
-To evaluate performance using Dinglehopper, you probably want to use:
+To evaluate performance using <a href="https://github.com/qurator-spk/dinglehopper">Dinglehopper</a>, you probably want to use:
 
 ```
 python -m origami.batch.utils.evaluate DATA_PATH
