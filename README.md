@@ -1,23 +1,29 @@
-# origami
+# Origami
 
-origami is a self-contained suite of batches and tools for OCR processing of historical newspapers.
+Origami is a self-contained suite of batches and tools for OCR processing of historical newspapers.
 It covers many essential steps in a digitization pipeline, including (1) building training data for
 training models, and (2) generating Page-XML OCR output from pages using trained models.
 
-Some of origami's features are:
+Apart from its specific features, Origami is
 
-* easy setup, easy to use
+* easy to setup
+* easy to use
+* based on file-based intermediary results that allow customization
+
+Origami's current default implementation features:
+
 * DNN segmentation
 * dewarping
 * reading order detection
 * simple table support
 * Page-XML export
 
-Additional tools for:
+Origami also provides additional tools for:
 
 * annotating ground truth
 * debugging
 * creating annotated images
+* evaluation of OCR quality
 
 ## Installation 
 
@@ -146,7 +152,7 @@ before continuing with later stages.
   <dd>From the pixelwise segmentation information, detects connected components to produce vectorized polygonal contours for blocks and separator lines.</dd>
 </dl>
 
-#### flow
+### flow
 
 <dl>
   <dt>origami.batch.detect.flow</dt>
