@@ -162,7 +162,7 @@ else:
 	html.append("<tbody>")
 	for i, a in enumerate(artifacts):
 		columns = []
-		header_title = a.replace(".", "").replace(" ", "").lower()
+		header_title = a.replace(".", "").replace(" ", "-").lower()
 		a_link = "[%s](docs/formats.md#%s)" % (a, header_title)
 
 		html.append("<tr>")

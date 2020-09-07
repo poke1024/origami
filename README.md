@@ -50,17 +50,12 @@ found under `origami.batch.detect`). Blank circles indicate a read, filled
 circles indicate a write. As illustrated here, later batches depend on information
 provided by earlier batches.
 
-`page image` refers to the image file of the page being OCR-ed.
-
-It is possible to replace single Origami pipeline stages by custom implementations
-by simply reading and writing Origami's artifacts using the documented file formats.
-
-It is also possible to run Origami stages and then postprocess the generated artifacts
-before continuing with later stages.
+Click on the names of the artifacts (left column) or batches (top row) below to get
+more information.
 
 | |[segment](#segment)|[contours](#contours)|[flow](#flow)|[dewarp](#dewarp)|[layout](#layout)|[lines](#lines)|[order](#order)|[ocr](#ocr)|[compose](#compose)|
 |-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|
-|[page image](docs/formats.md#pageimage)|&#9711;| |&#9711;| |&#9711;|&#9711;| |&#9711;| |
+|[page image](docs/formats.md#page-image)|&#9711;| |&#9711;| |&#9711;|&#9711;| |&#9711;| |
 |[segment.zip](docs/formats.md#segmentzip)|&#11044;|&#9711;| | |&#9711;|&#9711;|&#9711;| | |
 |[contours.0.zip](docs/formats.md#contours0zip)| |&#11044;|&#9711;|&#9711;|&#9711;| | | | |
 |[flow.zip](docs/formats.md#flowzip)| | |&#11044;|&#9711;| | | | | |
@@ -74,6 +69,12 @@ before continuing with later stages.
 |[order.json](docs/formats.md#orderjson)| | | | | | |&#11044;| |&#9711;|
 |[ocr.zip](docs/formats.md#ocrzip)| | | | | | | |&#11044;|&#9711;|
 |[compose.zip](docs/formats.md#composezip)| | | | | | | | |&#11044;|
+
+It is possible to replace single Origami pipeline stages by custom implementations
+by simply reading and writing Origami's artifacts using the documented file formats.
+
+It is also possible to run Origami stages and then postprocess the generated artifacts
+before continuing with later stages.
 
 ### Order of Batches
 
