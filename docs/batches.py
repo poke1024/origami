@@ -106,31 +106,58 @@ html.append("<style>%s</style>" % css)
 
 html.append('<table class="table table-header-rotated">')
 
-html.append("<thead>")
-html.append("<tr>")
-
-html.append("<th></th>")
-for a in artifacts:
-	html.append('<th class="rotate"><div><span>%s</span></div></th>' % a)
-
-html.append("</tr>")
-html.append("</thead>")
-
-html.append("<tbody>")
-for batch, row in zip(batches, rows):
+if False:
+	html.append("<thead>")
 	html.append("<tr>")
-	html.append('<th class="row-header">%s</th>' % batch["name"])
 
-	for i, a in enumerate(artifacts):
-		code = ""
-		if row.get(i) == "in":
-			code = "&#9711;"
-		if row.get(i) == "out":
-			code = "&#11044;"
-		html.append("<td>%s</td>" % code)
+	html.append("<th></th>")
+	for a in artifacts:
+		html.append('<th class="rotate"><div><span>%s</span></div></th>' % a)
 
 	html.append("</tr>")
-html.append("</tbody>")
+	html.append("</thead>")
+
+	html.append("<tbody>")
+	for batch, row in zip(batches, rows):
+		html.append("<tr>")
+		html.append('<th class="row-header">%s</th>' % batch["name"])
+
+		for i, a in enumerate(artifacts):
+			code = ""
+			if row.get(i) == "in":
+				code = "&#9711;"
+			if row.get(i) == "out":
+				code = "&#11044;"
+			html.append("<td>%s</td>" % code)
+
+		html.append("</tr>")
+	html.append("</tbody>")
+else:
+	html.append("<thead>")
+	html.append("<tr>")
+
+	html.append("<th></th>")
+	for batch in batches:
+		html.append('<th class="rotate"><div><span>%s</span></div></th>' % batch["name"])
+
+	html.append("</tr>")
+	html.append("</thead>")
+
+	html.append("<tbody>")
+	for i, a in enumerate(artifacts):
+		html.append("<tr>")
+		html.append('<th class="row-header">%s</th>' % a)
+
+		for batch, row in zip(batches, rows):
+			code = ""
+			if row.get(i) == "in":
+				code = "&#9711;"
+			if row.get(i) == "out":
+				code = "&#11044;"
+			html.append("<td>%s</td>" % code)
+
+		html.append("</tr>")
+	html.append("</tbody>")
 
 html.append("</table>")
 

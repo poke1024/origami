@@ -44,7 +44,7 @@ The given data path should contain processed pages as images. Generated data is 
 
 Origami works by running batches for various detection stages. Each batch creates
 and depends upon various files (also called artifacts), as shown in the following
-table. Columns depict artifacts, rows depict detection batches (i.e. the batches
+table. Rows depict artifacts, columns depict detection batches (i.e. the batches
 found under `origami.batch.detect`). Blank circles indicate a read, filled
 circles indicate a write. As illustrated here, later batches depend on information
 provided by earlier batches.
@@ -53,34 +53,46 @@ provided by earlier batches.
 <thead>
 <tr>
 <th></th>
-<th class="rotate"><div><span>page.jpg</span></div></th>
-<th class="rotate"><div><span>segment.zip</span></div></th>
-<th class="rotate"><div><span>segment.jpg</span></div></th>
-<th class="rotate"><div><span>contours.0.zip</span></div></th>
-<th class="rotate"><div><span>flow.zip</span></div></th>
-<th class="rotate"><div><span>lines.0.zip</span></div></th>
-<th class="rotate"><div><span>contours.1.zip</span></div></th>
-<th class="rotate"><div><span>dewarp.zip</span></div></th>
-<th class="rotate"><div><span>contours.2.zip</span></div></th>
-<th class="rotate"><div><span>tables.json</span></div></th>
-<th class="rotate"><div><span>contours.3.zip</span></div></th>
-<th class="rotate"><div><span>lines.3.zip</span></div></th>
-<th class="rotate"><div><span>order.json</span></div></th>
-<th class="rotate"><div><span>ocr.zip</span></div></th>
-<th class="rotate"><div><span>compose.zip</span></div></th>
+<th class="rotate"><div><span>segment</span></div></th>
+<th class="rotate"><div><span>contours</span></div></th>
+<th class="rotate"><div><span>flow</span></div></th>
+<th class="rotate"><div><span>dewarp</span></div></th>
+<th class="rotate"><div><span>layout</span></div></th>
+<th class="rotate"><div><span>lines</span></div></th>
+<th class="rotate"><div><span>order</span></div></th>
+<th class="rotate"><div><span>ocr</span></div></th>
+<th class="rotate"><div><span>compose</span></div></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<th class="row-header">segment</th>
+<th class="row-header">page.jpg</th>
 <td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+<td></td>
+</tr>
+<tr>
+<th class="row-header">segment.zip</th>
 <td>&#11044;</td>
 <td></td>
 <td></td>
 <td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td>&#9711;</td>
 <td></td>
 <td></td>
+</tr>
+<tr>
+<th class="row-header">segment.jpg</th>
 <td></td>
+<td>&#9711;</td>
 <td></td>
 <td></td>
 <td></td>
@@ -90,17 +102,23 @@ provided by earlier batches.
 <td></td>
 </tr>
 <tr>
-<th class="row-header">contours</th>
+<th class="row-header">contours.0.zip</th>
 <td></td>
-<td></td>
-<td>&#9711;</td>
 <td>&#11044;</td>
+<td>&#9711;</td>
+<td>&#9711;</td>
+<td>&#9711;</td>
 <td></td>
 <td></td>
 <td></td>
 <td></td>
+</tr>
+<tr>
+<th class="row-header">flow.zip</th>
 <td></td>
 <td></td>
+<td>&#11044;</td>
+<td>&#9711;</td>
 <td></td>
 <td></td>
 <td></td>
@@ -108,52 +126,34 @@ provided by earlier batches.
 <td></td>
 </tr>
 <tr>
-<th class="row-header">flow</th>
-<td>&#9711;</td>
+<th class="row-header">lines.0.zip</th>
 <td></td>
 <td></td>
-<td>&#9711;</td>
-<td>&#11044;</td>
 <td>&#11044;</td>
 <td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td>&#9711;</td>
 <td></td>
 <td></td>
 <td></td>
 <td></td>
 </tr>
 <tr>
-<th class="row-header">dewarp</th>
+<th class="row-header">contours.1.zip</th>
 <td></td>
 <td></td>
-<td></td>
-<td>&#9711;</td>
-<td>&#9711;</td>
 <td></td>
 <td>&#11044;</td>
-<td>&#11044;</td>
+<td>&#9711;</td>
 <td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td>&#9711;</td>
 <td></td>
 <td></td>
 </tr>
 <tr>
-<th class="row-header">layout</th>
-<td>&#9711;</td>
-<td>&#9711;</td>
+<th class="row-header">dewarp.zip</th>
 <td></td>
-<td>&#9711;</td>
 <td></td>
-<td>&#9711;</td>
-<td>&#9711;</td>
 <td></td>
-<td>&#11044;</td>
 <td>&#11044;</td>
 <td></td>
 <td></td>
@@ -162,75 +162,87 @@ provided by earlier batches.
 <td></td>
 </tr>
 <tr>
-<th class="row-header">lines</th>
-<td>&#9711;</td>
-<td>&#9711;</td>
+<th class="row-header">contours.2.zip</th>
 <td></td>
 <td></td>
 <td></td>
 <td></td>
-<td></td>
-<td></td>
-<td>&#9711;</td>
-<td>&#9711;</td>
 <td>&#11044;</td>
-<td>&#11044;</td>
-<td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
 <td></td>
 <td></td>
 </tr>
 <tr>
-<th class="row-header">order</th>
-<td></td>
-<td>&#9711;</td>
+<th class="row-header">tables.json</th>
 <td></td>
 <td></td>
 <td></td>
-<td></td>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
-<td>&#9711;</td>
-<td>&#11044;</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<th class="row-header">ocr</th>
-<td>&#9711;</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td>&#9711;</td>
-<td></td>
-<td>&#9711;</td>
 <td></td>
 <td>&#11044;</td>
+<td>&#9711;</td>
 <td></td>
+<td>&#9711;</td>
+<td>&#9711;</td>
 </tr>
 <tr>
-<th class="row-header">compose</th>
+<th class="row-header">contours.3.zip</th>
 <td></td>
 <td></td>
 <td></td>
 <td></td>
 <td></td>
+<td>&#11044;</td>
+<td>&#9711;</td>
+<td></td>
+<td>&#9711;</td>
+</tr>
+<tr>
+<th class="row-header">lines.3.zip</th>
 <td></td>
 <td></td>
 <td></td>
 <td></td>
+<td></td>
+<td>&#11044;</td>
 <td>&#9711;</td>
 <td>&#9711;</td>
 <td>&#9711;</td>
+</tr>
+<tr>
+<th class="row-header">order.json</th>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>&#11044;</td>
+<td></td>
 <td>&#9711;</td>
+</tr>
+<tr>
+<th class="row-header">ocr.zip</th>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>&#11044;</td>
 <td>&#9711;</td>
+</tr>
+<tr>
+<th class="row-header">compose.zip</th>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
 <td>&#11044;</td>
 </tr>
 </tbody>
