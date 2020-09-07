@@ -10,6 +10,11 @@
 - [ocr.zip](#ocrzip)
 - [compose.zip](#composezip)
 
+## page image
+
+The original unmodified image file of the document, typically a `.png` or `.jpg`
+file.
+
 ## segment.zip
 
 Contains pixel-wise predictions for the document (i.e. contains the output from
