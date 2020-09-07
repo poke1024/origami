@@ -1,17 +1,17 @@
 batches = [
 	{
 		"name": "segment",
-		"input": ["page.jpg"],
+		"input": ["page image"],
 		"output": ["segment.zip"]
 	},
 	{
 		"name": "contours",
-		"input": ["segment.jpg"],
+		"input": ["segment.zip"],
 		"output": ["contours.0.zip"]
 	},
 	{
 		"name": "flow",
-		"input": ["page.jpg", "contours.0.zip"],
+		"input": ["page image", "contours.0.zip"],
 		"output": ["flow.zip", "lines.0.zip"]
 	},
 	{
@@ -21,12 +21,12 @@ batches = [
 	},
 	{
 		"name": "layout",
-		"input": ["page.jpg", "segment.zip", "contours.0.zip", "lines.0.zip", "contours.1.zip"],
+		"input": ["page image", "segment.zip", "contours.0.zip", "lines.0.zip", "contours.1.zip"],
 		"output": ["contours.2.zip", "tables.json"]
 	},
 	{
 		"name": "lines",
-		"input": ["page.jpg", "segment.zip", "contours.2.zip", "tables.json"],
+		"input": ["page image", "segment.zip", "contours.2.zip", "tables.json"],
 		"output": ["contours.3.zip", "lines.3.zip"]
 	},
 	{
@@ -36,7 +36,7 @@ batches = [
 	},
 	{
 		"name": "ocr",
-		"input": ["page.jpg", "lines.3.zip", "tables.json"],
+		"input": ["page image", "lines.3.zip", "tables.json"],
 		"output": ["ocr.zip"]
 	},
 	{
@@ -98,6 +98,11 @@ th.row-header {
 }
 }"""
 
+
+def markdown_row(cols):
+	return "|" + "|".join(cols) + "|"
+
+
 html = []
 
 html.append("<!DOCTYPE html>")
@@ -136,27 +141,46 @@ else:
 	html.append("<thead>")
 	html.append("<tr>")
 
+	markdown = []
+
 	html.append("<th></th>")
+	columns = [" "]
 	for batch in batches:
-		html.append('<th class="rotate"><div><span>%s</span></div></th>' % batch["name"])
+		batch_link = "[%s](#%s)" % (batch["name"], batch["name"])
+		html.append('<th class="rotate"><div><span>%s</span></div></th>' % batch_link)
+		columns.append(batch_link)
+	markdown.append(markdown_row(columns))
 
 	html.append("</tr>")
 	html.append("</thead>")
 
+	columns = ["-----:"]
+	for batch in batches:
+		columns.append(":-----:")
+	markdown.append(markdown_row(columns))
+
 	html.append("<tbody>")
 	for i, a in enumerate(artifacts):
+		columns = []
+		header_title = a.replace(".", "").replace(" ", "").lower()
+		a_link = "[%s](docs/formats.md#%s)" % (a, header_title)
+
 		html.append("<tr>")
-		html.append('<th class="row-header">%s</th>' % a)
+		html.append('<th class="row-header">%s</th>' % a_link)
+		columns.append(a_link)
 
 		for batch, row in zip(batches, rows):
-			code = ""
+			code = " "
 			if row.get(i) == "in":
 				code = "&#9711;"
 			if row.get(i) == "out":
 				code = "&#11044;"
 			html.append("<td>%s</td>" % code)
+			columns.append(code)
 
 		html.append("</tr>")
+		markdown.append(markdown_row(columns))
+
 	html.append("</tbody>")
 
 html.append("</table>")
@@ -166,3 +190,6 @@ html.append("</body></hmtl>")
 
 with open("batches.html", "w") as f:
 	f.write("\n".join(html))
+
+with open("batches.md", "w") as f:
+	f.write("\n".join(markdown))
