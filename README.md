@@ -81,7 +81,9 @@ Given an OCR model, the necessary order of batches for performing OCR for a fold
 </tr>
 </table>
 
-Each batch creates and depends upon various files, as shown in the following table:
+Each batch creates and depends upon various files, as shown in the following table.
+Columns depict files (also called artifacts), rows depict batches. Blank circles
+indicate a read, filled circles indicate a write.
 
 <table class="table table-header-rotated">
 <thead>
