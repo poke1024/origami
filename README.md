@@ -19,7 +19,7 @@ Additional tools for:
 * debugging
 * creating annotated images
 
-# Installation 
+## Installation 
 
 ```
 conda create --name origami python=3.7 -c defaults -c conda-forge --file origami/requirements/conda.txt
@@ -38,9 +38,9 @@ All command line tools will give you help information on their arguments when ca
 
 The given data path should contain processed pages as images. Generated data is put into the same path.  Images may be structured into any hierarchy of sub folders.
 
-## Batches
+# Batches
 
-### Artifacts
+## Artifacts
 
 Origami's processing happens in separated stages, with batches that read and write
 information from well-defined files (also called artifacts). Each batch creates
@@ -70,7 +70,9 @@ more information.
 |[ocr.zip](docs/formats.md#ocrzip)| | | | | | | |&#11044;|&#9711;|
 |[compose.zip](docs/formats.md#composezip)| | | | | | | | |&#11044;|
 
-### Order of Batches
+## Running Batches
+
+### Order
 
 Given an OCR model, and as illustrated in the table from last section, the
 necessary order of detection batches for performing OCR for a folder of
@@ -115,15 +117,20 @@ documents is:
 </tr>
 </table>
 
-## Modifying Batches
+### Concurrency
 
-It is possible to replace single Origami pipeline stages by custom implementations
+Batch processes can be run concurrently. Origami supports file-based locking or by using a database (see `--lock-strategy`). The latter strategy is more compatible and set by default.
+Use `--lock-database` to specify the path to a lock database (if none is specified, Origami will create one in your data folder).
+
+### Modifying Results
+
+It is possible to replace Origami pipeline stages/batches by custom implementations
 by simply reading and writing Origami's artifacts using the documented file formats.
 
 It is also possible to run Origami stages and then postprocess the generated artifacts
 before continuing with later stages.
 
-### Detection Batches
+## The Detection Batches
 
 ### segment
 
@@ -139,7 +146,7 @@ before continuing with later stages.
   <dd>From the pixelwise segmentation information, detects connected components to produce vectorized polygonal contours for blocks and separator lines.</dd>
 </dl>
 
-### flow
+#### flow
 
 <dl>
   <dt>origami.batch.detect.flow</dt>
@@ -217,6 +224,8 @@ before continuing with later stages.
   batch stage.</dd>
 </dl>
 
+# Tools for Ground Truth and Evaluation
+
 ## Tools
 
 <dl>
@@ -263,7 +272,6 @@ before continuing with later stages.
   <dd>Export polygons of lines detected during lines batch as PageXML.</dd>
 </dl>
 
-
 ## How to create ground truth
 
 For generating ground truth for training an OCR engine from a corpus, we suggest this general process:
@@ -274,11 +282,6 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 * Annotate using `origami.tool.annotate`.
 * Export annotations using `origami.tool.export`.
 * Train your OCR model.
-
-## Concurrency
-
-Batch processes can be run concurrently. Origami supports file-based locking or by using a database (see `--lock-strategy`). The latter strategy is more compatible and set by default.
-Use `--lock-database` to specify the path to a lock database (if none is specified, Origami will create one in your data folder).
 
 ## Evalulation via Dinglehopper
 
