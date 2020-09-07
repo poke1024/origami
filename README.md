@@ -70,12 +70,6 @@ more information.
 |[ocr.zip](docs/formats.md#ocrzip)| | | | | | | |&#11044;|&#9711;|
 |[compose.zip](docs/formats.md#composezip)| | | | | | | | |&#11044;|
 
-It is possible to replace single Origami pipeline stages by custom implementations
-by simply reading and writing Origami's artifacts using the documented file formats.
-
-It is also possible to run Origami stages and then postprocess the generated artifacts
-before continuing with later stages.
-
 ### Order of Batches
 
 Given an OCR model, and as illustrated in the table from last section, the
@@ -120,6 +114,14 @@ documents is:
 <td>compose</td>
 </tr>
 </table>
+
+## Modifying Batches
+
+It is possible to replace single Origami pipeline stages by custom implementations
+by simply reading and writing Origami's artifacts using the documented file formats.
+
+It is also possible to run Origami stages and then postprocess the generated artifacts
+before continuing with later stages.
 
 ### Detection Batches
 
