@@ -286,40 +286,57 @@ class Processor:
 					self._trigger_process(p, kwargs)
 
 	def _build_queue(self, path):
+		path = Path(path)
+		if not path.exists():
+			raise FileNotFoundError("%s does not exist." % path)
+
 		queued = []
 
-		if not Path(path).is_dir():
-			raise FileNotFoundError("%s is not a valid path." % path)
+		def add_path(p):
+			if not p.exists():
+				print("skipping %s: path does not exist." % p)
+				return
 
-		print("scanning data path... ", flush=True, end="")
+			if self._name and not re.search(self._name, str(p)):
+				return
 
-		with Spinner():
-			for folder, _, filenames in os.walk(path):
-				folder = Path(folder)
-				if folder.name.endswith(".out"):
-					continue
+			if not is_image(p):
+				if self._verbose:
+					print("skipping %s: not an image." % p)
+				return
 
-				for filename in filenames:
-					p = folder / filename
+			if not self.should_process(p):
+				if self._verbose:
+					print("skipping %s: should_process is False" % p)
+				return
 
-					if self._name and not re.search(self._name, str(p)):
+			kwargs = self.prepare_process(p)
+			if kwargs is not False:
+				queued.append((p, kwargs))
+
+		if not path.is_dir():
+			if path.suffix == ".txt":
+				with open(path, "r") as f:
+					for line in f:
+						line = line.strip()
+						if line:
+							add_path(Path(line))
+			else:
+				raise FileNotFoundError(
+					"%s is not a valid path or text file of paths." % path)
+		else:
+			print("scanning data path... ", flush=True, end="")
+
+			with Spinner():
+				for folder, _, filenames in os.walk(path):
+					folder = Path(folder)
+					if folder.name.endswith(".out"):
 						continue
 
-					if not is_image(p):
-						if self._verbose:
-							print("skipping %s: not an image." % p)
-						continue
+					for filename in filenames:
+						add_path(folder / filename)
 
-					if not self.should_process(p):
-						if self._verbose:
-							print("skipping %s: should_process is False" % p)
-						continue
-
-					kwargs = self.prepare_process(p)
-					if kwargs is not False:
-						queued.append((p, kwargs))
-
-		print("done.", flush=True)
+			print("done.", flush=True)
 
 		return queued
 
@@ -329,8 +346,10 @@ class Processor:
 		if self._lock_strategy == "DB":
 			if self._lock_database:
 				db_path = Path(self._lock_database)
-			else:
+			elif Path(path).is_dir():
 				db_path = Path(path) / "origami.lock.db"
+			else:
+				db_path = Path(path).parent / "origami.lock.db"
 
 			self._mutex = DatabaseMutex(
 				db_path, timeout=self._lock_timeout)
