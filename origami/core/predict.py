@@ -155,7 +155,7 @@ class Predictor:
 
 
 class NetPredictor(Predictor):
-	def __init__(self, model_name, models_path, name=None):
+	def __init__(self, model_name, models_path, name=None, grayscale=False):
 		if not re.match(r"^[a-z0-9/]+$", model_name):
 			raise ValueError("illegal model name '%s'" % model_name)
 
@@ -214,6 +214,8 @@ class NetPredictor(Predictor):
 		self._type = PredictorType[meta["type"].upper()]
 		self._classes = self._type.classes(dict((v, i) for i, v in enumerate(classes)))
 
+		self._grayscale = grayscale
+
 	@property
 	def type(self):
 		return self._type
@@ -240,7 +242,12 @@ class NetPredictor(Predictor):
 
 	def predict_for_models(self, page, models, labels=None, verbose=False):
 		if labels is None:
-			im = page.warped.convert("RGB")
+			im = page.warped
+
+			if self._grayscale:  # force to grayscale
+				im = im.convert("L")
+
+			im = im.convert("RGB")
 			pixels = np.array(im)
 
 			net_input = cv2.resize(pixels, self._full_size, interpolation=cv2.INTER_AREA)
