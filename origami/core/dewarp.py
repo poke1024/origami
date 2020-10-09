@@ -49,8 +49,12 @@ class Samples:
 		array = np.load(data, allow_pickle=False)
 
 		samples = Samples(geometry)
-		samples._points = list(array[:, :2])
-		samples._values = list(array[:, 2])
+		if array.size > 0:
+			samples._points = list(array[:, :2])
+			samples._values = list(array[:, 2])
+		else:
+			samples._points = np.empty((2, 0))
+			samples._values = []
 
 		return samples
 
@@ -59,7 +63,7 @@ class Samples:
 		values = np.array(self._values)
 
 		if points.size == 0:
-			array = np.empty((2, 0))
+			array = np.empty((3, 0))
 		else:
 			array = np.hstack([points, values[:, np.newaxis]])
 
