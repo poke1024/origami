@@ -105,7 +105,7 @@ class Field:
 	def __init__(self, samples, size, phi0):
 		self._size = size
 
-		if len(samples.points) < 2:
+		if len(samples.points) <= 2:
 			self._interp = lambda pts: [phi0 for _ in pts]
 		else:
 			self._interp = lininterp(
