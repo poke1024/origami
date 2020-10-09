@@ -57,7 +57,11 @@ class Samples:
 	def save(self, zf, name):
 		points = np.array(self._points)
 		values = np.array(self._values)
-		array = np.hstack([points, values[:, np.newaxis]])
+
+		if points.size == 0:
+			array = np.empty((2, 0))
+		else:
+			array = np.hstack([points, values[:, np.newaxis]])
 
 		data = io.BytesIO()
 		np.save(data, array.astype(np.float64), allow_pickle=False)
