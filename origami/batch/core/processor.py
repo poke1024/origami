@@ -8,7 +8,6 @@ import logging
 import zipfile
 import portalocker
 import contextlib
-import contextlib
 import traceback
 import imghdr
 import multiprocessing
@@ -130,6 +129,11 @@ class Processor:
 		else:
 			self._profiler = None
 
+		self._print_paths = options.get("print_paths")
+		self._plain = options.get("plain")
+		if self._plain:
+			self._print_paths = True
+
 	@staticmethod
 	def options(f):
 		options = [
@@ -178,7 +182,17 @@ class Processor:
 				'--profile',
 				is_flag=True,
 				default=False,
-				help="Enable profiling and show results.")
+				help="Enable profiling and show results."),
+			click.option(
+				'--print-paths',
+				is_flag=True,
+				default=False,
+				help="Print which files are processed."),
+			click.option(
+				'--plain',
+				is_flag=True,
+				default=False,
+				help="Print plain output that is friendly to piping.")
 		]
 		return functools.reduce(lambda x, opt: opt(x), options, f)
 
@@ -260,20 +274,28 @@ class Processor:
 
 	def _trigger_process_star(self, item):
 		self._trigger_process(*item)
+		return item
 
 	def _process_queue(self, queued):
 		with self._profiler or nullcontext():
 			squeue = sorted(queued)
+			n = len(squeue)
+			nd = len(str(n))
 
 			if self._processes > 1:
 				with multiprocessing.Pool(self._processes) as pool:
 					watchdog = Watchdog(pool=pool, timeout=self._timeout)
 					watchdog.start()
 
-					with tqdm(total=len(squeue)) as progress:
-						for _ in pool.imap_unordered(
-							self._trigger_process_star, squeue):
-							progress.update(1)
+					with tqdm(total=len(squeue), disable=self._print_paths) as progress:
+						for i, (p, kwargs) in enumerate(pool.imap_unordered(
+							self._trigger_process_star, squeue)):
+
+							if self._print_paths:
+								print(f"[{str(i + 1).rjust(nd)}/{n}] {p}", flush=True)
+							else:
+								progress.update(1)
+
 							watchdog.ping()
 
 				if watchdog.is_cancelled():
@@ -281,6 +303,10 @@ class Processor:
 					sys.exit(1)
 				else:
 					watchdog.set_is_done()
+			elif self._print_paths:
+				for i, (p, kwargs) in enumerate(squeue):
+					self._trigger_process(p, kwargs)
+					print(f"[{str(i + 1).rjust(nd)}/{n}] {p}", flush=True)
 			else:
 				for p, kwargs in tqdm(squeue):
 					self._trigger_process(p, kwargs)
@@ -291,6 +317,7 @@ class Processor:
 			raise FileNotFoundError("%s does not exist." % path)
 
 		queued = []
+		counts = dict(images=0)
 
 		def add_path(p):
 			if not p.exists():
@@ -304,6 +331,8 @@ class Processor:
 				if self._verbose:
 					print("skipping %s: not an image." % p)
 				return
+
+			counts['images'] += 1
 
 			if not self.should_process(p):
 				if self._verbose:
@@ -325,9 +354,9 @@ class Processor:
 				raise FileNotFoundError(
 					"%s is not a valid path or text file of paths." % path)
 		else:
-			print("scanning... ", flush=True, end="")
+			print(f"scanning {path}... ", flush=True, end="")
 
-			with Spinner():
+			with Spinner(disable=self._plain):
 				for folder, _, filenames in os.walk(path):
 					folder = Path(folder)
 					if folder.name.endswith(".out"):
@@ -337,11 +366,12 @@ class Processor:
 						add_path(folder / filename)
 
 			print("done.", flush=True)
+			print(f"{counts['images']} documents found, {len(queued)} ready to process.")
 
 		return queued
 
 	def traverse(self, path: Path):
-		print(f"running {self.processor_name} on {path}", flush=True)
+		print(f"running {self.processor_name}.", flush=True)
 
 		queued = self._build_queue(path)
 

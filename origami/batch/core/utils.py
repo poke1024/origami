@@ -80,25 +80,29 @@ class TableRegionCombinator:
 # this nice Spinner class is taken from:
 # https://stackoverflow.com/questions/4995733/how-to-create-a-spinning-command-line-cursor
 class Spinner:
-	busy = False
-	delay = 0.1
-
 	@staticmethod
 	def spinning_cursor():
-		while 1:
-			for cursor in '|/-\\': yield cursor
+		while True:
+			for cursor in '|/-\\':
+				yield cursor
 
-	def __init__(self, delay=None):
-		self.spinner_generator = self.spinning_cursor()
-		if delay and float(delay): self.delay = delay
+	def __init__(self, delay=0.1, disable=False):
+		if not disable:
+			self.spinner_generator = self.spinning_cursor()
+		else:
+			self.spinner_generator = None
+
+		self.delay = delay
+		self.busy = True
 
 	def spinner_task(self):
-		while self.busy:
-			sys.stdout.write(next(self.spinner_generator))
-			sys.stdout.flush()
-			time.sleep(self.delay)
-			sys.stdout.write('\b')
-			sys.stdout.flush()
+		if self.spinner_generator:
+			while self.busy:
+				sys.stdout.write(next(self.spinner_generator))
+				sys.stdout.flush()
+				time.sleep(self.delay)
+				sys.stdout.write('\b')
+				sys.stdout.flush()
 
 	def __enter__(self):
 		self.busy = True
@@ -106,6 +110,7 @@ class Spinner:
 
 	def __exit__(self, exception, value, tb):
 		self.busy = False
-		time.sleep(self.delay)
+		if self.spinner_generator:
+			time.sleep(self.delay)
 		if exception is not None:
 			return False
