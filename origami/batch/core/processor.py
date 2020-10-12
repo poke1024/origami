@@ -325,7 +325,7 @@ class Processor:
 				raise FileNotFoundError(
 					"%s is not a valid path or text file of paths." % path)
 		else:
-			print("scanning data path... ", flush=True, end="")
+			print("scanning... ", flush=True, end="")
 
 			with Spinner():
 				for folder, _, filenames in os.walk(path):
@@ -341,6 +341,8 @@ class Processor:
 		return queued
 
 	def traverse(self, path: Path):
+		print(f"running {self.processor_name} on {path}", flush=True)
+
 		queued = self._build_queue(path)
 
 		if self._lock_strategy == "DB":
