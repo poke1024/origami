@@ -215,7 +215,7 @@ class Processor:
 
 			if not f.is_ready():
 				if self._verbose:
-					print("skipping %s: missing " % (page_path, f.missing))
+					print("skipping %s: missing %s" % (page_path, f.missing))
 				return False
 
 			kwargs[arg] = f
