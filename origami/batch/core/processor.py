@@ -129,10 +129,12 @@ class Processor:
 		else:
 			self._profiler = None
 
-		self._print_paths = options.get("print_paths")
+		self._print_paths = False
 		self._plain = options.get("plain")
 		if self._plain:
 			self._print_paths = True
+
+		self._debug_write = options["debug_write"]
 
 	@staticmethod
 	def options(f):
@@ -184,15 +186,15 @@ class Processor:
 				default=False,
 				help="Enable profiling and show results."),
 			click.option(
-				'--print-paths',
-				is_flag=True,
-				default=False,
-				help="Print which files are processed."),
-			click.option(
 				'--plain',
 				is_flag=True,
 				default=False,
-				help="Print plain output that is friendly to piping.")
+				help="Print plain output that is friendly to piping."),
+			click.option(
+				'--debug-write',
+				is_flag=True,
+				default=False,
+				help="Debug which files are written.")
 		]
 		return functools.reduce(lambda x, opt: opt(x), options, f)
 
@@ -206,12 +208,16 @@ class Processor:
 	def prepare_process(self, page_path):
 		artifacts = self.artifacts()
 
+		file_writer = AtomicFileWriter(overwrite=self._overwrite)
+		if self._debug_write:
+			file_writer = DebuggingFileWriter(file_writer)
+
 		kwargs = dict()
 		for arg, spec in artifacts:
 			f = spec.instantiate(
 				page_path=page_path,
 				processor=self,
-				overwrite=self._overwrite)
+				file_writer=file_writer)
 
 			if not f.is_ready():
 				if self._verbose:
@@ -446,13 +452,3 @@ class Processor:
 
 	def _update_runtime_info(self, page_path, updates):
 		self._update_json(page_path, Artifact.RUNTIME, updates)
-
-	@property
-	def compression(self):
-		return zipfile.ZIP_DEFLATED  # zipfile.ZIP_LZMA
-
-	@contextmanager
-	def write_zip_file(self, path, overwrite=False):
-		with atomic_write(path, mode="wb", overwrite=overwrite) as f:
-			with zipfile.ZipFile(f, "w", self.compression) as zf:
-				yield zf

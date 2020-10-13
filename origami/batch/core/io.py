@@ -6,8 +6,10 @@ import zipfile
 import collections
 import shapely.wkt
 import click
+import humanize
 
 from pathlib import Path
+from datetime import datetime
 from contextlib import contextmanager
 from cached_property import cached_property
 from atomicwrites import atomic_write
@@ -372,21 +374,84 @@ class Input:
 		self._stage = stage
 		self._take_any = take_any
 
-	def instantiate(self, processor, overwrite, **kwargs):
+	def instantiate(self, processor, file_writer, **kwargs):
 		return Reader(
 			self._artifacts, self._stage,
 			take_any=self._take_any,
 			open=processor.lock_or_open, **kwargs)
 
 
+class FileWriter:
+	def __init__(self, overwrite):
+		self._overwrite = overwrite
+
+	def __call__(self, path, mode):
+		raise NotImplementedError()
+
+	@property
+	def overwrite(self):
+		return self._overwrite
+
+
+class UnsafeFileWriter(FileWriter):
+	def __init__(self, overwrite):
+		super().__init__(overwrite)
+
+	def __call__(self, path, mode):
+		if not self._overwrite and Path(path).exists:
+			raise RuntimeError(f"{path} already exists.")
+		return open(path, mode="wb")
+
+
+class AtomicFileWriter(FileWriter):
+	def __init__(self, overwrite):
+		super().__init__(overwrite)
+
+	def __call__(self, path, mode):
+		return atomic_write(path, mode=mode, overwrite=self._overwrite)
+
+
+class DebuggingFileWriter:
+	def __init__(self, writer):
+		self._writer = writer
+
+	@contextmanager
+	def __call__(self, path, mode):
+		with self._writer(path, mode=mode) as f:
+			print(f"write operation: opening {path} with mode {mode}.")
+			yield f
+
+		try:
+			file_stats = Path(path).stat()
+		except OSError:
+			file_stats = None
+
+		file_stats_desc = []
+		if file_stats:
+			file_stats_desc.append(humanize.naturalsize(file_stats.st_size))
+			file_stats_desc.append(humanize.naturaltime(datetime.fromtimestamp(file_stats.st_mtime)))
+		else:
+			file_stats_desc.append("failed to stat file")
+
+		print(f"write operation: {path} written, {', '.join(file_stats_desc)}.")
+
+	@property
+	def overwrite(self):
+		return self._writer.overwrite
+
+
 class Writer:
-	def __init__(self, artifacts, stage, page_path, processor, overwrite):
+	def __init__(self, artifacts, stage, page_path, processor, file_writer):
 		self._artifacts = artifacts
 		self._stage = stage
 		self._page_path = page_path
 		self._data_path = find_data_path(page_path)
 		self._processor = processor
-		self._overwrite = overwrite
+		self._write = file_writer
+
+	@property
+	def compression(self):
+		return zipfile.ZIP_DEFLATED  # zipfile.ZIP_LZMA
 
 	@property
 	def paths(self):
@@ -398,7 +463,7 @@ class Writer:
 		return self._data_path / artifact.filename(self._stage)
 
 	def is_ready(self):
-		return self._overwrite or not any(p.exists() for p in self.paths)
+		return self._write.overwrite or not any(p.exists() for p in self.paths)
 
 	@property
 	def missing(self):
@@ -406,17 +471,18 @@ class Writer:
 
 	def write_json(self, artifact, data):
 		path = self.path(artifact)
-		with atomic_write(path, mode="wb", overwrite=self._overwrite) as f:
+		with self._write(path, mode="wb") as f:
 			f.write(json.dumps(data).encode("utf8"))
 
+	@contextmanager
 	def write_zip_file(self, artifact):
-		return self._processor.write_zip_file(
-			self.path(artifact),
-			overwrite=self._overwrite)
+		with self._write(self.path(artifact), mode="wb") as f:
+			with zipfile.ZipFile(f, "w", self.compression) as zf:
+				yield zf
 
 	def segmentation(self, segmentation):
 		path = self.path(Artifact.SEGMENTATION)
-		with atomic_write(path, mode="wb", overwrite=self._overwrite) as f:
+		with self._write(path, mode="wb") as f:
 			segmentation.save(f)
 
 	@contextmanager
@@ -445,7 +511,7 @@ class Writer:
 	@contextmanager
 	def dewarping_transform(self):
 		path = self.path(Artifact.DEWARPING_TRANSFORM)
-		with atomic_write(path, mode="wb", overwrite=self._overwrite) as f:
+		with self._write(path, mode="wb") as f:
 			yield f
 
 	def tables(self, data):

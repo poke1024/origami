@@ -7,7 +7,6 @@ import io
 import multiprocessing.pool
 
 from pathlib import Path
-from atomicwrites import atomic_write
 from cached_property import cached_property
 
 from origami.batch.core.processor import Processor
