@@ -104,6 +104,7 @@ class Processor:
 		self._lock_strategy = options.get("lock_strategy", "DB")
 		self._lock_level = options.get("lock_level", "PAGE")
 		self._lock_timeout = options.get("lock_timeout", "60")
+		self._max_lock_age = options.get("max_lock_age")
 		self._mutex = None
 
 		if self._lock_strategy == "DB":
@@ -174,7 +175,13 @@ class Processor:
 				type=int,
 				default=60,
 				required=False,
-				help="Timeout for locking. NFS volumes might need high values."),
+				help="Seconds to wait to acquire locking. NFS volumes might need high values."),
+			click.option(
+				'--max-lock-age',
+				type=int,
+				default=600,
+				required=False,
+				help="Maximum age of a lock in seconds until it is considered invalid."),
 			click.option(
 				'--overwrite',
 				is_flag=True,
@@ -391,10 +398,15 @@ class Processor:
 
 			self._mutex = DatabaseMutex(
 				db_path, timeout=self._lock_timeout)
+
+			self._mutex.clear_locks(self._max_lock_age)
+
 		elif self._lock_strategy == "FILE":
 			self._mutex = FileMutex()
+
 		elif self._lock_strategy == "NONE":
 			self._mutex = DummyMutex()
+
 		else:
 			raise ValueError(self._lock_strategy)
 

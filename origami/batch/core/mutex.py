@@ -66,6 +66,20 @@ class DatabaseMutex:
 			sqlalchemy.Column('time', sqlalchemy.DateTime, nullable=False),
 			sqlalchemy.PrimaryKeyConstraint('path', 'processor', name='mutex_pk'))
 
+	def clear_locks(self, age=0):
+		conn = self._engine.connect()
+
+		try:
+			table = self._mutex_table
+			if age == 0:
+				stmt = table.delete()
+			else:
+				stmt = table.delete().where(sqlalchemy.and_(
+					table.c.time < datetime.datetime.now() - datetime.timedelta(seconds=age)))
+			conn.execute(stmt)
+		finally:
+			conn.close()
+
 	def try_lock(self, processor, path):
 		conn = self._engine.connect()
 
