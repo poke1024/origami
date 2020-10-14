@@ -241,12 +241,19 @@ class ShapelyBatchIntersections:
 								"unexpected geom_type %s" % geom_type)
 
 				if not inter_pts:
-					if dy < 3 and gy + dy < len(rows):
+					if gy + dy < len(rows):
 						dy += 1  # retry on next row
 					else:
+						#coords = []
+						#for linestring in self.linestrings:
+						#	coords.append(list(linestring.coords))
+						#with open("rows.json", "w") as f:
+						#	f.write(json.dumps(coords))
+
 						raise RuntimeError(
 							"failed to find intersection for i=%d, n=%d, %s to %s." % (
 								i, len(pts0), p0, p1))
+
 				elif len(inter_pts) == 1:
 					pts1[i] = inter_pts[0]
 					break
@@ -441,12 +448,20 @@ class GridFactory:
 		intersections = BatchIntersections(grid_h, grid_res)
 
 		def compute_slice(sel):
-			pts0 = grid_h[0][sel]
+			max_dy = 0
+			for gy in range(1, grid_h.shape[0]):
+				max_dy = max(
+					max_dy,
+					np.max(grid_h[gy, sel, 1]) - np.min(grid_h[gy - 0, sel, 1]))
 
+			max_angle = 60
+			max_step_len = max_dy / math.cos(max_angle * (math.pi / 180))
+
+			pts0 = grid_h[0][sel]
 			for gy in range(grid_h.shape[0] - 1):
 				grid_hv[gy, sel, :] = pts0
 
-				pts1 = pts0 + field_v(pts0) * grid_res * 2
+				pts1 = pts0 + field_v(pts0) * max_step_len
 				intersections(pts0, pts1, gy)
 				pts0 = pts1
 
