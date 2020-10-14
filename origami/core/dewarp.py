@@ -244,11 +244,11 @@ class ShapelyBatchIntersections:
 					if gy + dy + 1 < len(rows):
 						dy += 1  # retry on next row
 					else:
-						#coords = []
-						#for linestring in self.linestrings:
-						#	coords.append(list(linestring.coords))
-						#with open("rows.json", "w") as f:
-						#	f.write(json.dumps(coords))
+						coords = []
+						for linestring in self.linestrings:
+							coords.append(list(linestring.coords))
+						with open("/Users/offline/Desktop/rows.json", "w") as f:
+							f.write(json.dumps(coords))
 
 						raise RuntimeError(
 							"failed to find intersection for i=%d, n=%d, %s to %s." % (
@@ -452,7 +452,7 @@ class GridFactory:
 			for gy in range(1, grid_h.shape[0]):
 				max_dy = max(
 					max_dy,
-					np.max(grid_h[gy, sel, 1]) - np.min(grid_h[gy - 0, sel, 1]))
+					np.max(grid_h[gy, sel, 1]) - np.min(grid_h[gy - 1, sel, 1]))
 
 			max_angle = 60
 			max_step_len = max_dy / math.cos(max_angle * (math.pi / 180))
