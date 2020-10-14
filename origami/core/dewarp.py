@@ -241,7 +241,7 @@ class ShapelyBatchIntersections:
 								"unexpected geom_type %s" % geom_type)
 
 				if not inter_pts:
-					if gy + dy < len(rows):
+					if gy + dy + 1 < len(rows):
 						dy += 1  # retry on next row
 					else:
 						#coords = []
