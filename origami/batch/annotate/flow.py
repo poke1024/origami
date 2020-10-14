@@ -13,7 +13,7 @@ from origami.batch.annotate.utils import render_lines, render_paths
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
 
 
-class DebugWarpProcessor(Processor):
+class DebugFlowProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options, needs_qt=True)
 		self._options = options
@@ -27,7 +27,7 @@ class DebugWarpProcessor(Processor):
 			("warped", Input(
 				Artifact.SEGMENTATION,
 				Artifact.CONTOURS, Artifact.LINES, stage=Stage.WARPED)),
-			("output", Output(Annotation("warp"))),
+			("output", Output(Annotation("flow"))),
 		]
 
 	def process(self, page_path: Path, warped, output):
@@ -53,11 +53,11 @@ class DebugWarpProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @Processor.options
-def debug_warp(data_path, **kwargs):
+def debug_flow(data_path, **kwargs):
 	""" Export annotate information on lines for all document images in DATA_PATH. """
-	processor = DebugWarpProcessor(kwargs)
+	processor = DebugFlowProcessor(kwargs)
 	processor.traverse(data_path)
 
 
 if __name__ == "__main__":
-	debug_warp()
+	debug_flow()
