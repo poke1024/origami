@@ -54,7 +54,7 @@ class DebugFlowProcessor(Processor):
 	required=True)
 @Processor.options
 def debug_flow(data_path, **kwargs):
-	""" Export annotate information on lines for all document images in DATA_PATH. """
+	""" Annotate information on flow for all document images in DATA_PATH. """
 	processor = DebugFlowProcessor(kwargs)
 	processor.traverse(data_path)
 
