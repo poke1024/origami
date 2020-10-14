@@ -179,10 +179,24 @@ class ShapelyBatchIntersections:
 		self.grid_res = grid_res
 
 		self._rows = [
-			self.make_row(gy + 1)
+			self.make_row_slice(gy + 1)
 			for gy in range(grid_h.shape[0] - 1)]
 
-	def make_row(self, gy, k=3):
+	@cached_property
+	def linestrings(self):
+		grid_h = self.grid_h
+		grid_w = grid_h.shape[1]
+		large = grid_w * self.grid_res
+		ls = []
+		for gy in range(grid_h.shape[0] - 1):
+			pts = grid_h[gy]
+			pts = pts[:]
+			pts[0] = extrapolate(pts[1], pts[0], large)
+			pts[-1] = extrapolate(pts[-2], pts[-1], large)
+			ls.append(shapely.geometry.LineString(pts))
+		return ls
+
+	def make_row_slice(self, gy, k=3):
 		grid_h = self.grid_h
 		grid_w = grid_h.shape[1]
 		large = grid_w * self.grid_res
@@ -190,44 +204,56 @@ class ShapelyBatchIntersections:
 		def ls_for_i(i):
 			pts = grid_h[gy, min(i, grid_w - k):i + k]
 			if i == 0:
+				pts = pts[:]
 				pts[0] = extrapolate(pts[1], pts[0], large)
 			elif i + k >= grid_w:
+				pts = pts[:]
 				pts[-1] = extrapolate(pts[-2], pts[-1], large)
 			return pts
 
 		lines = shapely.geometry.MultiLineString([
 			ls_for_i(i)
 			for i in range(0, grid_w, k - 1)])
+
 		return shapely.strtree.STRtree(lines)
 
 	def __call__(self, pts0, pts1, gy):
-		row = self._rows[gy]
+		rows = self._rows
 		ls = shapely.geometry.LineString
 		norm = np.linalg.norm
 
 		for i, (p0, p1) in enumerate(zip(pts0, pts1)):
+			dy = 0
 			ray = ls([p0, p1])
 			inter_pts = []
-			for candidate in row.query(ray):
-				inter = ray.intersection(candidate)
-				if inter and not inter.is_empty:
-					geom_type = inter.geom_type
-					if geom_type == "Point":
-						inter_pts.append(np.asarray(inter))
-					elif geom_type == "MultiPoint":
-						inter_pts.extend(np.asarray(inter))
+
+			while True:
+				for candidate in rows[gy + dy].query(ray):
+					inter = ray.intersection(candidate)
+					if inter and not inter.is_empty:
+						geom_type = inter.geom_type
+						if geom_type == "Point":
+							inter_pts.append(np.asarray(inter))
+						elif geom_type == "MultiPoint":
+							inter_pts.extend(np.asarray(inter))
+						else:
+							raise RuntimeError(
+								"unexpected geom_type %s" % geom_type)
+
+				if not inter_pts:
+					if dy < 3 and gy + dy < len(rows):
+						dy += 1  # retry on next row
 					else:
 						raise RuntimeError(
-							"unexpected geom_type %s" % geom_type)
-
-			if not inter_pts:
-				logging.warning(
-					"failed to find intersection for i=%d, n=%d." % (i, len(pts0)))
-			elif len(inter_pts) == 1:
-				pts1[i] = inter_pts[0]
-			else:
-				dist = norm(np.array(inter_pts) - p0, axis=1)
-				pts1[i] = inter_pts[np.argmin(dist)]
+							"failed to find intersection for i=%d, n=%d, %s to %s." % (
+								i, len(pts0), p0, p1))
+				elif len(inter_pts) == 1:
+					pts1[i] = inter_pts[0]
+					break
+				else:
+					dist = norm(np.array(inter_pts) - p0, axis=1)
+					pts1[i] = inter_pts[np.argmin(dist)]
+					break
 
 
 class BentleyOttmanBatchIntersections:
@@ -416,12 +442,17 @@ class GridFactory:
 
 		def compute_slice(sel):
 			pts0 = grid_h[0][sel]
+
 			for gy in range(grid_h.shape[0] - 1):
 				grid_hv[gy, sel, :] = pts0
 
 				pts1 = pts0 + field_v(pts0) * grid_res * 2
 				intersections(pts0, pts1, gy)
 				pts0 = pts1
+
+			#import json
+			#with open(cols.json", "w") as f:
+			#	f.write(json.dumps(np.transpose(np.array(all_pts), (1, 0, 2)).tolist()))
 
 			grid_hv[-1, sel, :] = pts0
 
