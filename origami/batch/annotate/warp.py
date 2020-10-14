@@ -38,7 +38,7 @@ class DebugWarpProcessor(Processor):
 		pixmap = render_lines(
 			pixmap, lines, predictors=warped.predictors, show_vectors=True)
 
-		for k, v in warped.separators.items():
+		for k, v in warped.separators.by_path.items():
 			colors = dict(T="yellow", H="blue", V="red")
 			path = list(v.coords)
 			pixmap = render_paths(
