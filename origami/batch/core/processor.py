@@ -136,6 +136,7 @@ class Processor:
 			self._print_paths = True
 
 		self._debug_write = options["debug_write"]
+		self._track_changes = options["track_changes"]
 
 	@staticmethod
 	def options(f):
@@ -201,7 +202,12 @@ class Processor:
 				'--debug-write',
 				is_flag=True,
 				default=False,
-				help="Debug which files are written.")
+				help="Debug which files are written."),
+			click.option(
+				'--track-changes',
+				type=str,
+				default="",
+				help="Recompute files and track changes with given tag.")
 		]
 		return functools.reduce(lambda x, opt: opt(x), options, f)
 
@@ -215,9 +221,12 @@ class Processor:
 	def prepare_process(self, page_path):
 		artifacts = self.artifacts()
 
-		file_writer = AtomicFileWriter(overwrite=self._overwrite)
-		if self._debug_write:
-			file_writer = DebuggingFileWriter(file_writer)
+		if self._track_changes:
+			file_writer = TrackChangeWriter(self._track_changes)
+		else:
+			file_writer = AtomicFileWriter(overwrite=self._overwrite)
+			if self._debug_write:
+				file_writer = DebuggingFileWriter(file_writer)
 
 		kwargs = dict()
 		for arg, spec in artifacts:

@@ -7,6 +7,8 @@ import collections
 import shapely.wkt
 import click
 import humanize
+import os
+import io
 
 from pathlib import Path
 from datetime import datetime
@@ -409,6 +411,63 @@ class AtomicFileWriter(FileWriter):
 
 	def __call__(self, path, mode):
 		return atomic_write(path, mode=mode, overwrite=self._overwrite)
+
+
+class TrackChangeWriter(FileWriter):
+	def __init__(self, tag="changed"):
+		self._tag = tag
+
+	def _has_changed(self, old, new, suffix):
+		if suffix == ".zip":
+			with zipfile.ZipFile(io.BytesIO(old)) as zf1:
+				with zipfile.ZipFile(io.BytesIO(new)) as zf2:
+					n1 = tuple(zf1.namelist())
+					n2 = tuple(zf2.namelist())
+					if n1 != n2:
+						return True
+					for n in n1:
+						if zf1.read(n) != zf2.read(n):
+							return True
+			return False
+		else:
+			return old != new
+
+	@contextmanager
+	def __call__(self, path, mode):
+		path = Path(path)
+
+		if path.exists():
+			with open(path, "rb") as f:
+				old_data = f.read()
+		else:
+			old_data = None
+
+		tmp_path = path.parent / (path.stem + ".tmp")
+		with open(tmp_path, mode=mode) as f:
+			yield f
+
+		has_changed = False
+
+		if old_data is not None:
+			with open(tmp_path, "rb") as f:
+				new_data = f.read()
+
+			if self._has_changed(old_data, new_data, path.suffix):
+				with open(path.parent / (path.stem + ".changed"), "w") as f:
+					f.write(self._tag)
+				has_changed = True
+		else:
+			has_changed = True
+
+		if has_changed:
+			os.remove(path)
+			os.rename(tmp_path, path)
+		else:
+			os.remove(tmp_path)
+
+	@property
+	def overwrite(self):
+		return True
 
 
 class DebuggingFileWriter:
