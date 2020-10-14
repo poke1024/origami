@@ -457,6 +457,8 @@ class TrackChangeWriter(FileWriter):
 					f.write(self._tag)
 				has_changed = True
 		else:
+			with open(path.parent / (path.stem + ".checked"), "w") as f:
+				f.write(self._tag)
 			has_changed = True
 
 		if has_changed:
