@@ -158,7 +158,7 @@ class ReadingOrderProcessor(Processor):
 @click.option(
 	'--fringe',
 	type=float,
-	default=0.0025)
+	default=0.005)
 @click.option(
 	'--region-area',
 	type=float,
