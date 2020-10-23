@@ -400,7 +400,10 @@ class Processor:
 				data = dict()
 
 			for k, v in updates.items():
-				data[k] = v
+				if v is None:
+					del data[k]
+				else:
+					data[k] = v
 
 			with open(new_json_path, "w") as f:
 				json.dump(data, f)

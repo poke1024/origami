@@ -8,10 +8,10 @@ import time
 from pathlib import Path
 
 from origami.batch.core.processor import Processor
-from origami.batch.core.io import Stage, Input
+from origami.batch.core.io import Stage, Input, Artifact
 
 
-class RemoveBrokenProcessor(Processor):
+class CleanupProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
@@ -23,10 +23,11 @@ class RemoveBrokenProcessor(Processor):
 
 	def artifacts(self):
 		return [
-			("reader", Input(stage=Stage.ANY))
+			("reader", Input(
+				Artifact.RUNTIME, stage=Stage.ANY))
 		]
 
-	def process(self, p: Path, reader):
+	def process(self, page_path: Path, reader):
 		obsolete = []
 
 		for p in reader.data_path.iterdir():
@@ -47,6 +48,20 @@ class RemoveBrokenProcessor(Processor):
 		for p in obsolete:
 			os.remove(p)
 
+		runtime_path = reader.path(Artifact.RUNTIME)
+		if runtime_path.exists():
+			with open(runtime_path, "r") as f:
+				runtime = json.loads(f.read())
+
+			updates = dict()
+			for k, v in runtime.items():
+				if v.get("status") == "FAILED":
+					if "disk I/O error" in v["traceback"]:
+						updates[k] = None
+
+			self._update_runtime_info(page_path, updates)
+
+
 
 @click.command()
 @click.argument(
@@ -54,11 +69,11 @@ class RemoveBrokenProcessor(Processor):
 	type=click.Path(exists=True),
 	required=True)
 @Processor.options
-def rmbroken(data_path, **kwargs):
+def cleanup(data_path, **kwargs):
 	""" Remove broken files in DATA_PATH. """
-	processor = RemoveBrokenProcessor(kwargs)
+	processor = CleanupProcessor(kwargs)
 	processor.traverse(data_path)
 
 
 if __name__ == "__main__":
-	rmbroken()
+	cleanup()
