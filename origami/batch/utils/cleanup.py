@@ -53,11 +53,20 @@ class CleanupProcessor(Processor):
 			with open(runtime_path, "r") as f:
 				runtime = json.loads(f.read())
 
+			spurious_errors = [
+				"disk I/O error",
+				"Cannot allocate memory"
+				"database is locked"
+			]
+
 			updates = dict()
 			for k, v in runtime.items():
 				if v.get("status") == "FAILED":
-					if "disk I/O error" in v["traceback"]:
-						updates[k] = None
+					traceback = v["traceback"]
+					for err in spurious_errors:
+						if err in traceback:
+							updates[k] = None
+
 
 			self._update_runtime_info(page_path, updates)
 
