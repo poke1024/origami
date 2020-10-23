@@ -34,6 +34,14 @@ def polygon_union(geoms):
 		return shape
 
 
+def fix_bogus_tabular_path(path):
+	if path[:2] == ("regions", "TABULAR") and "." not in path[2]:
+		assert len(path) == 3
+		return path[0], path[1], path[2] + ".1.1.1"
+	else:
+		return path
+
+
 class MergedTextRegion:
 	def __init__(self, document, block_path, lines):
 		self._block_path = block_path
@@ -369,8 +377,9 @@ class Document:
 		for line_path, ocr_text in input.sorted_ocr:
 			ocr_text = self._text_filter(ocr_text)
 
-			block_path = line_path[:3]
+			block_path = fix_bogus_tabular_path(line_path[:3])
 			table_path = block_path[2].split(".")
+
 			if len(table_path) > 1:
 				assert block_path[:2] == ("regions", "TABULAR")
 				base_block_path = block_path[:2] + (table_path[0],)
@@ -424,7 +433,8 @@ class Document:
 		blocks = []
 		lines = []
 		for path in self._mapping[block_path]:
-			blocks.append((path, self._input.regions.by_path[path]))
+			fixed_path = fix_bogus_tabular_path(path)
+			blocks.append((fixed_path, self._input.regions.by_path[path]))
 			lines.extend(self._region_lines[path])
 		return blocks, dict(lines)
 
