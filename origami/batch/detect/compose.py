@@ -426,8 +426,10 @@ class Document:
 					str(list(coords)),
 					poly))
 			return None
-		else:
+		elif page_poly.geom_type == "Polygon":
 			return page_poly.exterior.coords
+		else:
+			return page_poly.convex_hull.exterior.coords
 
 	def blocks_and_lines(self, block_path):
 		blocks = []
