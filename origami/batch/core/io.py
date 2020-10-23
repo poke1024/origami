@@ -255,6 +255,9 @@ class Reader:
 			raise RuntimeError("read on undeclared %s" % artifact)
 		return self._data_path / artifact.filename(self._stage)
 
+	def fix_inconsistent(self):
+		pass
+
 	def is_ready(self):
 		if self._take_any:
 			return True
@@ -522,6 +525,15 @@ class Writer:
 		if artifact not in self._artifacts:
 			raise RuntimeError("write on undeclared %s" % artifact)
 		return self._data_path / artifact.filename(self._stage)
+
+	def fix_inconsistent(self):
+		if self._write.overwrite:
+			return
+		e = [p.exists() for p in self.paths]
+		if any(e) and not all(e):
+			for p in self.paths:
+				if p.exists():
+					os.remove(p)
 
 	def is_ready(self):
 		return self._write.overwrite or not any(p.exists() for p in self.paths)

@@ -235,6 +235,8 @@ class Processor:
 				processor=self,
 				file_writer=file_writer)
 
+			f.fix_inconsistent()
+
 			if not f.is_ready():
 				if self._verbose:
 					print("skipping %s: missing %s" % (page_path, f.missing))
