@@ -3,9 +3,22 @@ import datetime
 import os
 import portalocker
 import logging
+import time
 
 from pathlib import Path
 from contextlib import contextmanager
+
+
+def run_db_operation(operation):
+	backoff = 0
+	while True:
+		try:
+			return operation()
+		except sqlalchemy.exc.OperationalError as e:
+			if backoff > 8:
+				raise e
+			time.sleep(0.1 * (2 ** backoff))
+			backoff += 1
 
 
 class DatabaseMutex:
@@ -66,39 +79,63 @@ class DatabaseMutex:
 			sqlalchemy.Column('time', sqlalchemy.DateTime, nullable=False),
 			sqlalchemy.PrimaryKeyConstraint('path', 'processor', name='mutex_pk'))
 
+	def clear_locks(self, age=0):
+		def perform():
+			conn = self._engine.connect()
+
+			try:
+				table = self._mutex_table
+				if age == 0:
+					stmt = table.delete()
+				else:
+					stmt = table.delete().where(sqlalchemy.and_(
+						table.c.time < datetime.datetime.now() - datetime.timedelta(seconds=age)))
+				conn.execute(stmt)
+			finally:
+				conn.close()
+
+		run_db_operation(perform)
+
 	def try_lock(self, processor, path):
-		conn = self._engine.connect()
+		def perform():
+			conn = self._engine.connect()
 
-		try:
-			conn.execute(self._mutex_table.insert(), [
-				dict(
-					path=path,
-					processor=processor,
-					pid=os.getpid(),
-					time=datetime.datetime.now()
-				)
-			])
+			try:
+				conn.execute(self._mutex_table.insert(), [
+					dict(
+						path=path,
+						processor=processor,
+						pid=os.getpid(),
+						time=datetime.datetime.now()
+					)
+				])
 
-			locked = True
-		except sqlalchemy.exc.IntegrityError as e:
-			locked = False
-		finally:
-			conn.close()
+				locked = True
+			except sqlalchemy.exc.IntegrityError as e:
+				locked = False
+			finally:
+				conn.close()
 
-		return locked
+			return locked
+
+		return run_db_operation(perform)
 
 	def unlock(self, processor, path):
-		conn = self._engine.connect()
+		def perform():
+			conn = self._engine.connect()
 
-		try:
-			table = self._mutex_table
-			stmt = table.delete().where(sqlalchemy.and_(
-				table.c.processor == processor,
-				table.c.path == path,
-				table.c.pid == os.getpid()))
-			conn.execute(stmt)
-		finally:
-			conn.close()
+
+			try:
+				table = self._mutex_table
+				stmt = table.delete().where(sqlalchemy.and_(
+					table.c.processor == processor,
+					table.c.path == path,
+					table.c.pid == os.getpid()))
+				conn.execute(stmt)
+			finally:
+				conn.close()
+
+		run_db_operation(perform)
 
 	@contextmanager
 	def lock(self, processor, path):

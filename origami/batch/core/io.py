@@ -6,8 +6,12 @@ import zipfile
 import collections
 import shapely.wkt
 import click
+import humanize
+import os
+import io
 
 from pathlib import Path
+from datetime import datetime
 from contextlib import contextmanager
 from cached_property import cached_property
 from atomicwrites import atomic_write
@@ -372,21 +376,143 @@ class Input:
 		self._stage = stage
 		self._take_any = take_any
 
-	def instantiate(self, processor, overwrite, **kwargs):
+	def instantiate(self, processor, file_writer, **kwargs):
 		return Reader(
 			self._artifacts, self._stage,
 			take_any=self._take_any,
 			open=processor.lock_or_open, **kwargs)
 
 
+class FileWriter:
+	def __init__(self, overwrite):
+		self._overwrite = overwrite
+
+	def __call__(self, path, mode):
+		raise NotImplementedError()
+
+	@property
+	def overwrite(self):
+		return self._overwrite
+
+
+class UnsafeFileWriter(FileWriter):
+	def __init__(self, overwrite):
+		super().__init__(overwrite)
+
+	def __call__(self, path, mode):
+		if not self._overwrite and Path(path).exists:
+			raise RuntimeError(f"{path} already exists.")
+		return open(path, mode="wb")
+
+
+class AtomicFileWriter(FileWriter):
+	def __init__(self, overwrite):
+		super().__init__(overwrite)
+
+	def __call__(self, path, mode):
+		return atomic_write(path, mode=mode, overwrite=self._overwrite)
+
+
+class TrackChangeWriter(FileWriter):
+	def __init__(self, tag="changed"):
+		self._tag = tag
+
+	def _has_changed(self, old, new, suffix):
+		if suffix == ".zip":
+			with zipfile.ZipFile(io.BytesIO(old)) as zf1:
+				with zipfile.ZipFile(io.BytesIO(new)) as zf2:
+					n1 = tuple(zf1.namelist())
+					n2 = tuple(zf2.namelist())
+					if n1 != n2:
+						return True
+					for n in n1:
+						if zf1.read(n) != zf2.read(n):
+							return True
+			return False
+		else:
+			return old != new
+
+	@contextmanager
+	def __call__(self, path, mode):
+		path = Path(path)
+
+		if path.exists():
+			with open(path, "rb") as f:
+				old_data = f.read()
+		else:
+			old_data = None
+
+		tmp_path = path.parent / (path.stem + ".tmp")
+		with open(tmp_path, mode=mode) as f:
+			yield f
+
+		has_changed = False
+
+		if old_data is not None:
+			with open(tmp_path, "rb") as f:
+				new_data = f.read()
+
+			if self._has_changed(old_data, new_data, path.suffix):
+				with open(path.parent / (path.stem + ".changed"), "w") as f:
+					f.write(self._tag)
+				has_changed = True
+		else:
+			with open(path.parent / (path.stem + ".checked"), "w") as f:
+				f.write(self._tag)
+			has_changed = True
+
+		if has_changed:
+			os.remove(path)
+			os.rename(tmp_path, path)
+		else:
+			os.remove(tmp_path)
+
+	@property
+	def overwrite(self):
+		return True
+
+
+class DebuggingFileWriter:
+	def __init__(self, writer):
+		self._writer = writer
+
+	@contextmanager
+	def __call__(self, path, mode):
+		with self._writer(path, mode=mode) as f:
+			print(f"write operation: opening {path} with mode {mode}.")
+			yield f
+
+		try:
+			file_stats = Path(path).stat()
+		except OSError:
+			file_stats = None
+
+		file_stats_desc = []
+		if file_stats:
+			file_stats_desc.append(humanize.naturalsize(file_stats.st_size))
+			file_stats_desc.append(humanize.naturaltime(datetime.fromtimestamp(file_stats.st_mtime)))
+		else:
+			file_stats_desc.append("failed to stat file")
+
+		print(f"write operation: {path} written, {', '.join(file_stats_desc)}.")
+
+	@property
+	def overwrite(self):
+		return self._writer.overwrite
+
+
 class Writer:
-	def __init__(self, artifacts, stage, page_path, processor, overwrite):
+	def __init__(self, artifacts, stage, page_path, processor, file_writer):
 		self._artifacts = artifacts
 		self._stage = stage
 		self._page_path = page_path
 		self._data_path = find_data_path(page_path)
 		self._processor = processor
-		self._overwrite = overwrite
+		self._write = file_writer
+
+	@property
+	def compression(self):
+		return zipfile.ZIP_DEFLATED  # zipfile.ZIP_LZMA
 
 	@property
 	def paths(self):
@@ -398,7 +524,7 @@ class Writer:
 		return self._data_path / artifact.filename(self._stage)
 
 	def is_ready(self):
-		return self._overwrite or not any(p.exists() for p in self.paths)
+		return self._write.overwrite or not any(p.exists() for p in self.paths)
 
 	@property
 	def missing(self):
@@ -406,17 +532,18 @@ class Writer:
 
 	def write_json(self, artifact, data):
 		path = self.path(artifact)
-		with atomic_write(path, mode="wb", overwrite=self._overwrite) as f:
+		with self._write(path, mode="wb") as f:
 			f.write(json.dumps(data).encode("utf8"))
 
+	@contextmanager
 	def write_zip_file(self, artifact):
-		return self._processor.write_zip_file(
-			self.path(artifact),
-			overwrite=self._overwrite)
+		with self._write(self.path(artifact), mode="wb") as f:
+			with zipfile.ZipFile(f, "w", self.compression) as zf:
+				yield zf
 
 	def segmentation(self, segmentation):
 		path = self.path(Artifact.SEGMENTATION)
-		with atomic_write(path, mode="wb", overwrite=self._overwrite) as f:
+		with self._write(path, mode="wb") as f:
 			segmentation.save(f)
 
 	@contextmanager
@@ -445,7 +572,7 @@ class Writer:
 	@contextmanager
 	def dewarping_transform(self):
 		path = self.path(Artifact.DEWARPING_TRANSFORM)
-		with atomic_write(path, mode="wb", overwrite=self._overwrite) as f:
+		with self._write(path, mode="wb") as f:
 			yield f
 
 	def tables(self, data):

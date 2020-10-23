@@ -70,8 +70,11 @@ class StatsProcessor(Processor):
 
 		data_path = find_data_path(page_path)
 		for p in data_path.iterdir():
-			if not p.name.startswith("."):
-				self._artifacts[p.name] += 1
+			if p.name.startswith(".") or p.name.startswith("tmp"):
+				continue
+
+			self._artifacts[p.name] += 1
+
 			if p.name == "runtime.json":
 				self.parse_runtime_data(page_path, p)
 

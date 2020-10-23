@@ -91,14 +91,14 @@ class Segmentation:
 
 
 class SegmentationPredictor:
-	def __init__(self, models_path, target="quality"):
+	def __init__(self, models_path, grayscale=False, target="quality"):
 		import origami.core.predict as predict
 
 		if target == "speed":
 			loaded = predict.load([
 				(predict.NetPredictor, "v3/sep/1"),
 				(predict.NetPredictor, "v3/blkx/2"),
-			], models_path=models_path)
+			], models_path=models_path, grayscale=grayscale)
 
 			self._predictors = [
 				loaded["v3/sep/1"],
@@ -116,7 +116,7 @@ class SegmentationPredictor:
 				(predict.NetPredictor, "v3/blkx/3"),
 				(predict.NetPredictor, "v3/blkx/4"),
 				(predict.NetPredictor, "v3/blkx/5"),
-				], models_path=models_path)
+				], models_path=models_path, grayscale=grayscale)
 
 			self._predictors = [
 				predict.VotingPredictor(
@@ -134,7 +134,7 @@ class SegmentationPredictor:
 					loaded["v3/blkx/5"],
 					name="regions")]
 		else:
-			raise ValueError(target)
+			raise ValueError("unknown target %s" % target)
 
 	def __call__(self, path):
 		page = Page(path)

@@ -8,7 +8,6 @@ import logging
 import zipfile
 import portalocker
 import contextlib
-import contextlib
 import traceback
 import imghdr
 import multiprocessing
@@ -105,6 +104,7 @@ class Processor:
 		self._lock_strategy = options.get("lock_strategy", "DB")
 		self._lock_level = options.get("lock_level", "PAGE")
 		self._lock_timeout = options.get("lock_timeout", "60")
+		self._max_lock_age = options.get("max_lock_age")
 		self._mutex = None
 
 		if self._lock_strategy == "DB":
@@ -129,6 +129,14 @@ class Processor:
 			self._overwrite = True  # profile implies overwrite
 		else:
 			self._profiler = None
+
+		self._print_paths = False
+		self._plain = options.get("plain")
+		if self._plain:
+			self._print_paths = True
+
+		self._debug_write = options["debug_write"]
+		self._track_changes = options["track_changes"]
 
 	@staticmethod
 	def options(f):
@@ -168,7 +176,13 @@ class Processor:
 				type=int,
 				default=60,
 				required=False,
-				help="Timeout for locking. NFS volumes might need high values."),
+				help="Seconds to wait to acquire locking. NFS volumes might need high values."),
+			click.option(
+				'--max-lock-age',
+				type=int,
+				default=600,
+				required=False,
+				help="Maximum age of a lock in seconds until it is considered invalid."),
 			click.option(
 				'--overwrite',
 				is_flag=True,
@@ -178,7 +192,22 @@ class Processor:
 				'--profile',
 				is_flag=True,
 				default=False,
-				help="Enable profiling and show results.")
+				help="Enable profiling and show results."),
+			click.option(
+				'--plain',
+				is_flag=True,
+				default=False,
+				help="Print plain output that is friendly to piping."),
+			click.option(
+				'--debug-write',
+				is_flag=True,
+				default=False,
+				help="Debug which files are written."),
+			click.option(
+				'--track-changes',
+				type=str,
+				default="",
+				help="Recompute files and track changes with given tag.")
 		]
 		return functools.reduce(lambda x, opt: opt(x), options, f)
 
@@ -192,16 +221,23 @@ class Processor:
 	def prepare_process(self, page_path):
 		artifacts = self.artifacts()
 
+		if self._track_changes:
+			file_writer = TrackChangeWriter(self._track_changes)
+		else:
+			file_writer = AtomicFileWriter(overwrite=self._overwrite)
+			if self._debug_write:
+				file_writer = DebuggingFileWriter(file_writer)
+
 		kwargs = dict()
 		for arg, spec in artifacts:
 			f = spec.instantiate(
 				page_path=page_path,
 				processor=self,
-				overwrite=self._overwrite)
+				file_writer=file_writer)
 
 			if not f.is_ready():
 				if self._verbose:
-					print("skipping %s: missing " % (page_path, f.missing))
+					print("skipping %s: missing %s" % (page_path, f.missing))
 				return False
 
 			kwargs[arg] = f
@@ -260,20 +296,28 @@ class Processor:
 
 	def _trigger_process_star(self, item):
 		self._trigger_process(*item)
+		return item
 
 	def _process_queue(self, queued):
 		with self._profiler or nullcontext():
 			squeue = sorted(queued)
+			n = len(squeue)
+			nd = len(str(n))
 
 			if self._processes > 1:
 				with multiprocessing.Pool(self._processes) as pool:
 					watchdog = Watchdog(pool=pool, timeout=self._timeout)
 					watchdog.start()
 
-					with tqdm(total=len(squeue)) as progress:
-						for _ in pool.imap_unordered(
-							self._trigger_process_star, squeue):
-							progress.update(1)
+					with tqdm(total=len(squeue), disable=self._print_paths) as progress:
+						for i, (p, kwargs) in enumerate(pool.imap_unordered(
+							self._trigger_process_star, squeue)):
+
+							if self._print_paths:
+								print(f"[{str(i + 1).rjust(nd)}/{n}] {p}", flush=True)
+							else:
+								progress.update(1)
+
 							watchdog.ping()
 
 				if watchdog.is_cancelled():
@@ -281,6 +325,10 @@ class Processor:
 					sys.exit(1)
 				else:
 					watchdog.set_is_done()
+			elif self._print_paths:
+				for i, (p, kwargs) in enumerate(squeue):
+					self._trigger_process(p, kwargs)
+					print(f"[{str(i + 1).rjust(nd)}/{n}] {p}", flush=True)
 			else:
 				for p, kwargs in tqdm(squeue):
 					self._trigger_process(p, kwargs)
@@ -291,6 +339,7 @@ class Processor:
 			raise FileNotFoundError("%s does not exist." % path)
 
 		queued = []
+		counts = dict(images=0)
 
 		def add_path(p):
 			if not p.exists():
@@ -304,6 +353,8 @@ class Processor:
 				if self._verbose:
 					print("skipping %s: not an image." % p)
 				return
+
+			counts['images'] += 1
 
 			if not self.should_process(p):
 				if self._verbose:
@@ -325,9 +376,9 @@ class Processor:
 				raise FileNotFoundError(
 					"%s is not a valid path or text file of paths." % path)
 		else:
-			print("scanning data path... ", flush=True, end="")
+			print(f"scanning {path}... ", flush=True, end="")
 
-			with Spinner():
+			with Spinner(disable=self._plain):
 				for folder, _, filenames in os.walk(path):
 					folder = Path(folder)
 					if folder.name.endswith(".out"):
@@ -337,10 +388,13 @@ class Processor:
 						add_path(folder / filename)
 
 			print("done.", flush=True)
+			print(f"{counts['images']} documents found, {len(queued)} ready to process.")
 
 		return queued
 
 	def traverse(self, path: Path):
+		print(f"running {self.processor_name}.", flush=True)
+
 		queued = self._build_queue(path)
 
 		if self._lock_strategy == "DB":
@@ -353,10 +407,15 @@ class Processor:
 
 			self._mutex = DatabaseMutex(
 				db_path, timeout=self._lock_timeout)
+
+			self._mutex.clear_locks(self._max_lock_age)
+
 		elif self._lock_strategy == "FILE":
 			self._mutex = FileMutex()
+
 		elif self._lock_strategy == "NONE":
 			self._mutex = DummyMutex()
+
 		else:
 			raise ValueError(self._lock_strategy)
 
@@ -417,13 +476,3 @@ class Processor:
 
 	def _update_runtime_info(self, page_path, updates):
 		self._update_json(page_path, Artifact.RUNTIME, updates)
-
-	@property
-	def compression(self):
-		return zipfile.ZIP_DEFLATED  # zipfile.ZIP_LZMA
-
-	@contextmanager
-	def write_zip_file(self, path, overwrite=False):
-		with atomic_write(path, mode="wb", overwrite=overwrite) as f:
-			with zipfile.ZipFile(f, "w", self.compression) as zf:
-				yield zf

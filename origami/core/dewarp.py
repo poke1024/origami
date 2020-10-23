@@ -49,8 +49,12 @@ class Samples:
 		array = np.load(data, allow_pickle=False)
 
 		samples = Samples(geometry)
-		samples._points = list(array[:, :2])
-		samples._values = list(array[:, 2])
+		if array.size > 0:
+			samples._points = list(array[:, :2])
+			samples._values = list(array[:, 2])
+		else:
+			samples._points = np.empty((2, 0))
+			samples._values = []
 
 		return samples
 
@@ -59,7 +63,7 @@ class Samples:
 		values = np.array(self._values)
 
 		if points.size == 0:
-			array = np.empty((2, 0))
+			array = np.empty((3, 0))
 		else:
 			array = np.hstack([points, values[:, np.newaxis]])
 
@@ -105,7 +109,7 @@ class Field:
 	def __init__(self, samples, size, phi0):
 		self._size = size
 
-		if len(samples.points) < 2:
+		if len(samples.points) <= 2:
 			self._interp = lambda pts: [phi0 for _ in pts]
 		else:
 			self._interp = lininterp(
@@ -175,10 +179,24 @@ class ShapelyBatchIntersections:
 		self.grid_res = grid_res
 
 		self._rows = [
-			self.make_row(gy + 1)
+			self.make_row_slice(gy + 1)
 			for gy in range(grid_h.shape[0] - 1)]
 
-	def make_row(self, gy, k=3):
+	@cached_property
+	def linestrings(self):
+		grid_h = self.grid_h
+		grid_w = grid_h.shape[1]
+		large = grid_w * self.grid_res
+		ls = []
+		for gy in range(grid_h.shape[0] - 1):
+			pts = grid_h[gy]
+			pts = pts[:]
+			pts[0] = extrapolate(pts[1], pts[0], large)
+			pts[-1] = extrapolate(pts[-2], pts[-1], large)
+			ls.append(shapely.geometry.LineString(pts))
+		return ls
+
+	def make_row_slice(self, gy, k=3):
 		grid_h = self.grid_h
 		grid_w = grid_h.shape[1]
 		large = grid_w * self.grid_res
@@ -186,44 +204,63 @@ class ShapelyBatchIntersections:
 		def ls_for_i(i):
 			pts = grid_h[gy, min(i, grid_w - k):i + k]
 			if i == 0:
+				pts = pts[:]
 				pts[0] = extrapolate(pts[1], pts[0], large)
 			elif i + k >= grid_w:
+				pts = pts[:]
 				pts[-1] = extrapolate(pts[-2], pts[-1], large)
 			return pts
 
 		lines = shapely.geometry.MultiLineString([
 			ls_for_i(i)
 			for i in range(0, grid_w, k - 1)])
+
 		return shapely.strtree.STRtree(lines)
 
 	def __call__(self, pts0, pts1, gy):
-		row = self._rows[gy]
+		rows = self._rows
 		ls = shapely.geometry.LineString
 		norm = np.linalg.norm
 
 		for i, (p0, p1) in enumerate(zip(pts0, pts1)):
+			dy = 0
 			ray = ls([p0, p1])
 			inter_pts = []
-			for candidate in row.query(ray):
-				inter = ray.intersection(candidate)
-				if inter and not inter.is_empty:
-					geom_type = inter.geom_type
-					if geom_type == "Point":
-						inter_pts.append(np.asarray(inter))
-					elif geom_type == "MultiPoint":
-						inter_pts.extend(np.asarray(inter))
-					else:
-						raise RuntimeError(
-							"unexpected geom_type %s" % geom_type)
 
-			if not inter_pts:
-				logging.warning(
-					"failed to find intersection for i=%d, n=%d." % (i, len(pts0)))
-			elif len(inter_pts) == 1:
-				pts1[i] = inter_pts[0]
-			else:
-				dist = norm(np.array(inter_pts) - p0, axis=1)
-				pts1[i] = inter_pts[np.argmin(dist)]
+			while True:
+				for candidate in rows[gy + dy].query(ray):
+					inter = ray.intersection(candidate)
+					if inter and not inter.is_empty:
+						geom_type = inter.geom_type
+						if geom_type == "Point":
+							inter_pts.append(np.asarray(inter))
+						elif geom_type == "MultiPoint":
+							inter_pts.extend(np.asarray(inter))
+						else:
+							raise RuntimeError(
+								"unexpected geom_type %s" % geom_type)
+
+				if not inter_pts:
+					if gy + dy + 1 < len(rows):
+						dy += 1  # retry on next row
+					else:
+						coords = []
+						for linestring in self.linestrings:
+							coords.append(list(linestring.coords))
+						with open("/Users/offline/Desktop/rows.json", "w") as f:
+							f.write(json.dumps(coords))
+
+						raise RuntimeError(
+							"failed to find intersection for i=%d, n=%d, %s to %s." % (
+								i, len(pts0), p0, p1))
+
+				elif len(inter_pts) == 1:
+					pts1[i] = inter_pts[0]
+					break
+				else:
+					dist = norm(np.array(inter_pts) - p0, axis=1)
+					pts1[i] = inter_pts[np.argmin(dist)]
+					break
 
 
 class BentleyOttmanBatchIntersections:
@@ -411,13 +448,26 @@ class GridFactory:
 		intersections = BatchIntersections(grid_h, grid_res)
 
 		def compute_slice(sel):
+			max_dy = 0
+			for gy in range(1, grid_h.shape[0]):
+				max_dy = max(
+					max_dy,
+					np.max(grid_h[gy, sel, 1]) - np.min(grid_h[gy - 1, sel, 1]))
+
+			max_angle = 60
+			max_step_len = max_dy / math.cos(max_angle * (math.pi / 180))
+
 			pts0 = grid_h[0][sel]
 			for gy in range(grid_h.shape[0] - 1):
 				grid_hv[gy, sel, :] = pts0
 
-				pts1 = pts0 + field_v(pts0) * grid_res * 2
+				pts1 = pts0 + field_v(pts0) * max_step_len
 				intersections(pts0, pts1, gy)
 				pts0 = pts1
+
+			#import json
+			#with open(cols.json", "w") as f:
+			#	f.write(json.dumps(np.transpose(np.array(all_pts), (1, 0, 2)).tolist()))
 
 			grid_hv[-1, sel, :] = pts0
 
