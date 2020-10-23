@@ -97,7 +97,7 @@ class Processor:
 	def __init__(self, options, needs_qt=False):
 		self._overwrite = options.get("overwrite", False)
 		self._processes = options.get("processes", 1)
-		self._timeout = options.get("alive", 300)
+		self._timeout = options.get("alive", 600)
 		self._name = options.get("name", "")
 		self._verbose = False
 
@@ -149,7 +149,7 @@ class Processor:
 			click.option(
 				'--alive',
 				type=int,
-				default=300,
+				default=600,
 				help="Seconds to wait after inactive process is killed."),
 			click.option(
 				'--name',
