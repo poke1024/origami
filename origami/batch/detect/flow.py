@@ -346,7 +346,8 @@ class FlowDetectionProcessor(Processor):
 	def process(self, page_path: Path, warped, output):
 		detector = ConcurrentLineDetector(
 			force_parallel_lines=False,
-			extend_baselines=False)
+			extend_baselines=False,
+			single_column=False)
 
 		max_phi = self._options["max_phi"]
 		max_std = self._options["max_phi_std"]

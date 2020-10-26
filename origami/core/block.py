@@ -459,6 +459,7 @@ class LineDetector:
 		self,
 		force_parallel_lines=False,
 		force_lines=False,
+		single_column=False,
 		extra_height=0.05,
 		extra_descent=0,
 		block_size_minimum=4,
@@ -469,6 +470,7 @@ class LineDetector:
 
 		self._force_parallel_baselines = force_parallel_lines
 		self._force_lines = force_lines
+		self._single_column = single_column
 
 		self._extra_height = extra_height
 		self._extra_descent = extra_descent
@@ -502,7 +504,9 @@ class LineDetector:
 	def detect_baselines(self, block, text_area):
 		import tesserocr
 
-		with tesserocr.PyTessBaseAPI(psm=tesserocr.PSM.SINGLE_BLOCK) as api:
+		psm = tesserocr.PSM.SINGLE_BLOCK if self._single_column else tesserocr.PSM.AUTO
+
+		with tesserocr.PyTessBaseAPI(psm=psm) as api:
 
 			api.SetVariable(
 				"textord_parallel_baselines",

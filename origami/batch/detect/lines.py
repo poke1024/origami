@@ -89,6 +89,7 @@ class LineDetectionProcessor(Processor):
 				text_blocks.values(),
 				buffer=self._options["contours_buffer"]),
 			force_parallel_lines=False,
+			single_column=True,
 			force_lines=True,
 			extra_height=self._options["extra_height"],
 			extra_descent=self._options["extra_descent"])
