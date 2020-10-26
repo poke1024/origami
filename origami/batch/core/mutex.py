@@ -96,18 +96,18 @@ class DatabaseMutex:
 
 		run_db_operation(perform)
 
-	def try_lock(self, processor, path):
+	def try_lock(self, processor, paths):
 		def perform():
 			conn = self._engine.connect()
 
 			try:
 				conn.execute(self._mutex_table.insert(), [
 					dict(
-						path=path,
+						path=p,
 						processor=processor,
 						pid=os.getpid(),
 						time=datetime.datetime.now()
-					)
+					) for p in paths
 				])
 
 				locked = True
@@ -120,16 +120,15 @@ class DatabaseMutex:
 
 		return run_db_operation(perform)
 
-	def unlock(self, processor, path):
+	def unlock(self, processor, paths):
 		def perform():
 			conn = self._engine.connect()
-
 
 			try:
 				table = self._mutex_table
 				stmt = table.delete().where(sqlalchemy.and_(
 					table.c.processor == processor,
-					table.c.path == path,
+					table.c.path.in_(paths),
 					table.c.pid == os.getpid()))
 				conn.execute(stmt)
 			finally:
@@ -138,21 +137,23 @@ class DatabaseMutex:
 		run_db_operation(perform)
 
 	@contextmanager
-	def lock(self, processor, path):
-		success = self.try_lock(processor, path)
+	def lock(self, processor, paths):
+		success = self.try_lock(processor, paths)
 		try:
 			yield success
 		finally:
 			if success:
-				self.unlock(processor, path)
+				self.unlock(processor, paths)
 
 
 class FileMutex:
 	@contextmanager
-	def lock(self, processor, path):
+	def lock(self, processor, paths):
+		if len(paths) != 1:
+			raise RuntimeError("FileMutex does not support chunked locking")
 		try:
 			with portalocker.Lock(
-					path,
+					paths[0],
 					"r",
 					flags=portalocker.LOCK_EX,
 					timeout=1,
@@ -163,23 +164,23 @@ class FileMutex:
 
 
 class DummyMutex:
-	def try_lock(self, processor, path):
+	def try_lock(self, processor, paths):
 		return True
 
-	def unlock(self, processor, path):
+	def unlock(self, processor, paths):
 		pass
 
 	@contextmanager
-	def lock(self, processor, path):
+	def lock(self, processor, paths):
 		yield True
 
 
 if __name__ == "__main__":
 	mutex = DatabaseMutex("origami.debug.mutex.db")
 
-	with mutex.lock("proc_a", "/a/b/c") as locked:
+	with mutex.lock("proc_a", ["/a/b/c"]) as locked:
 		print("try", locked)
-		print("retry", mutex.try_lock("proc_a", "/a/b/c"))
+		print("retry", mutex.try_lock("proc_a", ["/a/b/c"]))
 
-	print("clean retry", mutex.try_lock("proc_a", "/a/b/c"))
-	mutex.unlock("proc_a", "/a/b/c")
+	print("clean retry", mutex.try_lock("proc_a", ["/a/b/c"]))
+	mutex.unlock("proc_a", ["/a/b/c"])

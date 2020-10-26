@@ -93,6 +93,11 @@ class Watchdog(threading.Thread):
 		return self._state == WatchdogState.CANCEL
 
 
+def chunks(items, n):
+	for i in range(0, len(items), n):
+		yield items[i:i + n]
+
+
 class Processor:
 	def __init__(self, options, needs_qt=False):
 		self._overwrite = options.get("overwrite", False)
@@ -105,6 +110,7 @@ class Processor:
 		self._lock_level = options.get("lock_level", "PAGE")
 		self._lock_timeout = options.get("lock_timeout", "60")
 		self._max_lock_age = options.get("max_lock_age")
+		self._lock_chunk_size = 25
 		self._mutex = None
 
 		if self._lock_strategy == "DB":
@@ -246,43 +252,36 @@ class Processor:
 
 		return kwargs
 
-	def _trigger_process(self, p, kwargs):
+	def _trigger_process1(self, p, kwargs, locked):
+		work = locked
+
 		try:
-			if self._lock_level == "PAGE":
-				lock_actor_name = "page"
-			elif self._lock_level == "TASK":
-				lock_actor_name = self.processor_name
-			else:
-				raise ValueError(self._lock_level)
+			if work:
+				# a concurrent worker might already have done this.
+				for f in kwargs.values():
+					if not f.is_ready():
+						work = False
+						break
 
-			with self._mutex.lock(lock_actor_name, str(p)) as locked:
-				work = locked
+			if work:
+				with elapsed_timer() as elapsed:
+					data_path = find_data_path(p)
+					data_path.mkdir(exist_ok=True)
 
-				if work:
-					# a concurrent worker might already have done this.
-					for f in kwargs.values():
-						if not f.is_ready():
-							work = False
-							break
+					runtime_info = self.process(p, **kwargs)
 
-				if work:
-					with elapsed_timer() as elapsed:
-						data_path = find_data_path(p)
-						data_path.mkdir(exist_ok=True)
+				if runtime_info is None:
+					runtime_info = dict()
+				runtime_info["status"] = "COMPLETED"
+				runtime_info["elapsed"] = round(elapsed(), 2)
 
-						runtime_info = self.process(p, **kwargs)
-
-					if runtime_info is None:
-						runtime_info = dict()
-					runtime_info["status"] = "COMPLETED"
-					runtime_info["elapsed"] = round(elapsed(), 2)
-
-					self._update_runtime_info(
-						p, {self.processor_name: runtime_info})
+				self._update_runtime_info(
+					p, {self.processor_name: runtime_info})
 
 		except KeyboardInterrupt:
 			logging.exception("Interrupted at %s." % p)
 			raise
+
 		except:
 			logging.exception("Failed to process %s." % p)
 			runtime_info = dict(
@@ -290,35 +289,52 @@ class Processor:
 				traceback=traceback.format_exc())
 			self._update_runtime_info(p, {
 				self.processor_name: runtime_info})
+
 		finally:
 			# free memory allocated in cached io.Reader
 			# attributes. this can get substantial for
 			# long runs.
 			kwargs.clear()
 
-	def _trigger_process_star(self, item):
-		self._trigger_process(*item)
-		return item
+	def _trigger_process(self, chunk):
+		if self._lock_level == "PAGE":
+			lock_actor_name = "page"
+		elif self._lock_level == "TASK":
+			lock_actor_name = self.processor_name
+		else:
+			raise ValueError(self._lock_level)
+
+		with self._mutex.lock(
+			lock_actor_name,
+			[str(p) for p, _ in chunk]) as locked:
+
+			for p, kwargs in chunk:
+				self._trigger_process1(p, kwargs, locked)
+				yield p
+
+	def _trigger_process_async(self, chunk):
+		return list(self._trigger_process(chunk))
 
 	def _process_queue(self, queued):
 		with self._profiler or nullcontext():
-			squeue = sorted(queued)
-			n = len(squeue)
-			nd = len(str(n))
+			squeue = list(chunks(sorted(queued), self._lock_chunk_size))
+			n_items = len(squeue)
+			nd = len(str(n_items))
 
 			if self._processes > 1:
 				with multiprocessing.Pool(self._processes) as pool:
 					watchdog = Watchdog(pool=pool, timeout=self._timeout)
 					watchdog.start()
 
-					with tqdm(total=len(squeue), disable=self._print_paths) as progress:
-						for i, (p, kwargs) in enumerate(pool.imap_unordered(
-							self._trigger_process_star, squeue)):
-
+					with tqdm(total=n_items, disable=self._print_paths) as progress:
+						i = 0
+						for chunk in pool.imap_unordered(self._trigger_process_async, squeue):
 							if self._print_paths:
-								print(f"[{str(i + 1).rjust(nd)}/{n}] {p}", flush=True)
+								for p, _ in chunk:
+									print(f"[{str(i + 1).rjust(nd)}/{n_items}] {p}", flush=True)
+									i += 1
 							else:
-								progress.update(1)
+								progress.update(len(chunk))
 
 							watchdog.ping()
 
@@ -327,13 +343,16 @@ class Processor:
 					sys.exit(1)
 				else:
 					watchdog.set_is_done()
-			elif self._print_paths:
-				for i, (p, kwargs) in enumerate(squeue):
-					self._trigger_process(p, kwargs)
-					print(f"[{str(i + 1).rjust(nd)}/{n}] {p}", flush=True)
 			else:
-				for p, kwargs in tqdm(squeue):
-					self._trigger_process(p, kwargs)
+				i = 0
+				with tqdm(total=n_items, disable=self._print_paths) as progress:
+					for chunk in squeue:
+						for _ in self._trigger_process(chunk):
+							if self._print_paths:
+								print(f"[{str(i + 1).rjust(nd)}/{n_items}] {p}", flush=True)
+								i += 1
+							else:
+								progress.update(1)
 
 	def _build_queue(self, path):
 		path = Path(path)
