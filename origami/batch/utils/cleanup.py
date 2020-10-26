@@ -67,7 +67,6 @@ class CleanupProcessor(Processor):
 						if err in traceback:
 							updates[k] = None
 
-
 			self._update_runtime_info(page_path, updates)
 
 
