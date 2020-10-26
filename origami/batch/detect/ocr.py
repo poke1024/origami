@@ -103,11 +103,18 @@ class OCRProcessor(Processor):
 			self._options,
 			min_confidence=reliable.lines.min_confidence)
 
+		min_width = 6
+		min_height = 6
+
 		names = []
+		empty_names = []
 		images = []
 		for stem, im in extractor(lines, ignored=self._ignored):
-			names.append("/".join(stem))
-			images.append(np.array(im))
+			if im.width >= min_width and im.height >= min_height:
+				names.append("/".join(stem))
+				images.append(np.array(im))
+			else:
+				empty_names.append("/".join(stem))
 
 		if self._ocr == "DRY":
 			logging.info("will ocr the following lines:\n%s" % "\n".join(sorted(names)))
@@ -134,6 +141,8 @@ class OCRProcessor(Processor):
 		with output.ocr() as zf:
 			for name, text in zip(names, texts):
 				zf.writestr("%s.txt" % name, text)
+			for name in empty_names:
+				zf.writestr("%s.txt" % name, "")
 
 
 @click.command()
