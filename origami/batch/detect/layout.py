@@ -15,6 +15,7 @@ import skimage.morphology
 import networkx as nx
 import collections
 import portion
+import intervaltree
 import logging
 import importlib
 import cv2
@@ -861,11 +862,21 @@ class FixSpillOver:
 		return binarized[miny:maxy, minx:maxx], (minx, miny)
 
 
+class SplitFilter:
+	def __init__(self, min_area=0.2):
+		self._min_area = min_area
+
+	def __call__(self, union, shapes):
+		union_area = union.area
+		min_area = min([shape.area for shape in shapes])
+		return min_area >= union_area * self._min_area
+
+
 class FixSpillOverH(FixSpillOver):
 	def __init__(
 			self, filters,
 			black_level=0.05, peak=0.95,
-			min_line_count=3, min_area=0.2):
+			min_line_count=3, split_filter=SplitFilter()):
 
 		# typical whitespace widths:
 
@@ -881,12 +892,7 @@ class FixSpillOverH(FixSpillOver):
 		self._black_level = black_level
 		self._peak = peak
 		self._min_line_count = min_line_count
-		self._min_area = min_area
-
-	def _good_split(self, union, shapes):
-		union_area = union.area
-		min_area = min([shape.area for shape in shapes])
-		return min_area >= union_area * self._min_area
+		self._split_filter = split_filter
 
 	def __call__(self, regions):
 		# for each contour, sample the binarized image.
@@ -969,10 +975,56 @@ class FixSpillOverH(FixSpillOver):
 				continue
 
 			shapes = shapely.ops.split(contour, sep).geoms
-			if self._good_split(contour, shapes):
+			if self._split_filter(contour, shapes):
 				regions.remove_contour(k)
 				for shape in shapes:
 					regions.add_contour(k[:2], shape)
+
+
+class FixSpillOverHOnSeparator(FixSpillOver):
+	def __init__(self, detector, split_filter=SplitFilter()):
+		self._detector = detector  # RegionSeparatorDetector
+		self._split_filter = split_filter
+
+	def __call__(self, regions):
+		page_w, page_h = regions.geometry.size
+		dividers = self._detector(regions)
+
+		for k, xs in dividers.items():
+			if not xs:
+				continue
+
+			remaining = regions.contours[k]
+			split_shapes = []
+
+			for x in xs:
+				sep = shapely.geometry.LineString([
+					[x, -1], [x, page_h + 1]
+				])
+
+				shapes = shapely.ops.split(remaining, sep).geoms
+
+				if self._split_filter(remaining, shapes):
+					polygons = []
+					ok = True
+					for shape in shapes:
+						if shape.geom_type == "Polygon":
+							polygons.append(shape)
+						else:
+							ok = False
+							break
+					if ok:
+						polygons = sorted(polygons, key=lambda p: p.bounds[0])
+						split_shapes.extend(polygons[:-1])
+						remaining = polygons[-1]
+
+			if split_shapes:
+				regions.remove_contour(k)
+
+				for shape in split_shapes:
+					regions.add_contour(k[:2], shape)
+
+				regions.add_contour(k[:2], remaining)
 
 
 class FixSpillOverV(FixSpillOver):
@@ -1022,12 +1074,18 @@ class FixSpillOverV(FixSpillOver):
 				regions.add_contour(k[:2], shape)
 
 
-class TableLayoutDetector:
-	def __init__(self, filters, label, axis, min_distance=20):
+def shapely_limits(geom, axis):
+	bbox = np.array(geom.bounds)
+	return bbox.reshape((2, 2)).T[axis]
+
+
+class RegionSeparatorDetector:
+	def __init__(self, filters, label, axis, min_distance=20, coverage_ratio=0.3):
 		self._filter = RegionsFilter(filters)
 		self._label = label
 		self._axis = axis
 		self._min_distance = min_distance
+		self._coverage_ratio = coverage_ratio
 
 	def __call__(self, regions):
 		contours = dict(
@@ -1042,12 +1100,21 @@ class TableLayoutDetector:
 			list(contours.values()))
 		seps = collections.defaultdict(list)
 
+		# as dewarping has happened before, we assume separator
+		# lines are basically straight horizontals or verticals,
+		# with only very small variations. this simplifies the
+		# following algorithm a lot.
+
 		for sep in regions.separators.for_label(self._label):
 			for contour in tree.query(sep):
-				if contour.intersects(sep):
+				sep_i = contour.intersection(sep)
+				if sep_i and sep_i.geom_type == "LineString":
 					path = tuple(contour.name.split("/"))
-					mx = np.median(np.array(sep.coords)[:, self._axis])
-					seps[path].append(mx)
+					coords = np.array(sep_i.coords)
+					mx = np.median(coords[:, self._axis])
+					miny = np.min(coords[:, 1 - self._axis])
+					maxy = np.max(coords[:, 1 - self._axis])
+					seps[path].append((mx, miny, maxy))
 
 		agg = sklearn.cluster.AgglomerativeClustering(
 			n_clusters=None,
@@ -1058,17 +1125,48 @@ class TableLayoutDetector:
 
 		columns = dict()
 
-		for path, xs in seps.items():
-			if len(xs) > 1:
-				clustering = agg.fit([(x, 0) for x in xs])
+		for path, entries in seps.items():
+			entries = np.array(entries)
+
+			if entries.shape[0] > 1:
+				clustering = agg.fit([(x, 0) for x in entries[:, 0]])
 				labels = clustering.labels_
-				xs = np.array(xs)
-				cx = []
-				for i in range(np.max(labels) + 1):
-					cx.append(np.median(xs[labels == i]))
-				columns[path] = sorted(cx)
 			else:
-				columns[path] = [xs[0]]
+				labels = np.array([0])
+
+			cx = []
+
+			for i in range(np.max(labels) + 1):
+				sep_x = np.median(entries[labels == i, 0])
+
+				# investigate actual coverage at sep_x.
+				coverage = intervaltree.IntervalTree()
+				for miny, maxy in entries[labels == i, 1:]:
+					coverage.addi(miny, maxy + 1, True)
+				coverage.merge_overlaps(strict=False)
+
+				cmin, cmax = shapely_limits(contours[path], 1 - self._axis)
+				coords = np.zeros((2, 2), dtype=np.float64)
+				coords[:, self._axis] = sep_x
+				coords[:, 1 - self._axis] = (cmin - 1, cmax + 1)
+				divider = shapely.geometry.LineString(coords)
+				divider = contours[path].intersection(divider)
+
+				if divider and divider.geom_type == "LineString":
+					dmin, dmax = shapely_limits(divider, 1 - self._axis)
+					dlen = dmax - dmin
+
+					clen = 0
+					for iv in coverage:
+						lo = max(iv.begin, dmin)
+						hi = min(iv.end, dmax)
+						clen += max(0, hi - lo)
+
+					coverage_ratio = clen / dlen
+					if coverage_ratio > self._coverage_ratio:
+						cx.append(sep_x)
+
+			columns[path] = sorted(cx)
 
 		return columns
 
@@ -1229,9 +1327,9 @@ class LayoutDetectionProcessor(Processor):
 
 		self._transformer = getattr(imported_module, "make_transformer")()
 
-		self._table_column_detector = TableLayoutDetector(
+		self._table_column_detector = RegionSeparatorDetector(
 			"regions/TABULAR", "separators/T", axis=0)
-		self._table_divider_detector = TableLayoutDetector(
+		self._table_divider_detector = RegionSeparatorDetector(
 			"regions/TABULAR", "separators/H", axis=1)
 
 	@property

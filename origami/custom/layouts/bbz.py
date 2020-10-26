@@ -78,6 +78,9 @@ def make_transformer():
 			fringe=0,
 			strategy=dominance_strategy),
 		FixSpillOverH("regions/TEXT"),
+		FixSpillOverHOnSeparator(
+			RegionSeparatorDetector(
+				"regions/TEXT", "separators/V", axis=0)),
 		FixSpillOverV("regions/TEXT"),
 		AreaFilter(0.0025)
 	])
