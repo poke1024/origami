@@ -623,7 +623,7 @@ def parse_artifact(name):
 		if len(parts) != 2:
 			raise ValueError(name)
 		t1, t2 = parts
-		if t1 in Artifact:
+		if t1 in [x.name for x in Artifact]:
 			artifact = Artifact[t1]
 			stage = Stage[t2]
 			return artifact, stage
