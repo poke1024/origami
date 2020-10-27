@@ -318,20 +318,19 @@ class Processor:
 	def _process_queue(self, queued):
 		with self._profiler or nullcontext():
 			squeue = list(chunks(sorted(queued), self._lock_chunk_size))
-			n_items = len(squeue)
-			nd = len(str(n_items))
+			nd = len(str(len(queued)))
 
 			if self._processes > 1:
 				with multiprocessing.Pool(self._processes) as pool:
 					watchdog = Watchdog(pool=pool, timeout=self._timeout)
 					watchdog.start()
 
-					with tqdm(total=n_items, disable=self._print_paths) as progress:
+					with tqdm(total=len(queued), disable=self._print_paths) as progress:
 						i = 0
 						for chunk in pool.imap_unordered(self._trigger_process_async, squeue):
 							if self._print_paths:
 								for p, _ in chunk:
-									print(f"[{str(i + 1).rjust(nd)}/{n_items}] {p}", flush=True)
+									print(f"[{str(i + 1).rjust(nd)}/{len(queued)}] {p}", flush=True)
 									i += 1
 							else:
 								progress.update(len(chunk))
@@ -345,11 +344,11 @@ class Processor:
 					watchdog.set_is_done()
 			else:
 				i = 0
-				with tqdm(total=n_items, disable=self._print_paths) as progress:
+				with tqdm(total=len(queued), disable=self._print_paths) as progress:
 					for chunk in squeue:
 						for _ in self._trigger_process(chunk):
 							if self._print_paths:
-								print(f"[{str(i + 1).rjust(nd)}/{n_items}] {p}", flush=True)
+								print(f"[{str(i + 1).rjust(nd)}/{len(queued)}] {p}", flush=True)
 								i += 1
 							else:
 								progress.update(1)
