@@ -103,9 +103,9 @@ class OcropyLineDetector(LineDetector):
 
 
 class LineSkewEstimator:
-	def __init__(self, line_det, max_phi, min_length=50, eccentricity=0.99):
+	def __init__(self, line_det, max_phi_rad, min_length=50, eccentricity=0.99):
 		self._line_detector = line_det
-		self._max_phi = max_phi * (math.pi / 180)
+		self._max_phi = max_phi_rad
 		self._min_length = min_length
 		self._eccentricity = eccentricity
 
@@ -287,20 +287,20 @@ class FlowDetectionProcessor(Processor):
 			("output", Output(Artifact.FLOW, Artifact.LINES, stage=Stage.WARPED))
 		]
 
-	def add_line_skew_hq(self, samples, blocks, lines, max_phi, delta=0):
+	def add_line_skew_hq(self, samples, blocks, lines, max_phi_rad, delta=0):
 		n_skipped = 0
 		for line in lines.values():
-			if abs(line.angle) < max_phi:
+			if abs(line.angle) < max_phi_rad:
 				samples.append(line.center, line.angle + delta)
 			else:
 				n_skipped += 1
 		if n_skipped > 0:
 			logging.warning("skipped %d lines." % n_skipped)
 
-	def add_line_skew_lq(self, samples, blocks, lines, max_phi):
+	def add_line_skew_lq(self, samples, blocks, lines, max_phi_rad):
 		estimator = LineSkewEstimator(
 			line_det=SobelLineDetector(),
-			max_phi=max_phi)
+			max_phi_rad=max_phi_rad)
 
 		def add(im, pos):
 			for pt, phi in estimator(im):
@@ -349,7 +349,7 @@ class FlowDetectionProcessor(Processor):
 			extend_baselines=False,
 			single_column=False)
 
-		max_phi = self._options["max_phi"]
+		max_phi_rad = self._options["max_phi"] * (math.pi / 180)
 		max_std = self._options["max_phi_std"]
 
 		page = warped.page
@@ -401,9 +401,9 @@ class FlowDetectionProcessor(Processor):
 
 		if lines:
 			self.add_line_skew_hq(
-				samples_h, blocks, lines, max_phi=max_phi, delta=0)
+				samples_h, blocks, lines, max_phi_rad=max_phi_rad, delta=0)
 			self.add_line_skew_hq(
-				samples_v, blocks, lines, max_phi=max_phi, delta=math.pi / 2)
+				samples_v, blocks, lines, max_phi_rad=max_phi_rad, delta=math.pi / 2)
 
 		if self._options["estimate_border_skew"]:
 			self.add_border_skew(samples_v, page, blocks, separators)
