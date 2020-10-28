@@ -244,11 +244,11 @@ class ShapelyBatchIntersections:
 					if gy + dy + 1 < len(rows):
 						dy += 1  # retry on next row
 					else:
-						coords = []
-						for linestring in self.linestrings:
-							coords.append(list(linestring.coords))
-						with open("/Users/offline/Desktop/rows.json", "w") as f:
-							f.write(json.dumps(coords))
+						#coords = []
+						#for linestring in self.linestrings:
+						#	coords.append(list(linestring.coords))
+						#with open("/Users/offline/Desktop/rows.json", "w") as f:
+						#	f.write(json.dumps(coords))
 
 						raise RuntimeError(
 							"failed to find intersection for i=%d, n=%d, %s to %s." % (
