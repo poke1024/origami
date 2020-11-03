@@ -2,6 +2,7 @@
 
 import numpy as np
 import scipy
+import scipy.signal
 import scipy.spatial
 import click
 import shapely.ops
@@ -139,9 +140,12 @@ class Regions:
 		return self._separators
 
 	@cached_property
+	def grayscale(self):
+		return np.array(self._page.dewarped.convert("L"))
+
+	@cached_property
 	def binarized(self):
-		grayscale = np.array(
-			self._page.dewarped.convert("L"))
+		grayscale = self.grayscale
 
 		m_lh = self.median_line_height
 
@@ -849,17 +853,23 @@ class AreaFilter:
 			regions.remove_contour(k)
 
 
+def crop(pixels, contour):
+	minx, miny, maxx, maxy = contour.bounds
+
+	miny = int(max(0, miny))
+	minx = int(max(0, minx))
+	maxy = int(min(maxy, pixels.shape[0]))
+	maxx = int(min(maxx, pixels.shape[1]))
+
+	return pixels[miny:maxy, minx:maxx], (minx, miny)
+
+
 class FixSpillOver:
+	def _crop(self, regions, contour):
+		return crop(regions.grayscale, contour)
+
 	def _binarized_crop(self, regions, contour):
-		minx, miny, maxx, maxy = contour.bounds
-
-		binarized = regions.binarized
-		miny = int(max(0, miny))
-		minx = int(max(0, minx))
-		maxy = int(min(maxy, binarized.shape[0]))
-		maxx = int(min(maxx, binarized.shape[1]))
-
-		return binarized[miny:maxy, minx:maxx], (minx, miny)
+		return crop(regions.binarized, contour)
 
 
 class SplitFilter:
@@ -872,25 +882,45 @@ class SplitFilter:
 		return min_area >= union_area * self._min_area
 
 
+class SplitDetector:
+	def __init__(self, quantile=0.9, smooth=1, intensity=0.05, width=2, border=0.1):
+		self._quantile = quantile
+		self._smooth = smooth
+		self._intensity = intensity
+		self._width = width
+		self._border = border
+
+	def __call__(self, pixels, scale):
+		if pixels.dtype == np.uint8:
+			pixels = pixels.astype(np.float32) / 255.0
+
+		assert pixels.dtype == np.float32
+
+		freq, dens = scipy.signal.periodogram(
+			pixels, axis=0)
+
+		ink_h = scipy.ndimage.convolve(
+			np.quantile(dens, self._quantile, axis=0),
+			kernel(int(self._smooth * scale)),
+			mode="nearest")
+
+		span = int(self._border * len(ink_h))
+		ink_h[:span] = 0
+		ink_h[-span:] = 0
+
+		peaks, info = scipy.signal.find_peaks(
+			-ink_h, height=-self._intensity, distance=int(self._width * scale))
+
+		return peaks, info
+
+
 class FixSpillOverH(FixSpillOver):
 	def __init__(
-			self, filters,
-			black_level=0.05, peak=0.95,
+			self, filters, split_detector=SplitDetector(),
 			min_line_count=3, split_filter=SplitFilter()):
 
-		# typical whitespace widths:
-
-		# good split: w=90, lh=35, ratio=2.5
-		# (2436020X_1876-03-29_0_150_008)
-
-		# good split: w=12, lh=18, ratio=0.66
-		# (SNP2436020X-18920409-1-24-0-0)
-
-		# bad split: w=30, lh=40, ratio=0.75
-
 		self._filter = RegionsFilter(filters)
-		self._black_level = black_level
-		self._peak = peak
+		self._split_detector = split_detector
 		self._min_line_count = min_line_count
 		self._split_filter = split_filter
 
@@ -915,49 +945,9 @@ class FixSpillOverH(FixSpillOver):
 				continue
 
 			line_height = np.median(line_heights)
-			int_line_height = max(6, int(line_height))
 
-			crop, (minx, miny) = self._binarized_crop(regions, contour)
-			assert crop.dtype == np.float32
-
-			ink_h = np.quantile(crop, self._black_level, axis=0)
-
-			ink_h = scipy.ndimage.convolve(
-				ink_h,
-				kernel(int_line_height // 2),
-				mode="constant", cval=0)
-
-			'''
-			similar approach, but much slower:
-			
-			ink_v = scipy.signal.fftconvolve(
-				crop,
-				kernel(int_line_height * 3, int_line_height // 2),
-				mode="same")
-
-			ink_h = np.quantile(ink_v, self._level, axis=0)
-			'''
-
-			# ignore leftmost and rightmost 10%.
-			ink_h[:len(ink_h) // 10] = 0
-			ink_h[-len(ink_h) // 10:] = 0
-
-			peaks, info = scipy.signal.find_peaks(
-				ink_h, height=self._peak)
-
-			if False:
-				import json
-
-				k_name = "_".join(k)
-
-				PIL.Image.fromarray((crop * 255).astype(np.uint8)).save(
-					DEBUG_PATH / ("%s_bin.png" % k_name))
-
-				#PIL.Image.fromarray(np.clip(ink_v * 255, 0, 255).astype(np.uint8)).save(
-				#	DEBUG_PATH / ("%s_ink_hv.png" % k_name))
-
-				with open(DEBUG_PATH / ("%s_ink_v.json" % k_name), "w") as f:
-					f.write(json.dumps(ink_h.tolist()))
+			crop, (minx, miny) = self._crop(regions, contour)
+			peaks, info = self._split_detector(crop, scale=line_height)
 
 			if len(peaks) > 0:
 				i = np.argmax(info["peak_heights"])
@@ -1028,11 +1018,12 @@ class FixSpillOverHOnSeparator(FixSpillOver):
 
 
 class FixSpillOverV(FixSpillOver):
-	def __init__(self, filters):
+	def __init__(self, filters, split_detector=SplitDetector()):
 		self._filter = RegionsFilter(filters)
+		self._split_detector = split_detector
 
 	def __call__(self, regions):
-		m_lh = regions.median_line_height
+		median_lh = regions.median_line_height
 
 		splits = []
 		binarized = regions.binarized
@@ -1041,21 +1032,9 @@ class FixSpillOverV(FixSpillOver):
 			if not self._filter(k):
 				continue
 
-			crop, (minx, miny) = self._binarized_crop(regions, contour)
-
-			letter_width = int(m_lh)  # guess
-			ink_h = scipy.ndimage.convolve(
-				crop, kernel(1, letter_width * 10), mode="constant")
-			ink_v = np.quantile(ink_h, 0.1, axis=1)
-
-			ink_v2 = np.convolve(
-				ink_v, kernel(m_lh // 2), mode="same")
-
-			peaks, info = scipy.signal.find_peaks(
-				ink_v2,
-				height=0.75,
-				width=m_lh * 2,
-				rel_height=2)
+			crop, (minx, miny) = self._crop(regions, contour)
+			peaks, info = self._split_detector(
+				crop.transpose(), scale=median_lh)
 
 			if len(peaks) > 0:
 				i = np.argmax(info["peak_heights"])
