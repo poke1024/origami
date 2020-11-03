@@ -329,7 +329,7 @@ class Processor:
 						i = 0
 						for chunk in pool.imap_unordered(self._trigger_process_async, squeue):
 							if self._print_paths:
-								for p, _ in chunk:
+								for p in chunk:
 									print(f"[{str(i + 1).rjust(nd)}/{len(queued)}] {p}", flush=True)
 									i += 1
 							else:
