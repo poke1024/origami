@@ -21,6 +21,7 @@ from functools import partial
 from tqdm import tqdm
 from atomicwrites import atomic_write
 from contextlib import contextmanager, nullcontext
+from functools import partial
 
 from origami.core.time import elapsed_timer
 from origami.batch.core.io import *
@@ -53,13 +54,47 @@ class WatchdogState(enum.Enum):
 	CANCEL = 2
 
 
+class StopWatch:
+	def __init__(self):
+		self._last_reset = time.time()
+
+	def reset(self):
+		self._last_reset = time.time()
+
+	@property
+	def age(self):
+		return time.time() - self._last_reset
+
+
+class SharedMemoryStopWatch:
+	def __init__(self):
+		self._shared = multiprocessing.Value('L', int(time.time()))
+
+	def reset(self):
+		with self._shared.get_lock():
+			self._shared.value = int(time.time())
+
+	@property
+	def age(self):
+		with self._shared.get_lock():
+			return time.time() - self._shared.value
+
+
+global stop_watch
+stop_watch = SharedMemoryStopWatch()
+
+# make a global stop_watch. this is important as pickling
+# over the fork in imap_unordered will not work.
+
+
 class Watchdog(threading.Thread):
-	def __init__(self, pool, timeout=1000):
+	def __init__(self, pool, stop_watch, timeout=1000):
 		threading.Thread.__init__(self)
 		self._pool = pool
 		self._timeout = timeout
-		self._last_ping = time.time()
+		self._stop_watch = stop_watch
 		self._state = WatchdogState.RUNNING
+		stop_watch.reset()
 
 	def _cancel(self, dt):
 		if self._state != WatchdogState.CANCEL:
@@ -68,7 +103,7 @@ class Watchdog(threading.Thread):
 			self._pool.terminate()
 			t = threading.Thread(target=lambda: self._pool.join(), args=())
 			t.start()
-			self._last_ping = time.time()
+			self._stop_watch.reset()
 		elif self._state == WatchdogState.CANCEL:
 			logging.error("stopping failed. killing process.")
 			os._exit(1)
@@ -78,12 +113,9 @@ class Watchdog(threading.Thread):
 			time.sleep(1)
 			if self._state == WatchdogState.DONE:
 				break
-			dt = time.time() - self._last_ping
+			dt = self._stop_watch.age
 			if dt > self._timeout:
 				self._cancel(dt)
-
-	def ping(self):
-		self._last_ping = time.time()
 
 	def set_is_done(self):
 		if self._state == WatchdogState.RUNNING:
@@ -313,7 +345,11 @@ class Processor:
 				yield p
 
 	def _trigger_process_async(self, chunk):
-		return list(self._trigger_process(chunk))
+		results = []
+		for p in self._trigger_process(chunk):
+			results.append(p)
+			stop_watch.reset()
+		return results
 
 	def _process_queue(self, queued):
 		with self._profiler or nullcontext():
@@ -322,12 +358,15 @@ class Processor:
 
 			if self._processes > 1:
 				with multiprocessing.Pool(self._processes) as pool:
-					watchdog = Watchdog(pool=pool, timeout=self._timeout)
+					watchdog = Watchdog(
+						pool=pool, stop_watch=stop_watch, timeout=self._timeout)
 					watchdog.start()
 
 					with tqdm(total=len(queued), disable=self._print_paths) as progress:
 						i = 0
-						for chunk in pool.imap_unordered(self._trigger_process_async, squeue):
+						for chunk in pool.imap_unordered(
+							self._trigger_process_async, squeue):
+
 							if self._print_paths:
 								for p in chunk:
 									print(f"[{str(i + 1).rjust(nd)}/{len(queued)}] {p}", flush=True)
@@ -335,7 +374,7 @@ class Processor:
 							else:
 								progress.update(len(chunk))
 
-							watchdog.ping()
+							stop_watch.reset()
 
 				if watchdog.is_cancelled():
 					watchdog.kill()
