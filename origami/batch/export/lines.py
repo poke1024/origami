@@ -40,7 +40,7 @@ class LineExtractionProcessor(Processor):
 			stage = Stage.WARPED
 			artifacts = [Artifact.LINES]
 		else:
-			stage = Stage.AGGREGATE
+			stage = Stage.RELIABLE
 			artifacts = [Artifact.LINES, Artifact.TABLES]
 
 		return [
