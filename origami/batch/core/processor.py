@@ -346,7 +346,7 @@ class Processor:
 				i = 0
 				with tqdm(total=len(queued), disable=self._print_paths) as progress:
 					for chunk in squeue:
-						for _ in self._trigger_process(chunk):
+						for p in self._trigger_process(chunk):
 							if self._print_paths:
 								print(f"[{str(i + 1).rjust(nd)}/{len(queued)}] {p}", flush=True)
 								i += 1
