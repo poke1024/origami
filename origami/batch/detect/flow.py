@@ -294,8 +294,8 @@ class FlowDetectionProcessor(Processor):
 				samples.append(line.center, line.angle + delta)
 			else:
 				n_skipped += 1
-		if n_skipped > 0:
-			logging.warning("skipped %d lines." % n_skipped)
+		#if n_skipped > 0:
+		#	logging.warning("skipped %d lines." % n_skipped)
 
 	def add_line_skew_lq(self, samples, blocks, lines, max_phi_rad):
 		estimator = LineSkewEstimator(
