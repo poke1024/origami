@@ -94,11 +94,12 @@ class Watchdog(threading.Thread):
 		self._timeout = timeout
 		self._stop_watch = stop_watch
 		self._state = WatchdogState.RUNNING
+		self._cond = threading.Condition()
 		stop_watch.reset()
 
-	def _cancel(self, dt):
+	def _cancel(self):
 		if self._state != WatchdogState.CANCEL:
-			logging.error("no new results after %d s. stopping." % dt)
+			logging.error("no new results after %d s. stopping." % self._stop_watch.age)
 			self._state = WatchdogState.CANCEL
 			self._pool.terminate()
 			t = threading.Thread(target=lambda: self._pool.join(), args=())
@@ -109,17 +110,22 @@ class Watchdog(threading.Thread):
 			os._exit(1)
 
 	def run(self):
-		while True:
-			time.sleep(1)
-			if self._state == WatchdogState.DONE:
-				break
-			dt = self._stop_watch.age
-			if dt > self._timeout:
-				self._cancel(dt)
+		with self._cond:
+			while True:
+				self._cond.wait(
+					max(0, self._timeout - self._stop_watch.age))
+
+				if self._state == WatchdogState.DONE:
+					break
+
+				if self._stop_watch.age > self._timeout:
+					self._cancel()
 
 	def set_is_done(self):
-		if self._state == WatchdogState.RUNNING:
-			self._state = WatchdogState.DONE
+		with self._cond:
+			if self._state == WatchdogState.RUNNING:
+				self._state = WatchdogState.DONE
+				self._cond.notify()
 
 	def is_cancelled(self):
 		return self._state == WatchdogState.CANCEL
