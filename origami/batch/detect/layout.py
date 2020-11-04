@@ -20,6 +20,7 @@ import intervaltree
 import logging
 import importlib
 import cv2
+import json
 import PIL.Image
 
 from pathlib import Path
@@ -119,6 +120,13 @@ class Regions:
 		for k in self._contours.keys():
 			max_labels[k[:2]] = max(max_labels[k[:2]], int(k[2]))
 		self._max_labels = max_labels
+
+	def debug_save(self, path):
+		data = dict()
+		for k, contour in self._contours.items():
+			data["/".join(k)] = contour.wkt
+		with open(path, "w") as f:
+			f.write(json.dumps(data))
 
 	def check_geometries(self, allowed):
 		for k, contour in self._contours.items():
@@ -303,7 +311,7 @@ class Transformer:
 	def __init__(self, operators):
 		self._operators = operators
 
-	def __call__(self, regions):
+	def __call__(self, regions, callback=None):
 		regions.check_geometries(allowed=["Polygon", "MultiPolygon"])
 
 		for i, operator in enumerate(self._operators):
@@ -313,6 +321,9 @@ class Transformer:
 			except:
 				logging.exception("error in %s in Transformer stage %d" % (
 					operator.__class__.__name__, 1 + i))
+
+			if callback:
+				callback(i, regions)
 
 
 def alignment(a0, a1, b0, b1, mode="min"):
@@ -1339,11 +1350,15 @@ class LayoutDetectionProcessor(Processor):
 		page = dewarped.page
 		contours = [(k, block.image_space_polygon) for k, block in blocks.items()]
 
+		def save_transformer_stage(i, current_regions):
+			current_regions.debug_save(
+				output.data_path / f"layout_after_step_{i + 1}.json")
+
 		regions = Regions(
 			page, warped.lines.by_path,
 			contours, separators,
 			warped.segmentation)
-		self._transformer(regions)
+		self._transformer(regions)  #, callback=save_transformer_stage)
 
 		# we split table cells into separate regions so that the
 		# next stage (baseline detection) runs on isolated divisions.

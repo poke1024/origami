@@ -518,6 +518,10 @@ class Writer:
 		return zipfile.ZIP_DEFLATED  # zipfile.ZIP_LZMA
 
 	@property
+	def data_path(self):
+		return self._data_path
+
+	@property
 	def paths(self):
 		return [self.path(a) for a in self._artifacts]
 
