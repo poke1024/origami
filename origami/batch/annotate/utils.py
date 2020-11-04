@@ -356,7 +356,7 @@ def render_lines(
 	return pixmap
 
 
-def render_warped_line_paths(pixmap, lines, predictors, resolution=0.1):
+def render_warped_line_paths(pixmap, lines, predictors, resolution=0.1, opacity=0.9):
 	classes = get_region_classes(predictors)
 	pens = Pens(classes)
 
@@ -364,7 +364,7 @@ def render_warped_line_paths(pixmap, lines, predictors, resolution=0.1):
 	qp.begin(pixmap)
 
 	try:
-		qp.setOpacity(0.9)
+		qp.setOpacity(opacity)
 
 		for i, (line_path, line) in enumerate(lines.items()):
 			#if line.confidence < 0.5:

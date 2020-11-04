@@ -5,6 +5,7 @@ import PIL.Image
 import io
 import numpy as np
 import skimage.filters
+import PIL.ImageEnhance
 
 from pathlib import Path
 from PySide2 import QtGui, QtCore
@@ -44,7 +45,8 @@ class DebugLinesProcessor(Processor):
 
 		qt_im = ImageQt(page.warped)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
-		pixmap = render_warped_line_paths(pixmap, lines, predictors)
+		pixmap = render_warped_line_paths(
+			pixmap, lines, predictors, opacity=1)
 
 		buffer = QtCore.QBuffer()
 		buffer.open(QtCore.QBuffer.ReadWrite)
@@ -57,13 +59,19 @@ class DebugLinesProcessor(Processor):
 		binarized = PIL.Image.fromarray(
 			(binarized > thresh).astype(np.uint8) * 255)
 
-		alpha = np.array(binarized.convert("L")) // 2
+		alpha = np.array(
+			binarized.convert("L")).astype(np.float32)
+		alpha += self._options["marker_opacity"]
+		alpha = (np.clip(alpha, 0, 1) * 255).astype(np.uint8)
+
 		im = PIL.Image.composite(
-			im, binarized.convert("RGB"), PIL.Image.fromarray(alpha))
+			binarized.convert("RGB"), im, PIL.Image.fromarray(1 - alpha))
 
 		qt_im = ImageQt(im)
 		pixmap = QtGui.QPixmap.fromImage(qt_im)
-		pixmap = render_warped_line_confidence(pixmap, lines)
+
+		if self._options["show_confidence"]:
+			pixmap = render_warped_line_confidence(pixmap, lines)
 
 		output.annotation(pixmap.toImage())
 
@@ -74,6 +82,16 @@ class DebugLinesProcessor(Processor):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'--show-confidence',
+	is_flag=True,
+	default=False,
+	help='annotate confidence for suspicious lines')
+@click.option(
+	'--marker-opacity',
+	type=float,
+	default=0.5,
+	help='opacity of line markers')
 @Processor.options
 def debug_lines(data_path, **kwargs):
 	""" Export annotate information on lines for all document images in DATA_PATH. """
