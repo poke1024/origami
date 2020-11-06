@@ -15,6 +15,7 @@ import functools
 import threading
 import time
 import sys
+import ctypes
 
 from pathlib import Path
 from functools import partial
@@ -80,26 +81,78 @@ class SharedMemoryStopWatch:
 			return time.time() - self._shared.value
 
 
-global stop_watch
-stop_watch = SharedMemoryStopWatch()
+class SharedMemoryWorkSet:
+	def __init__(self, access, n):
+		assert n >= 1
+		self._array = multiprocessing.Array(ctypes.c_int64, n)
+		self._n = n
+		for i in range(self._n):
+			self._array[i] = -1
+		self._access = access
 
-# make a global stop_watch. this is important as pickling
-# over the fork in imap_unordered will not work.
+	def add(self, value):
+		assert value >= 0
+		with self._array.get_lock():
+			free = None
+			for i in range(self._n):
+				if self._array[i] == value:
+					return
+				elif free is None and self._array[i] < 0:
+					free = i
+			assert free is not None
+			self._array[free] = value
+
+	def remove(self, value):
+		assert value >= 0
+		with self._array.get_lock():
+			found = None
+			for i in range(self._n):
+				if self._array[i] == value:
+					found = i
+					break
+			assert found is not None
+			self._array[found] = -1
+
+	@property
+	def active(self):
+		result = []
+		with self._array.get_lock():
+			for i in range(self._n):
+				if self._array[i] >= 0:
+					result.append(self._access(self._array[i]))
+		return result
+
+
+
+global global_stop_watch
+global_stop_watch = SharedMemoryStopWatch()
+
+# global_stop_watch needs to be global indeed, as pickling
+# over the fork in imap_unordered will not work otherwise.
+
+global global_work_set
 
 
 class Watchdog(threading.Thread):
-	def __init__(self, pool, stop_watch, timeout=1000):
+	def __init__(self, pool, stop_watch, work_set, timeout):
 		threading.Thread.__init__(self)
 		self._pool = pool
 		self._timeout = timeout
 		self._stop_watch = stop_watch
+		self._work_set = work_set
 		self._state = WatchdogState.RUNNING
 		self._cond = threading.Condition()
 		stop_watch.reset()
 
+	def _print_work_set(self):
+		logging.error("paths in work set:")
+		for i, p in enumerate(self._work_set.active):
+			logging.error(f"  ({i + 1}) {p}")
+
 	def _cancel(self):
 		if self._state != WatchdogState.CANCEL:
 			logging.error("no new results after %d s. stopping." % self._stop_watch.age)
+			self._print_work_set()
 			self._state = WatchdogState.CANCEL
 			self._pool.terminate()
 			t = threading.Thread(target=lambda: self._pool.join(), args=())
@@ -107,6 +160,7 @@ class Watchdog(threading.Thread):
 			self._stop_watch.reset()
 		elif self._state == WatchdogState.CANCEL:
 			logging.error("stopping failed. killing process.")
+			self._print_work_set()
 			os._exit(1)
 
 	def run(self):
@@ -293,6 +347,9 @@ class Processor:
 	def _trigger_process1(self, p, kwargs, locked):
 		work = locked
 
+		if not locked:
+			logging.warning(f"failed to obtain lock for {p}. ignoring.")
+
 		try:
 			if work:
 				# a concurrent worker might already have done this.
@@ -344,43 +401,55 @@ class Processor:
 
 		with self._mutex.lock(
 			lock_actor_name,
-			[str(p) for p, _ in chunk]) as locked:
+			[str(p) for _, p, _ in chunk]) as locked:
 
-			for p, kwargs in chunk:
-				self._trigger_process1(p, kwargs, locked)
-				yield p
+			for i, p, kwargs in chunk:
+				try:
+					global_work_set.add(i)
+					self._trigger_process1(p, kwargs, locked)
+				finally:
+					global_work_set.remove(i)
+				yield i, p
 
 	def _trigger_process_async(self, chunk):
 		results = []
-		for p in self._trigger_process(chunk):
-			results.append(p)
-			stop_watch.reset()
+		for i, p in self._trigger_process(chunk):
+			results.append((i, p))
+			global_stop_watch.reset()
 		return results
 
 	def _process_queue(self, queued):
+		global global_work_set
+		global_work_set = SharedMemoryWorkSet(
+			lambda i: queued[i][1], max(1, self._processes))
+
 		with self._profiler or nullcontext():
-			squeue = list(chunks(sorted(queued), self._lock_chunk_size))
-			nd = len(str(len(queued)))
+			chunked_queue_gen = chunks(queued, self._lock_chunk_size)
+
+			def iprogress(i):
+				nd = len(str(len(queued)))
+				return f"[{str(i + 1).rjust(nd)} / {len(queued)}]"
 
 			if self._processes > 1:
 				with multiprocessing.Pool(self._processes) as pool:
 					watchdog = Watchdog(
-						pool=pool, stop_watch=stop_watch, timeout=self._timeout)
+						pool=pool,
+						stop_watch=global_stop_watch,
+						work_set=global_work_set,
+						timeout=self._timeout)
 					watchdog.start()
 
 					with tqdm(total=len(queued), disable=self._print_paths) as progress:
-						i = 0
 						for chunk in pool.imap_unordered(
-							self._trigger_process_async, squeue):
+							self._trigger_process_async, chunked_queue_gen):
 
 							if self._print_paths:
-								for p in chunk:
-									print(f"[{str(i + 1).rjust(nd)}/{len(queued)}] {p}", flush=True)
-									i += 1
+								for i, p in chunk:
+									print(f"{iprogress(i)} {p}", flush=True)
 							else:
 								progress.update(len(chunk))
 
-							stop_watch.reset()
+							global_stop_watch.reset()
 
 				if watchdog.is_cancelled():
 					watchdog.kill()
@@ -388,13 +457,11 @@ class Processor:
 				else:
 					watchdog.set_is_done()
 			else:
-				i = 0
 				with tqdm(total=len(queued), disable=self._print_paths) as progress:
-					for chunk in squeue:
-						for p in self._trigger_process(chunk):
+					for chunk in chunked_queue_gen:
+						for i, p in self._trigger_process(chunk):
 							if self._print_paths:
-								print(f"[{str(i + 1).rjust(nd)}/{len(queued)}] {p}", flush=True)
-								i += 1
+								print(f"{iprogress(i)} {p}", flush=True)
 							else:
 								progress.update(1)
 
@@ -428,7 +495,7 @@ class Processor:
 
 			kwargs = self.prepare_process(p)
 			if kwargs is not False:
-				queued.append((p, kwargs))
+				queued.append((len(queued), p, kwargs))
 
 		if not path.is_dir():
 			if path.suffix == ".txt":
@@ -444,13 +511,16 @@ class Processor:
 			print(f"scanning {path}... ", flush=True, end="")
 
 			with Spinner(disable=self._plain):
-				for folder, _, filenames in os.walk(path):
+				for folder, dirs, filenames in os.walk(path):
 					folder = Path(folder)
 					if folder.name.endswith(".out"):
+						dirs.clear()
 						continue
+					else:
+						dirs.sort()
 
-					for filename in filenames:
-						add_path(folder / filename)
+						for filename in sorted(filenames):
+							add_path(folder / filename)
 
 			print("done.", flush=True)
 			print(f"{counts['images']} documents found, {len(queued)} ready to process.")
