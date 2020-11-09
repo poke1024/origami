@@ -16,6 +16,7 @@ import threading
 import time
 import sys
 import ctypes
+import psutil
 
 from pathlib import Path
 from functools import partial
@@ -91,9 +92,21 @@ class SharedMemoryWorkSet:
 
 		self._access = access
 
+	def _cleanup(self):
+		with self._array.get_lock():
+			for i in range(self._n):
+				pid = self._array[4 * i + 1]
+				if pid >= 0 and not psutil.pid_exists(pid):
+					logging.warning(f"removing killed pid {pid} from work set.")
+					self._array[4 * i] = -1
+					self._array[4 * i + 1] = -1
+					self._array[4 * i + 2] = -1
+
 	def add(self, value):
 		assert value >= 0
 		with self._array.get_lock():
+			self._cleanup()
+
 			free = None
 			for i in range(self._n):
 				if self._array[4 * i] == value:
@@ -126,6 +139,8 @@ class SharedMemoryWorkSet:
 	def active(self):
 		result = []
 		with self._array.get_lock():
+			self._cleanup()
+
 			for i in range(self._n):
 				if self._array[4 * i] >= 0:
 					result.append(WorkSetEntry(
