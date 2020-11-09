@@ -461,7 +461,7 @@ class Processor:
 				return f"[{str(i + 1).rjust(nd)} / {len(queued)}]"
 
 			if self._processes > 1:
-				with multiprocessing.Pool(self._processes) as pool:
+				with multiprocessing.Pool(self._processes, maxtasksperchild=4) as pool:
 					watchdog = Watchdog(
 						pool=pool,
 						stop_watch=global_stop_watch,
