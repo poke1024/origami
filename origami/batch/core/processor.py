@@ -68,13 +68,27 @@ class SharedMemoryStopWatch:
 			return time.time() - self._shared.value
 
 
+WorkSetEntry = collections.namedtuple(
+	'WorkSetEntry', ['path', 'pid', 'age'])
+
+
 class SharedMemoryWorkSet:
 	def __init__(self, access, n):
 		assert n >= 1
-		self._array = multiprocessing.Array(ctypes.c_int64, n)
+
+		self._array = multiprocessing.Array(
+			ctypes.c_int64, n * 4)
+
+		# each slot has 4 integer entries:
+		# 0: value
+		# 1: pid
+		# 2: timestamp
+		# 3: not used
+
 		self._n = n
-		for i in range(self._n):
+		for i in range(self._n * 4):
 			self._array[i] = -1
+
 		self._access = access
 
 	def add(self, value):
@@ -82,33 +96,52 @@ class SharedMemoryWorkSet:
 		with self._array.get_lock():
 			free = None
 			for i in range(self._n):
-				if self._array[i] == value:
+				if self._array[4 * i] == value:
 					return
-				elif free is None and self._array[i] < 0:
+				elif free is None and self._array[4 * i] < 0:
 					free = i
-			assert free is not None
-			self._array[free] = value
+
+			if free is None:
+				raise RuntimeError(
+					f"no free slots for adding {value}, pid {os.getpid()}: {self.active}")
+
+			self._array[4 * free] = value
+			self._array[4 * free + 1] = int(os.getpid())
+			self._array[4 * free + 2] = int(time.time())
 
 	def remove(self, value):
 		assert value >= 0
 		with self._array.get_lock():
 			found = None
 			for i in range(self._n):
-				if self._array[i] == value:
+				if self._array[4 * i] == value:
 					found = i
 					break
 			assert found is not None
-			self._array[found] = -1
+			self._array[4 * found] = -1
+			self._array[4 * found + 1] = -1
+			self._array[4 * found + 2] = -1
 
 	@property
 	def active(self):
 		result = []
 		with self._array.get_lock():
 			for i in range(self._n):
-				if self._array[i] >= 0:
-					result.append(self._access(self._array[i]))
+				if self._array[4 * i] >= 0:
+					result.append(WorkSetEntry(
+						path=self._access(self._array[4 * i]),
+						pid=self._array[4 * i + 1],
+						age=int(time.time() - self._array[4 * i + 2])))
 		return result
 
+	def print(self):
+		active = self.active
+		if active:
+			logging.error(f"{len(active)} entries in work set:")
+			for i, entry in enumerate(active):
+				logging.error(f"  ({i + 1}) {entry}]")
+		else:
+			logging.error("no entries in work set.")
 
 
 global global_stop_watch
@@ -132,9 +165,7 @@ class Watchdog(threading.Thread):
 		stop_watch.reset()
 
 	def _print_work_set(self):
-		logging.error("paths in work set:")
-		for i, p in enumerate(self._work_set.active):
-			logging.error(f"  ({i + 1}) {p}")
+		self._work_set.print()
 
 	def _cancel(self):
 		if self._state != WatchdogState.CANCEL:
@@ -473,8 +504,6 @@ class Processor:
 		counts = dict(images=0)
 
 		def add_path(p):
-			print("!", p)
-
 			if not p.exists():
 				print("skipping %s: path does not exist." % p)
 				return
