@@ -403,8 +403,8 @@ class Processor:
 			[str(p) for _, p, _ in chunk]) as locked:
 
 			for i, p, kwargs in chunk:
+				global_work_set.add(i)
 				try:
-					global_work_set.add(i)
 					self._trigger_process1(p, kwargs, locked)
 				finally:
 					global_work_set.remove(i)
