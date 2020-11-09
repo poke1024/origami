@@ -36,19 +36,6 @@ def qt_app():
 	return QtGui.QGuiApplication()
 
 
-def is_image(path):
-	# imghdr might be the perfect tool for this, but
-	# it fails to detect some valid images. so we go
-	# with extenstions for the most part.
-	# see https://stackoverflow.com/questions/36870661/
-	# imghdr-python-cant-detec-type-of-some-images-image-extension
-
-	if path.suffix.lower() in (".jpg", ".png", ".tif", ".tiff"):
-		return True
-
-	return imghdr.what(path) is not None
-
-
 class WatchdogState(enum.Enum):
 	RUNNING = 0
 	DONE = 1
@@ -313,6 +300,18 @@ class Processor:
 	def processor_name(self):
 		return self.__class__.__name__
 
+	def is_image(self, path):
+		# imghdr might be the perfect tool for this, but
+		# it fails to detect some valid images. so we go
+		# with extenstions for the most part.
+		# see https://stackoverflow.com/questions/36870661/
+		# imghdr-python-cant-detec-type-of-some-images-image-extension
+
+		if path.suffix.lower() in (".jpg", ".png", ".tif", ".tiff"):
+			return True
+
+		return imghdr.what(path) is not None
+
 	def should_process(self, page_path):
 		return True
 
@@ -474,6 +473,8 @@ class Processor:
 		counts = dict(images=0)
 
 		def add_path(p):
+			print("!", p)
+
 			if not p.exists():
 				print("skipping %s: path does not exist." % p)
 				return
@@ -481,7 +482,7 @@ class Processor:
 			if self._name and not re.search(self._name, str(p)):
 				return
 
-			if not is_image(p):
+			if not self.is_image(p):
 				if self._verbose:
 					print("skipping %s: not an image." % p)
 				return

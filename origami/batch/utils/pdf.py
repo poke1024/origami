@@ -22,8 +22,15 @@ class PDFConverter(Processor):
 		super().__init__(options)
 		self._options = options
 
+	def artifacts(self):
+		inputs = []
+		return inputs
+
+	def is_image(self, p):
+		return p.suffix == ".pdf"
+
 	def should_process(self, p: Path) -> bool:
-		return p.name.endswith(".pdf") and not (p.parent / (p.stem + "_1.png")).exists()
+		return p.suffix == ".pdf" and not (p.parent / (p.stem + "_1.png")).exists()
 
 	def process(self, p: Path):
 		images = pdf2image.convert_from_path(p, dpi=self._options["dpi"])
