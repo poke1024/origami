@@ -289,6 +289,12 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 * Export annotations using `origami.tool.export`.
 * Train your OCR model.
 
+## Origami Models
+
+For line-based OCR, Origami uses Calamari internally and therefore can be used with any Calamari model. However, Origami's way of segmenting lines is slightly different from other pipelines: lines are not binarized and they are not scaled horizontally (therefore they might be wider than what some models are trained on).
+
+One model specifically trained for Origami is the model used to perform OCR on the Berliner Börsen-Zeitung. More information can be found under https://github.com/poke1024/origami_models
+
 ## Evalulation via Dinglehopper
 
 To evaluate performance using <a href="https://github.com/qurator-spk/dinglehopper">Dinglehopper</a>, you probably want to use:
