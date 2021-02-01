@@ -67,7 +67,7 @@ more information.
 |[flow.zip](docs/formats.md#flowzip)| | |&#11044;|&#9711;| | | | | |
 |[lines.0.zip](docs/formats.md#lines0zip)| | |&#11044;| |&#9711;| | | | |
 |[contours.1.zip](docs/formats.md#contours1zip)| | | |&#11044;|&#9711;| |&#9711;| | |
-|[dewarp.zip](docs/formats.md#dewarpzip)| | | |&#11044;| | | | | |
+|[dewarp.zip](docs/formats.md#dewarpzip)| | | |&#11044;|&#9711;| | | | |
 |[contours.2.zip](docs/formats.md#contours2zip)| | | | |&#11044;|&#9711;|&#9711;| | |
 |[tables.json](docs/formats.md#tablesjson)| | | | |&#11044;|&#9711;| |&#9711;|&#9711;|
 |[contours.3.zip](docs/formats.md#contours3zip)| | | | | |&#11044;|&#9711;| |&#9711;|
@@ -142,7 +142,15 @@ before continuing with later stages.
 
 <dl>
   <dt>origami.batch.detect.segment</dt>
-  <dd>Performs segmentation (e.g. separation into text and background) on all images using a neural network model. By default, this uses <a href="https://github.com/poke1024/bbz-segment">origami’s own model.</a>. The predicted classes and labels are embedded in the downloaded model.</dd>
+  <dd>Performs segmentation (e.g. separation into text and background) on all images
+  using a neural network model.
+  
+  If you have not trained a custom model, you should download and use
+  <a href="https://github.com/poke1024/bbz-segment">origami’s default model.</a>. Note
+  that you need to specify the path to that downloaded model via the `--model` argument
+  when calling `origami.batch.detect.segment`.
+  
+  The predicted classes and labels are embedded in the specified model.</dd>
 </dl>
 
 ### contours
