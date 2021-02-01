@@ -199,8 +199,9 @@ before continuing with later stages.
 
 <dl>
   <dt>origami.batch.detect.ocr</dt>
-  <dd>Performs OCR on each detected line using the specified Calamari OCR model. Note that the binarization
-  you can specify here in independent of the one performed in origami.batch.detect.binarize.</dd>
+  <dd>Performs OCR on each detected line using the specified Calamari OCR model.
+  For more details on OCR models, see the
+  <a href="https://github.com/poke1024/origami#origami-models">section on Origami OCR models.</a>.</dd>
 </dl>
 
 ### compose
@@ -299,9 +300,16 @@ For generating ground truth for training an OCR engine from a corpus, we suggest
 
 ## Origami Models
 
-For line-based OCR, Origami uses Calamari internally and therefore can be used with any Calamari model. However, Origami's way of segmenting lines is slightly different from other pipelines: lines are not binarized and they are not scaled horizontally (therefore they might be wider than what some models are trained on).
+For line-based OCR, Origami uses Calamari internally and therefore can be used with any Calamari model.
 
-One model specifically trained for Origami is the model used to perform OCR on the Berliner Börsen-Zeitung. More information can be found under https://github.com/poke1024/origami_models
+However, Origami's way of segmenting lines is slightly different from other pipelines: lines are not binarized and they are not scaled horizontally (therefore they might be wider than what some models are trained on).
+
+One model specifically trained for Origami is the model used to perform OCR on the
+Berliner Börsen-Zeitung. The model (and more context on its training) is available
+under https://github.com/poke1024/origami_models
+
+Another suitable model is the <a href="https://qurator-data.de/calamari-models/GT4HistOCR/2019-12-11T11_10+0100/model.tar.xz"> GT4HistOCR model for Calamari</a>. Note
+that you need to enable binarization in the OCR for the latter.
 
 ## Evalulation via Dinglehopper
 
