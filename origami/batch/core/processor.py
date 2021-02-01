@@ -266,8 +266,8 @@ class Processor:
 		if self._plain:
 			self._print_paths = True
 
-		self._debug_write = options["debug_write"]
-		self._track_changes = options["track_changes"]
+		self._debug_write = options.get("debug_write", False)
+		self._track_changes = options.get("track_changes", False)
 
 	@staticmethod
 	def options(f):
