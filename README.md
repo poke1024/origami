@@ -144,12 +144,12 @@ before continuing with later stages.
   <dt>origami.batch.detect.segment</dt>
   <dd>Performs segmentation (e.g. separation into text and background) on all images
   using a neural network model.
-  
+  <br>
   If you have not trained a custom model, you should download and use
-  <a href="https://github.com/poke1024/bbz-segment">origami’s default model.</a>. Note
-  that you need to specify the path to that downloaded model via the `--model` argument
+  <a href="https://github.com/poke1024/bbz-segment">origami’s default model</a>.
+  You need to specify the path to that downloaded model via the `--model` argument
   when calling `origami.batch.detect.segment`.
-  
+  <br>
   The predicted classes and labels are embedded in the specified model.</dd>
 </dl>
 
