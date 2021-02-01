@@ -23,3 +23,4 @@ pypng>=0.0.20
 psd-tools>=1.9.15
 rtree>=0.9.4
 humanize>=3.0.1
+psutil>=5.7.3
