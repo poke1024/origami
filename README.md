@@ -27,10 +27,24 @@ Origami also provides additional tools for:
 
 ## Installation 
 
+### Basics
+
 ```
 conda create --name origami python=3.7 -c defaults -c conda-forge --file origami/requirements/conda.txt
 conda activate origami
 pip install -r origami/requirements/pip.txt
+```
+
+## Troubleshooting scikit-geometry 
+
+On some systems (e.g. macOS 10.15.7) the `conda` installation of scikit-geometry is broken. In these cases,
+you can always build scikit-geometry from scratch, i.e.:
+
+```
+conda activate origami
+git clone https://github.com/scikit-geometry/scikit-geometry
+cd scikit-geometry
+python setup.py install
 ```
 
 ## General Usage
