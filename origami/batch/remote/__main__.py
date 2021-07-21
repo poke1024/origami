@@ -22,7 +22,6 @@ def run(ctx, config_path):
 		package = task["package"]
 		task_module = importlib.import_module(package)
 		make_processor = task_module.make_processor
-		ctx.forward(make_processor)
 		processors.append(ctx.invoke(make_processor, **task["args"]))
 
 	origami.batch.remote.runner.run_on_remote_data(config, processors)
