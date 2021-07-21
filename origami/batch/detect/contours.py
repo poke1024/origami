@@ -3,6 +3,7 @@
 import click
 import io
 import json
+import functools
 
 from pathlib import Path
 
@@ -20,6 +21,43 @@ class ContoursProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+
+	@staticmethod
+	def options(f):
+		options = [
+			click.option(
+				'--export-images',
+				is_flag=True,
+				default=False,
+				help="Export region images (larger files)."),
+			click.option(
+				'--region-area',
+				type=float,
+				default=0.0025,  # might be a single word.
+				help="Ignore regions below this relative size."),
+			click.option(
+				'--margin-width',
+				type=float,
+				default=0.05,
+				help="Maximum width of margin noise."),
+			click.option(
+				'--margin-distance',
+				type=float,
+				default=0.01,
+				help="Minimum distance of margin noise."),
+			click.option(
+				'--frame-propagators',
+				type=str,
+				default="TEXT, TABULAR",
+				help="Regions of this type extend the frame."),
+			click.option(
+				'--separator-threshold',
+				type=float,
+				default=4 / 1000,
+				help="Simplification of separator polylines.")
+		]
+
+		return functools.reduce(lambda x, opt: opt(x), options, f)
 
 	@property
 	def processor_name(self):
@@ -125,41 +163,18 @@ class ContoursProcessor(Processor):
 
 
 @click.command()
+@Processor.options
+def make_processor(**kwargs):
+	return ContoursProcessor(kwargs)
+
+
+@click.command()
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
-@click.option(
-	'--export-images',
-	is_flag=True,
-	default=False,
-	help="Export region images (larger files).")
-@click.option(
-	'--region-area',
-	type=float,
-	default=0.0025,  # might be a single word.
-	help="Ignore regions below this relative size.")
-@click.option(
-	'--margin-width',
-	type=float,
-	default=0.05,
-	help="Maximum width of margin noise.")
-@click.option(
-	'--margin-distance',
-	type=float,
-	default=0.01,
-	help="Minimum distance of margin noise.")
-@click.option(
-	'--frame-propagators',
-	type=str,
-	default="TEXT, TABULAR",
-	help="Regions of this type extend the frame.")
-@click.option(
-	'--separator-threshold',
-	type=float,
-	default=4 / 1000,
-	help="Simplification of separator polylines.")
 @Processor.options
+@ContoursProcessor.options
 def extract_contours(data_path, **kwargs):
 	""" Extract contours from all document images in DATA_PATH.
 	Information from segmentation and binarize batch needs to be present. """

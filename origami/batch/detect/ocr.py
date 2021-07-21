@@ -3,6 +3,7 @@
 import click
 import numpy as np
 import logging
+import functools
 
 from pathlib import Path
 
@@ -50,6 +51,36 @@ class OCRProcessor(Processor):
 
 		if self._ocr != "FULL":
 			logging.getLogger().setLevel(logging.INFO)
+
+	@staticmethod
+	def options(f):
+		options = [
+			click.option(
+				'-m', '--model',
+				required=False,
+				type=click.Path(exists=True),
+				help='path that contains Calamari model(s)'),
+			click.option(
+				'--legacy-model',
+				is_flag=True,
+				default=False,
+				help='support Calamari legacy models (pre 1.0)'),
+			click.option(
+				'-b', '--batch-size',
+				type=int,
+				default=-1,
+				required=False),
+			click.option(
+				'--ignore',
+				type=str,
+				default="regions/ILLUSTRATION"),
+			click.option(
+				'--ocr',
+				type=click.Choice(['FULL', 'DRY', 'FAKE'], case_sensitive=False),
+				default="FULL")
+		]
+
+		return functools.reduce(lambda x, opt: opt(x), options, f)
 
 	@property
 	def processor_name(self):
@@ -148,39 +179,25 @@ class OCRProcessor(Processor):
 @click.command()
 @Processor.options
 @LineExtractor.options
-@click.option(
-	'-m', '--model',
-	required=False,
-	type=click.Path(exists=True),
-	help='path that contains Calamari model(s)')
-@click.option(
-	'--legacy-model',
-	is_flag=True,
-	default=False,
-	help='support Calamari legacy models (pre 1.0)')
+@OCRProcessor.options
+def make_processor(**kwargs):
+	return OCRProcessor(kwargs)
+
+
+@click.command()
 @click.argument(
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
-@click.option(
-	'-b', '--batch-size',
-	type=int,
-	default=-1,
-	required=False)
-@click.option(
-	'--ignore',
-	type=str,
-	default="regions/ILLUSTRATION")
-@click.option(
-	'--ocr',
-	type=click.Choice(['FULL', 'DRY', 'FAKE'], case_sensitive=False),
-	default="FULL")
-def segment(data_path, **kwargs):
+@Processor.options
+@LineExtractor.options
+@OCRProcessor.options
+def run_ocr(data_path, **kwargs):
 	""" Perform OCR on all recognized lines in DATA_PATH. """
 	processor = OCRProcessor(kwargs)
 	processor.traverse(data_path)
 
 
 if __name__ == "__main__":
-	segment()
+	run_ocr()
 

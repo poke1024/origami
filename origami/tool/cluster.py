@@ -10,6 +10,7 @@ import zipfile
 import sklearn.cluster
 import sklearn.neighbors
 import random
+import matplotlib
 
 from PySide2 import QtWidgets, QtGui, QtCore
 from pathlib import Path
@@ -23,10 +24,12 @@ from origami.batch.core.utils import Spinner
 
 
 class Archive:
-	def __init__(self, path):
-		self._vectors = []
+	def __init__(self, path, num_labels=3):
+		#self._vectors = []
+		self._num_labels = num_labels
 		self._images = []
 		self._path = path
+		self._classes = None
 
 		if not path.name.endswith(".zip"):
 			raise click.UsageError("path needs to be a zip file.")
@@ -41,21 +44,27 @@ class Archive:
 
 					data = json.loads(zf.read(name).decode("utf8"))
 
-					data = np.array(data["grid"])
+					if self._classes is None:
+						self._classes = tuple(data["classes"])
+					else:
+						assert self._classes == tuple(data["classes"])
 
-					self._vectors.append(data.flatten())
+					data = np.array(data["grid"])
+					data = np.clip(data, 0, self._num_labels - 1)
+
+					#self._vectors.append(data.flatten())
 					self._images.append(name.rsplit(".", 2)[0])
 				except UnicodeDecodeError:
 					raise
 
-		self._vectors = np.array(self._vectors)
-		self._tree = sklearn.neighbors.BallTree(
-			self._vectors, leaf_size=5, metric="l1")
+		#self._vectors = np.array(self._vectors)
+		#self._tree = sklearn.neighbors.BallTree(
+		#	self._vectors, leaf_size=5, metric="l1")
 
-		density_k = 5
-		d, i = self._tree.query(
-			self._vectors, k=density_k, return_distance=True)
-		self._density = np.mean(d[:, 1:], axis=-1)
+		#density_k = 5
+		#d, i = self._tree.query(
+		#	self._vectors, k=density_k, return_distance=True)
+		#self._density = np.mean(d[:, 1:], axis=-1)
 
 		self._zf = zipfile.ZipFile(path, "r")
 
@@ -69,6 +78,19 @@ class Archive:
 	@property
 	def size(self):
 		return len(self._images)
+
+	@property
+	def classes(self):
+		return self._classes
+
+	@property
+	def num_labels(self):
+		return self._num_labels
+
+	#def vector(self, index):
+	#	v = self._vectors[index]
+	#	v = v.reshape(9, 9, len(self._classes))  # HACK
+	#	return v
 
 	@cached_property
 	def aspect_ratio(self):
@@ -89,10 +111,10 @@ class Archive:
 	def name(self, index):
 		return self._images[index]
 
-	def sorted_by_density(self, indices):
-		densities = self._density[indices]
-		s = np.argsort(densities)
-		return indices[s]
+	#def sorted_by_density(self, indices):
+	#	densities = self._density[indices]
+	#	s = np.argsort(densities)
+	#	return indices[s]
 
 	@lru_cache(maxsize=2)
 	def cluster(self):
@@ -104,12 +126,12 @@ class Archive:
 		print("\bdone", flush=True)
 		return clustering
 
-	def neighbor(self, anchor):
-		d, i = self._tree.query([self._vectors[anchor]], k=2, return_distance=True)
-		return d[0][-1], i[0][-1]
+	#def neighbor(self, anchor):
+	#	d, i = self._tree.query([self._vectors[anchor]], k=2, return_distance=True)
+	#	return d[0][-1], i[0][-1]
 
-	def neighborhood(self, anchor, distance):
-		return self._tree.query_radius([self._vectors[anchor]], r=distance)[0]
+	#def neighborhood(self, anchor, distance):
+	#	return self._tree.query_radius([self._vectors[anchor]], r=distance)[0]
 
 
 class TableModel(QtCore.QAbstractTableModel):
@@ -239,14 +261,14 @@ def cluster_name(i):
 
 
 class ClusterSelector(QtWidgets.QWidget):
-	def __init__(self, table, archive, clustering, parent=None):
+	def __init__(self, table, archive, labels, parent=None):
 		super().__init__(parent)
 
 		self._table = table
 		self._model = None
 
 		self._archive = archive
-		self._labels = clustering.labels_.copy()
+		self._labels = labels.copy()
 
 		self._clusters = [None]
 		self._combo = QtWidgets.QComboBox()
@@ -273,9 +295,24 @@ class ClusterSelector(QtWidgets.QWidget):
 		self._combo.currentIndexChanged.connect(self.switch_to_cluster)
 		self.update_table()
 
-		layout = QtWidgets.QVBoxLayout()
-		layout.addWidget(self._combo)
+		self._details_button = QtWidgets.QPushButton("details")
+		self._details_button.setCheckable(True)
+		self._details_button.setChecked(False)
+		self._details_button.setFlat(True)
+		self._details_button.setAutoFillBackground(True)
+		self._details_button.setStyleSheet("background-color : lightgrey")
+		self._details_button.clicked.connect(self.toggle_details)
+
+		layout = QtWidgets.QHBoxLayout()
+		layout.addWidget(self._combo, stretch=5)
+		layout.addWidget(self._details_button, stretch=1)
 		self.setLayout(layout)
+
+	def toggle_details(self):
+		if self._details_button.isChecked():
+			self._details_button.setStyleSheet("background-color : lightgreen")
+		else:
+			self._details_button.setStyleSheet("background-color : lightgrey")
 
 	def update_table(self):
 		self.switch_to_cluster(self._combo.currentIndex())
@@ -292,6 +329,92 @@ class ClusterSelector(QtWidgets.QWidget):
 		self._table.setModel(self._model)
 
 
+class VectorCanvas(QtWidgets.QScrollArea):
+	def __init__(self, archive):
+		super().__init__()
+		self._archive = archive
+		self._label = QtWidgets.QLabel()
+		self.setWidgetResizable(True)
+		self.setWidget(self._label)
+
+	def update_for_page(self, index):
+		vector = self._archive.vector(index)
+		predictor = 0
+
+		cell_size = 32
+		h, w, d = vector.shape
+		pixmap = QtGui.QPixmap(
+			cell_size * w + 1,
+			cell_size * h + 1)
+		pixmap.fill()
+
+		cmap = matplotlib.cm.get_cmap('Pastel1')
+
+		palette = [QtGui.QColor.fromRgb(*(np.array(cmap(x)) * 255)) for x in np.linspace(
+			0, 1, self._archive.num_labels)]
+		brushes = [QtGui.QBrush(x) for x in palette]
+
+		qp = QtGui.QPainter()
+		qp.begin(pixmap)
+
+		try:
+			pen = QtGui.QPen()
+			pen.setWidth(1)
+			pen.setColor(QtGui.QColor("black"))
+			pen.setCapStyle(QtCore.Qt.RoundCap)
+			qp.setPen(pen)
+
+			for ix in range(0, w):
+				for iy in range(0, h):
+					label = vector[iy, ix, predictor]
+					qp.fillRect(
+						ix * cell_size, iy * cell_size,
+						cell_size, cell_size,
+						brushes[label])
+
+			for ix in range(0, w + 1):
+				x = ix * cell_size
+				qp.drawPolyline([
+					QtCore.QPointF(x, 0),
+					QtCore.QPointF(x, h * cell_size)])
+			for iy in range(0, h + 1):
+				y = iy * cell_size
+				qp.drawPolyline([
+					QtCore.QPointF(0, y),
+					QtCore.QPointF(w * cell_size, y)])
+
+		finally:
+			qp.end()
+
+		self._label.setPixmap(pixmap)
+
+		self._label.setSizePolicy(
+			QtWidgets.QSizePolicy.Minimum,
+			QtWidgets.QSizePolicy.Minimum)
+		self._label.setMinimumSize(
+			pixmap.width(), pixmap.height())
+
+
+class DetailsPanel(QtWidgets.QWidget):
+	def __init__(self, archive, parent=None):
+		super().__init__(parent)
+		self._archive = archive
+
+		self._combo = QtWidgets.QComboBox()
+		for c in self._archive.classes:
+			self._combo.addItem(c)
+
+		self._canvas = VectorCanvas(self._archive)
+
+		layout = QtWidgets.QVBoxLayout()
+		layout.addWidget(self._combo)
+		layout.addWidget(self._canvas)
+		self.setLayout(layout)
+
+	def update_for_page(self, page):
+		self._canvas.update_for_page(page)
+
+
 class Form(QtWidgets.QDialog):
 	def __init__(self, archive, parent=None):
 		super().__init__(parent)
@@ -303,8 +426,9 @@ class Form(QtWidgets.QDialog):
 		self.table.doubleClicked.connect(self.switch_to_neighborhood_view)
 		self._mode = Mode.CLUSTER
 
-		clustering = self._archive.cluster()
-		self._csel = ClusterSelector(self.table, self._archive, clustering)
+		#labels = self._archive.cluster().labels_
+		labels = np.zeros((self._archive.size, ), dtype=np.uint8)
+		self._csel = ClusterSelector(self.table, self._archive, labels)
 
 		self.table.setSizePolicy(
 			QtWidgets.QSizePolicy.Minimum,
@@ -325,12 +449,25 @@ class Form(QtWidgets.QDialog):
 		min_width = TableModel.THUMBNAIL * ratio * TableModel.COLUMNS
 		self.table.setMinimumSize(min(min_width, 1280), 600)
 
+		self._details_panel = DetailsPanel(self._archive)
+		#self.table.model.selectionChanged.connect(self.update_details_view)
+
+		table_layout = QtWidgets.QHBoxLayout()
+		table_layout.addWidget(self.table)
+		table_layout.addWidget(self._details_panel)
+
 		layout = QtWidgets.QVBoxLayout()
 		layout.addWidget(self._csel)
-		layout.addWidget(self.table)
+		layout.addLayout(table_layout)
 
 		self.setLayout(layout)
 		self.layout = layout
+
+	def update_details_view(self, index):
+		row = index.row()
+		column = index.column()
+		page = self.table.model().page_index(row, column)
+		self._details_panel.update_for_page(page)
 
 	def switch_to_cluster_view(self):
 		if self._mode == Mode.CLUSTER:
