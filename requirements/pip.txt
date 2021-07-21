@@ -26,3 +26,5 @@ rtree>=0.9.4
 humanize>=3.0.1
 psutil>=5.7.3
 scikit-learn>=0.24.1
+paramiko==2.7.2
+awesome-slugify==1.6.5
