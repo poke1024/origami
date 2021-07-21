@@ -3,7 +3,6 @@ import json
 import logging
 import importlib
 import origami.batch.remote.runner
-import origami.batch.detect.contours
 
 cli = click.Group()
 
