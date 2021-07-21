@@ -56,11 +56,6 @@ class OCRProcessor(Processor):
 	def options(f):
 		options = [
 			click.option(
-				'-m', '--model',
-				required=False,
-				type=click.Path(exists=True),
-				help='path that contains Calamari model(s)'),
-			click.option(
 				'--legacy-model',
 				is_flag=True,
 				default=False,
@@ -180,6 +175,11 @@ class OCRProcessor(Processor):
 @Processor.options
 @LineExtractor.options
 @OCRProcessor.options
+@click.option(
+	'-m', '--model',
+	required=False,
+	type=str,
+	help='path that contains Calamari model(s)')
 def make_processor(**kwargs):
 	return OCRProcessor(kwargs)
 
@@ -189,6 +189,11 @@ def make_processor(**kwargs):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
+@click.option(
+	'-m', '--model',
+	required=False,
+	type=click.Path(exists=True),
+	help='path that contains Calamari model(s)')
 @Processor.options
 @LineExtractor.options
 @OCRProcessor.options
