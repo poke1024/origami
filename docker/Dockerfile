@@ -28,17 +28,6 @@ ENV NV_CUDA_CUDART_VERSION 10.1.243-1
 ENV NV_ML_REPO_ENABLED 1
 ENV NV_ML_REPO_URL https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/${NVARCH}
 
-## TODO need this?
-#FROM base as base-ppc64le
-#
-#ENV NVARCH ppc64el
-#ENV NVIDIA_REQUIRE_CUDA "cuda>=10.1"
-#ENV NV_CUDA_CUDART_VERSION 10.1.243-1
-#
-#ENV NV_ML_REPO_ENABLED 1
-#ENV NV_ML_REPO_URL https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/${NVARCH}
-
-
 # The following was modified from the Dockerfile for NVIDIA CUDA 18.04 - runtime:
 #      https://gitlab.com/nvidia/container-images/cuda/-/blob/master/dist/10.1/ubuntu18.04/runtime/Dockerfile
 
@@ -69,11 +58,7 @@ ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64
 # nvidia-container-runtime
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
-#ARG IMAGE_NAME
-##FROM ${IMAGE_NAME}:10.1-base-ubuntu20.04 as base
-#
-#FROM base as base-amd64
-#
+
 ENV NV_CUDA_LIB_VERSION 10.1.243-1
 ENV NV_NVTX_VERSION 10.1.243-1
 ENV NV_LIBNPP_VERSION 10.1.243-1
@@ -90,26 +75,6 @@ ENV NV_LIBNCCL_PACKAGE_NAME "libnccl2"
 ENV NV_LIBNCCL_PACKAGE_VERSION 2.8.3-1
 ENV NCCL_VERSION 2.8.3
 ENV NV_LIBNCCL_PACKAGE ${NV_LIBNCCL_PACKAGE_NAME}=${NV_LIBNCCL_PACKAGE_VERSION}+cuda10.1
-#FROM base as base-ppc64le
-#
-#ENV NV_CUDA_LIB_VERSION 10.1.243-1
-#ENV NV_NVTX_VERSION 10.1.243-1
-#ENV NV_LIBNPP_VERSION 10.1.243-1
-#ENV NV_LIBCUSPARSE_VERSION 10.1.243-1
-#
-#
-#ENV NV_LIBCUBLAS_PACKAGE_NAME libcublas10
-#
-#ENV NV_LIBCUBLAS_VERSION 10.2.1.243-1
-#ENV NV_LIBCUBLAS_PACKAGE ${NV_LIBCUBLAS_PACKAGE_NAME}=${NV_LIBCUBLAS_VERSION}
-#
-#ENV NV_LIBNCCL_PACKAGE_NAME "libnccl2"
-#ENV NV_LIBNCCL_PACKAGE_VERSION 2.8.3-1
-#ENV NCCL_VERSION 2.8.3
-#ENV NV_LIBNCCL_PACKAGE ${NV_LIBNCCL_PACKAGE_NAME}=${NV_LIBNCCL_PACKAGE_VERSION}+cuda10.1
-#FROM base-amd64
-
-#ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cuda-libraries-10-1=${NV_CUDA_LIB_VERSION} \
@@ -123,31 +88,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Keep apt from auto upgrading the cublas and nccl packages. See https://gitlab.com/nvidia/container-images/cuda/-/issues/88
 RUN apt-mark hold ${NV_LIBNCCL_PACKAGE_NAME} ${NV_LIBCUBLAS_PACKAGE_NAME}
 
-
 # The following was modified from the Dockerfile for NVIDIA CUDA 18.04 - runtime - cudnn7:
 #      https://gitlab.com/nvidia/container-images/cuda/-/blob/master/dist/10.1/ubuntu18.04/runtime/cudnn7/Dockerfile 
-#ARG IMAGE_NAME
-#FROM ${IMAGE_NAME}:10.1-runtime-ubuntu20.04 as base
-
-#FROM base as base-amd64
 
 ENV NV_CUDNN_PACKAGE_VERSION 7.6.5.32-1
 ENV NV_CUDNN_VERSION 7.6.5.32
 
 ENV NV_CUDNN_PACKAGE_NAME libcudnn7
 ENV NV_CUDNN_PACKAGE ${NV_CUDNN_PACKAGE_NAME}=${NV_CUDNN_PACKAGE_VERSION}+cuda10.1
-
-#FROM base as base-ppc64le
-#
-#ENV NV_CUDNN_PACKAGE_VERSION 7.6.5.32-1
-#ENV NV_CUDNN_VERSION 7.6.5.32
-#
-#ENV NV_CUDNN_PACKAGE_NAME libcudnn7
-#ENV NV_CUDNN_PACKAGE ${NV_CUDNN_PACKAGE_NAME}=${NV_CUDNN_PACKAGE_VERSION}+cuda10.1
-
-#FROM base-amd64
-
-#ARG TARGETARCH
 
 ENV CUDNN_VERSION ${NV_CUDNN_VERSION}
 
@@ -175,13 +123,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-#ARG UBUNTU_VERSION=18.04
-
-ARG ARCH=
-# Using the image (20.04, CUDA 10.1, CUDNN7) we built in the parent folder:
-
-#FROM nvcr.io/nvidia/cuda:10.1-cudnn7-runtime-ubuntu20.04 as base
 
 # ARCH and CUDA are specified again because the FROM directive resets ARGs
 # (but their default value is retained if set previously)
