@@ -39,7 +39,7 @@ We provide two options for Installing Origami:
    builds Scikit-Geometry from source.):
 
         cd docker
-        docker buildx build --load --platform linux/x86-64 -t "origami:origami-gpu" .
+        docker buildx build -t "origami:origami-gpu" .
    This creates a docker image `origami:origami-gpu`, with the latest version of origami cloned into
    the container's root directory.
 
