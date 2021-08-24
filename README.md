@@ -40,8 +40,7 @@ We provide two options for Installing Origami:
 
         cd docker
         docker buildx build -t "origami:origami-gpu" .
-   This creates a docker image `origami:origami-gpu`, with the latest version of origami cloned into
-   the container's root directory.
+   This creates a docker image `origami:origami-gpu`.
 
 4. Launch the container.  You must specify the location of your local copy of the Origami repo, as
    shown below:
