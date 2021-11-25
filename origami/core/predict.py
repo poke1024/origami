@@ -6,6 +6,7 @@ import cv2
 import math
 import re
 import io
+import os
 import itertools
 import enum
 import PIL.Image
@@ -176,6 +177,18 @@ class NetPredictor(Predictor):
 			meta = json.loads(f.read())
 		classes = meta["classes"]
 
+		# before segmentation_models/keras loads+inits Tensorflow, set
+                # on-demand GPU memory allocation (for sharing with other processes)
+                # (and silence its gabby logger while at it)
+		os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+		import tensorflow as tf
+		import warnings
+		tf.get_logger().setLevel("ERROR")
+		warnings.filterwarnings("ignore")
+		gpus = tf.config.list_physical_devices('GPU')
+		try: tf.config.experimental.set_memory_growth(gpus[0], True)
+		except: pass
+
 		import segmentation_models
 
 		# the following commented code fails to work.
@@ -198,7 +211,7 @@ class NetPredictor(Predictor):
 		from keras.models import load_model
 
 		model = load_model(str(network_path / "model.h5"), compile=False)
-			
+
 		self._preprocess = segmentation_models.get_preprocessing(
 			meta["backbone"])
 
