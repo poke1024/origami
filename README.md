@@ -25,7 +25,35 @@ Origami also provides additional tools for:
 * creating annotated images
 * evaluation of OCR quality
 
-## Installation 
+## Installing Origami
+We provide two options for Installing Origami:
+
+* Run in a Docker container.
+* Install and run directly on your machine (in a conda environment).
+
+## Installing with Docker
+
+1. Download and install Docker.
+2. Install the NVIDIA container toolkit (necessary for GPU usage).  See [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker) for installation instructions.
+3. Build the docker container (**NOTE**: this process can take ~20 minutes or more, as the container
+   builds Scikit-Geometry from source.):
+
+        cd docker
+        docker buildx build -t "origami:origami-gpu" .
+   This creates a docker image `origami:origami-gpu`.
+
+4. Launch the container.  You must specify the location of your local copy of the Origami repo, as
+   shown below:
+
+        docker run --gpus all -it --rm -v /the/local/path/to/origami/:/origami origami:origami-gpu bash
+   This runs the container and presents you with an interactive shell, ready to run Origami (located
+   in `/origami/`).
+   
+    _NOTE: Origami requires some additional set-up to run (e.g., downloading the segmentation
+   models).  [See below](#the-detection-batches) for details._
+
+
+## Installing Locally
 
 ### Basics
 
