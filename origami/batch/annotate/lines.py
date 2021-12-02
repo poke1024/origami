@@ -8,7 +8,10 @@ import skimage.filters
 import PIL.ImageEnhance
 
 from pathlib import Path
-from PySide2 import QtGui, QtCore
+try:
+	from PySide2 import QtGui, QtCore
+except ImportError:
+	from PySide6 import QtGui, QtCore
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.processor import Processor

@@ -32,7 +32,11 @@ from origami.batch.core.mutex import DatabaseMutex, FileMutex, DummyMutex
 
 
 def qt_app():
-	from PySide2 import QtGui
+	try:
+		from PySide2 import QtGui
+	except ImportError:
+		from PySide6 import QtGui
+
 	os.environ["QT_QPA_PLATFORM"] = "offscreen"
 	return QtGui.QGuiApplication()
 

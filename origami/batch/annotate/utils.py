@@ -7,7 +7,11 @@ import collections
 import os
 import math
 
-from PySide2 import QtGui, QtCore
+try:
+	from PySide2 import QtGui, QtCore
+except ImportError:
+	from PySide6 import QtGui, QtCore
+
 from functools import lru_cache
 
 from origami.core.predict import PredictorType

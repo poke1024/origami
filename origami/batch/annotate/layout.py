@@ -12,7 +12,10 @@ import shapely.geometry
 import numpy as np
 
 from pathlib import Path
-from PySide2 import QtGui
+try:
+	from PySide2 import QtGui
+except ImportError:
+	from PySide6 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.processor import Processor

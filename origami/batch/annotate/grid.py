@@ -5,7 +5,10 @@ import PIL.Image
 
 from pathlib import Path
 from PIL.ImageQt import ImageQt
-from PySide2 import QtGui, QtCore
+try:
+	from PySide2 import QtGui, QtCore
+except ImportError:
+	from PySide6 import QtGui, QtCore
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation
