@@ -330,7 +330,7 @@ class FlowDetectionProcessor(Processor):
 				#  maximum variance for the good ones.
 				std = np.std(sep_values)
 				if std > max_std:
-					logging.warning(
+					logging.info(
 						"ignored suspicious separator %s with std=%.1f" % (
 							str(path), std))
 					continue
