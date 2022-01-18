@@ -107,8 +107,10 @@ class Regions:
 		self._contours = dict(non_empty_contours(contours))
 		self._unmodified_contours = self._contours.copy()
 
+		self._names = {}
 		for k, contour in contours:
-			contour.name = "/".join(k)
+			self._names[id(contour)] = "/".join(k)
+
 		self._separators = separators
 		self._segmentation = segmentation
 
@@ -198,6 +200,12 @@ class Regions:
 	def contours(self) -> dict:
 		return self._contours
 
+	def _contour_name(self, contour):
+		return self._names[id(contour)]
+
+	def contour_path(self, contour):
+		return tuple(self._contour_name(contour).split('/'))
+
 	@property
 	def warped_lines(self) -> dict:
 		return self._warped_lines
@@ -220,14 +228,17 @@ class Regions:
 		return self._line_counts[a]
 
 	def map(self, f):
+		new_names = {}
+
 		def named_f(k, c):
 			contour = f(k, c)
-			contour.name = "/".join(k)
+			new_names[id(contour)] = "/".join(k)
 			return contour
 
 		self._contours = dict(
 			(k, named_f(k, contour))
 			for k, contour in self._contours.items())
+		self._names = new_names
 
 	def combine(self, sources, agg_path=None):
 		contours = self._contours
@@ -254,14 +265,22 @@ class Regions:
 		else:
 			return False
 
+	def _set_contour(self, path, contour):
+		old_contour = self._contours.get(path)
+		if old_contour:
+			del self._names[id(old_contour)]
+		self._contours[path] = contour
+		self._names[id(contour)] = "/".join(path)
+
 	def modify_contour(self, path, contour):
 		if contour.is_empty:
 			self.remove_contour(path)
 		else:
-			self._contours[path] = contour
-			contour.name = "/".join(path)
+			self._set_contour(path, contour)
 
 	def remove_contour(self, path):
+		contour = self._contours[path]
+		del self._names[id(contour)]
 		del self._contours[path]
 		self._line_counts.remove(path)
 
@@ -269,8 +288,7 @@ class Regions:
 		i = 1 + self._max_labels[label]
 		self._max_labels[label] = i
 		path = label + (str(i),)
-		self._contours[path] = contour
-		contour.name = "/".join(path)
+		self._set_contour(path, contour)
 		return path
 
 	def sources(self, path):
@@ -457,17 +475,17 @@ class OverlapMerger:
 	def _merge(self, regions, contours):
 		graph = nx.Graph()
 		graph.add_nodes_from([
-			tuple(c.name.split("/")) for c in contours])
+			regions.contour_path(c) for c in contours])
 
 		tree = shapely.strtree.STRtree(contours)
 		for contour in contours:
 			for other in tree.query(contour):
-				if contour.name == other.name:
+				if regions.contour_path(contour) == regions.contour_path(other):
 					continue
 				if overlap_ratio(contour, other) > self._maximum_overlap:
 					graph.add_edge(
-						tuple(contour.name.split("/")),
-						tuple(other.name.split("/")))
+						regions.contour_path(contour),
+						regions.contour_path(other))
 
 		return regions.combine_from_graph(graph)
 
@@ -505,20 +523,20 @@ class DominanceOperator:
 		self._fringe = fringe
 		self._strategy = strategy
 
-	def _graph(self, contours):
+	def _graph(self, regions, contours):
 		graph = nx.Graph()
 		graph.add_nodes_from([
-			tuple(c.name.split("/")) for c in contours])
+			regions.contour_path(c) for c in contours])
 
 		tree = shapely.strtree.STRtree(contours)
 		for contour in contours:
 			for other in tree.query(contour):
-				if contour.name == other.name:
+				if regions.contour_path(contour) == regions.contour_path(other):
 					continue
 				if contour.intersects(other):
 					graph.add_edge(
-						tuple(contour.name.split("/")),
-						tuple(other.name.split("/")))
+						regions.contour_path(contour),
+						regions.contour_path(other))
 
 		return graph
 
@@ -635,7 +653,7 @@ class DominanceOperator:
 			v for k, v in regions.contours.items()
 			if self._filter(k)]
 
-		graph = self._graph(f_contours)
+		graph = self._graph(regions, f_contours)
 
 		for nodes in nx.connected_components(graph):
 			self._resolve(regions, nodes)
@@ -778,7 +796,7 @@ class SequentialMerger:
 	def _compute_order(self, regions, contours):
 		fringe = regions.geometry.rel_length(self._fringe)
 		order = polygon_order(list(regions.contours.items()), fringe=fringe)
-		selection = set(tuple(c.name.split("/")) for c in contours)
+		selection = set(regions.contour_path(c) for c in contours)
 		return [x for x in order if x in selection]
 
 	def _merge_pass(self, regions, by_predictors):
@@ -1085,7 +1103,7 @@ class RegionSeparatorDetector:
 			if self._filter(k))
 
 		for k, contour in contours.items():
-			assert contour.name == "/".join(k)
+			assert regions.contour_path(contour) == k
 
 		tree = shapely.strtree.STRtree(
 			list(contours.values()))
@@ -1100,7 +1118,7 @@ class RegionSeparatorDetector:
 			for contour in tree.query(sep):
 				sep_i = contour.intersection(sep)
 				if sep_i and sep_i.geom_type == "LineString":
-					path = tuple(contour.name.split("/"))
+					path = regions.contour_path(contour)
 					coords = np.array(sep_i.coords)
 					mx = np.median(coords[:, self._axis])
 					miny = np.min(coords[:, 1 - self._axis])
