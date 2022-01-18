@@ -57,10 +57,28 @@ We provide two options for Installing Origami:
 
 ### Basics
 
+If you have access to conda, it is easiest to use the following conda descriptions:
+
+* `requirements/origami_cpu.yml`
+* `requirements/origami_gpu.yml`
+
+as in, for example, `conda env create -f requirements/origami_cpu.yml`.
+
+Note that the requirements have been split into a GPU part (necessary for the Origami
+`segment` and `ocr` stages) and a CPU part (suitable for all other Origami stages).
+This simplifies dependency management with Tensorflow. Also, it is usually the split
+you would go for when running this system on a cluster that is separated into GPU and
+CPU nodes.
+
+# Without conda
+
+Take a look at `requirements/legacy` and try the following:
+
 ```
-conda create --name origami python=3.7 -c defaults -c conda-forge --file origami/requirements/conda.txt
+cd origami
+conda create --name origami python=3.7 -c defaults -c conda-forge --file requirements/legacy/conda.txt
 conda activate origami
-pip install -r origami/requirements/pip.txt
+pip install -r requirements/legacy/pip.txt
 ```
 
 ## Troubleshooting scikit-geometry 

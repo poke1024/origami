@@ -1,0 +1,43 @@
+name: origami_cpu
+channels:
+    - conda-forge
+    - defaults
+dependencies:
+    - python==3.9
+    - shapely>=1.7.0
+    - cython>=0.29
+    - networkx>=2.4
+    - pandas>=1.0.3
+    - scikit-geometry>=0.1.2
+    - numba>=0.49.1
+    - opencv
+    - pyside2
+    - pip
+    - pip:
+        - sympy>=1.5.1
+        - semantic-version>=2.8.5
+        - cached-property>=1.5.1
+        - cairocffi>=1.1.0
+        - click>=7.1.2
+        - portalocker>=1.7.0
+        - tqdm>=4.46.0
+        - matplotlib>=3.2.1
+        - atomicwrites>=1.4.0
+        - xlrd>=1.2.0
+        - calamari_ocr==1.0.5
+        - wquantiles>=0.5
+        - cppimport>=18.11
+        - tabulate>=0.8.7
+        - intervaltree>=3.0.2
+        - portion>=2.0.2
+        - pyvoronoi>=1.0.5
+        - sqlalchemy>=1.3.18
+        - pypng>=0.0.20
+        - psd-tools>=1.9.15
+        - rtree>=0.9.4
+        - humanize>=3.0.1
+        - psutil>=5.7.3
+        - scikit-learn>=0.24.1
+        - paramiko==2.7.2
+        - awesome-slugify==1.6.5
+        - tesserocr>=2.5.1
