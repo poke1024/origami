@@ -64,7 +64,8 @@ class ZipFileTarget:
 
 		with zipfile.ZipFile(src, "r") as zf:
 			for name in zf.namelist():
-				self.zf.write(basename + "_" + name, zf.read(name))
+				data = zf.read(name)
+				self.zf.writestr(basename + "_" + name, data)
 
 
 class NamingScheme(enum.Enum):
