@@ -2,13 +2,16 @@
 
 import click
 import PIL.Image
+import importlib
 
 from pathlib import Path
 from PIL.ImageQt import ImageQt
-try:
-	from PySide2 import QtGui, QtCore
-except ImportError:
-	from PySide6 import QtGui, QtCore
+
+
+if importlib.util.find_spec("PySide2"):
+	from PySide2 import QtGui
+else:
+	from PySide6 import QtGui
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output, Annotation

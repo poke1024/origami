@@ -6,12 +6,15 @@ import io
 import numpy as np
 import skimage.filters
 import PIL.ImageEnhance
+import importlib
 
 from pathlib import Path
-try:
-	from PySide2 import QtGui, QtCore
-except ImportError:
-	from PySide6 import QtGui, QtCore
+
+
+if importlib.util.find_spec("PySide2"):
+	from PySide2 import QtGui
+else:
+	from PySide6 import QtGui
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.processor import Processor

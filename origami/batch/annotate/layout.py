@@ -10,11 +10,14 @@ import collections
 import shapely.ops
 import shapely.geometry
 import numpy as np
+import importlib
 
 from pathlib import Path
-try:
+
+
+if importlib.util.find_spec("PySide2"):
 	from PySide2 import QtGui
-except ImportError:
+else:
 	from PySide6 import QtGui
 from PIL.ImageQt import ImageQt
 
