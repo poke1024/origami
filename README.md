@@ -31,6 +31,8 @@ We provide two options for Installing Origami:
 * Run in a Docker container.
 * Install and run directly on your machine (in a conda environment).
 
+Make sure you take a look at the scripts under `quickstart`.
+
 ## Installing with Docker
 
 1. Download and install Docker.
@@ -70,6 +72,8 @@ This simplifies dependency management with Tensorflow. Also, it is usually the s
 you would go for when running this system on a cluster that is separated into GPU and
 CPU nodes.
 
+Make sure you take a look at the scripts under `quickstart`.
+
 ### Without conda
 
 Take a look at `requirements/legacy` and try the following:
@@ -103,6 +107,8 @@ python -m origami.batch.detect.segment
 All command line tools will give you help information on their arguments when called as above.
 
 The given data path should contain processed pages as images. Generated data is put into the same path.  Images may be structured into any hierarchy of sub folders.
+
+Make sure you take a look at the scripts under `quickstart` for an example of a complete pipeline.
 
 # Batches
 
