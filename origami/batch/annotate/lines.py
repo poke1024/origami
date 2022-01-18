@@ -12,9 +12,9 @@ from pathlib import Path
 
 
 if importlib.util.find_spec("PySide2"):
-	from PySide2 import QtGui
+	from PySide2 import QtGui, QtCore
 else:
-	from PySide6 import QtGui
+	from PySide6 import QtGui, QtCore
 from PIL.ImageQt import ImageQt
 
 from origami.batch.core.processor import Processor
