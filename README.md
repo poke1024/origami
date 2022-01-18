@@ -55,7 +55,7 @@ We provide two options for Installing Origami:
 
 ## Installing Locally
 
-### Basics
+### With conda (recommended)
 
 If you have access to conda, it is easiest to use the following conda descriptions:
 
@@ -70,7 +70,7 @@ This simplifies dependency management with Tensorflow. Also, it is usually the s
 you would go for when running this system on a cluster that is separated into GPU and
 CPU nodes.
 
-# Without conda
+### Without conda
 
 Take a look at `requirements/legacy` and try the following:
 
