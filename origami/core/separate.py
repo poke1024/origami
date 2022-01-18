@@ -21,13 +21,14 @@ class Separators:
 			if p.type == PredictorType.SEPARATOR:
 				self._predictions[p.name] = p
 
+		self._names = {}
 		parsed_seps = collections.defaultdict(list)
 		all_seps = []
 		for k, geom in separators.items():
 			prediction_name, prediction_type = k[:2]
 			prediction = self._predictions[prediction_name]
 			parsed_seps[prediction.classes[prediction_type]].append(geom)
-			geom.name = "/".join(k)
+			self._names[id(geom)] = "/".join(k)
 			all_seps.append(geom)
 
 		self._by_path = separators
@@ -42,6 +43,9 @@ class Separators:
 	@property
 	def geoms(self):
 		return self._all_seps
+
+	def name(self, geom):
+		return self._names[id(geom)]
 
 	@cached_property
 	def _tree(self):
@@ -62,7 +66,7 @@ class Separators:
 		obstacles = set([self.label(o) for o in obstacles])
 		box = shapely.geometry.box(*bounds)
 		for sep in self.query(box):
-			if self.label(sep.name) in obstacles:
+			if self.label(self._name(sep)) in obstacles:
 				if box.intersects(sep):
 					return True
 		return False
@@ -101,6 +105,9 @@ class ObstacleSampler:
 			self._label("separators/T"): 1
 		}
 
+	def _name(self, geom):
+		return self._separators.name(geom)
+
 	def __call__(self, gap):
 		if gap.du < 0.5 or gap.dv < 0.5:
 			return 0
@@ -119,7 +126,7 @@ class ObstacleSampler:
 			if intersection is None or intersection.is_empty:
 				continue
 
-			label = self._label(sep.name)
+			label = self._label(self._name(sep))
 			sep_dir = self._direction[label]
 
 			for segment in extract_segments(intersection):
@@ -134,7 +141,7 @@ class ObstacleSampler:
 					vax = 1 - gap.axis
 					flow.addi(smin[vax], smax[vax] + 1, True)
 
-					flow_widths.append(self._separators.width(sep.name))
+					flow_widths.append(self._separators.width(self._name(sep)))
 					flow_width_weights.append(smax[vax] - smin[vax])
 
 		flow.merge_overlaps(strict=False)

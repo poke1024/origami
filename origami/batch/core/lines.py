@@ -36,7 +36,7 @@ def reliable_contours(blocks, free_lines, detected_lines):
 		block_lines[path[:3]].append(line)
 
 	for path, lines in block_lines.items():
-		hull = shapely.ops.cascaded_union([
+		hull = shapely.ops.unary_union([
 			line.image_space_polygon for line in lines]).convex_hull
 
 		for k in mapping[path]:

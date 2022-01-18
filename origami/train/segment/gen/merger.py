@@ -273,7 +273,7 @@ class HMerger:
 				if not self._can_merge(polygon1, polygon2):
 					continue
 
-				union = shapely.ops.cascaded_union([polygon1, polygon2]).convex_hull
+				union = shapely.ops.unary_union([polygon1, polygon2]).convex_hull
 
 				if not self._can_merge_into(union.buffer(-self._erosion)):
 					continue

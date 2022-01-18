@@ -74,7 +74,7 @@ def illustrations_stopper(gen, macro_regions):
 		background.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 3)), iterations=1)
 	# kernel, see SNP2436020X-19200601-1-0-0-0.03.
 	background = np.logical_and(background, np.logical_not(macro_regions))
-	return shapely.ops.cascaded_union(
+	return shapely.ops.unary_union(
 		mask_to_polygons(background, convex_hulls=True))
 
 
@@ -257,7 +257,7 @@ def text_polygons(gen):
 					else:
 						region["right"].append(m)
 				for k, v in region.items():
-					hulls.append(shapely.ops.cascaded_union(v).convex_hull)
+					hulls.append(shapely.ops.unary_union(v).convex_hull)
 			else:
 				hulls.append(hull)
 
@@ -275,7 +275,7 @@ def text_polygons(gen):
 
 	#return region.astype(np.uint8)
 
-	result = shapely.ops.cascaded_union(results).difference(illustrations)
+	result = shapely.ops.unary_union(results).difference(illustrations)
 	if result.geom_type == "Polygon":
 		return [result]
 	else:

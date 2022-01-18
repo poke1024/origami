@@ -233,9 +233,9 @@ class ShapelyBatchIntersections:
 					if inter and not inter.is_empty:
 						geom_type = inter.geom_type
 						if geom_type == "Point":
-							inter_pts.append(np.asarray(inter))
+							inter_pts.append(np.asarray(inter.coords))
 						elif geom_type == "MultiPoint":
-							inter_pts.extend(np.asarray(inter))
+							inter_pts.extend(np.asarray(inter.coords))
 						else:
 							raise RuntimeError(
 								"unexpected geom_type %s" % geom_type)

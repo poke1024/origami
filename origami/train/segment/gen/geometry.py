@@ -59,7 +59,7 @@ class Simplifier:
 
 
 def convex_hull(polygons):
-	return shapely.ops.cascaded_union(list(polygons)).convex_hull
+	return shapely.ops.unary_union(list(polygons)).convex_hull
 
 
 def regions_to_convex_hull(mask):
@@ -102,7 +102,7 @@ def merge_convex_all(polygons):
 					indices.append(j)
 
 		if len(indices) > 1:
-			merged = shapely.ops.cascaded_union(
+			merged = shapely.ops.unary_union(
 				[candidates[k] for k in indices]).convex_hull
 
 			for k in indices:

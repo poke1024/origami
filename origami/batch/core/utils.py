@@ -52,7 +52,7 @@ class TableRegionCombinator:
 			if len(v) == 1:
 				combined[k] = contours[v[0]]
 			else:
-				geom = shapely.ops.cascaded_union([
+				geom = shapely.ops.unary_union([
 					contours[x] for x in v])
 				if geom.geom_type != "Polygon":
 					geom = geom.convex_hull

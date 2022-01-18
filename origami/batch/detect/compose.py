@@ -25,7 +25,7 @@ def sorted_by_keys(x):
 def polygon_union(geoms):
 	if not geoms:
 		return None
-	shape = shapely.ops.cascaded_union(geoms)
+	shape = shapely.ops.unary_union(geoms)
 	if shape.geom_type != "Polygon":
 		shape = shape.convex_hull
 	if shape.is_empty or not shape.is_valid:

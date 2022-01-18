@@ -75,9 +75,9 @@ class Polyline:
 			np.max([l.width for l in lines]))
 
 	def affine_transform(self, matrix):
-		coords = shapely.affinity.affine_transform(
+		line_string = shapely.affinity.affine_transform(
 			self.line_string, matrix)
-		return Polyline(coords, self._width)
+		return Polyline(line_string.coords, self._width)
 
 	@property
 	def line_string(self):

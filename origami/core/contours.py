@@ -107,7 +107,7 @@ def selective_glue(polygons, glue_area):
 		if len(names) == 1:
 			results.append(polygons[list(names)[0]])
 		elif len(names) > 1:
-			results.append(shapely.ops.cascaded_union([
+			results.append(shapely.ops.unary_union([
 				polygons[i] for i in names
 			]).convex_hull)
 
@@ -385,7 +385,7 @@ class HeuristicFrameDetector:
 
 		if potential_noise and polygons:
 			items = dict()
-			items["frame"] = shapely.ops.cascaded_union(polygons).convex_hull
+			items["frame"] = shapely.ops.unary_union(polygons).convex_hull
 			for i, x in enumerate(potential_noise):
 				items[("noise", i)] = x
 

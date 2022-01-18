@@ -37,7 +37,7 @@ def non_overlapping_shapes(shapes):
 		if len(xs) == 1:
 			safe_shapes.append(lookup[list(xs)[0]])
 		else:
-			u = shapely.ops.cascaded_union([
+			u = shapely.ops.unary_union([
 				lookup[x] for x in xs])
 			assert u.geom_type == "Polygon"
 			safe_shapes.append(u)
@@ -55,7 +55,7 @@ def unsafe_neighbors(shapes, scale=100, border=1):
 	for i, shape in enumerate(shapes):
 		if shape.is_empty:
 			continue
-		coords = np.asarray(shape.exterior)
+		coords = np.asarray(shape.exterior.coords)
 		assert np.all(coords[0] == coords[-1])
 		for a, b in zip(coords, coords[1:]):
 			assert np.any(a != b)

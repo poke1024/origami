@@ -106,6 +106,7 @@ class Regions:
 
 		self._contours = dict(non_empty_contours(contours))
 		self._unmodified_contours = self._contours.copy()
+
 		for k, contour in contours:
 			contour.name = "/".join(k)
 		self._separators = separators
@@ -233,7 +234,7 @@ class Regions:
 
 		if agg_path is None:
 			s = list(sources)
-			i = np.argmax([contours[p].area for p in s])
+			i = int(np.argmax([contours[p].area for p in s]))
 			agg_path = s[i]
 
 		u = self.union([contours[p] for p in sources])
@@ -700,7 +701,7 @@ class UnionOperator:
 
 	def __call__(self, page, shapes):
 		if len(shapes) > 1:
-			u = shapely.ops.cascaded_union(shapes)
+			u = shapely.ops.unary_union(shapes)
 		else:
 			u = shapes[0]
 
@@ -839,7 +840,7 @@ class Shrinker:
 				try:
 					q = tree.query(contour)
 					if q:
-						bounds = shapely.ops.cascaded_union(q).bounds
+						bounds = shapely.ops.unary_union(q).bounds
 						box = shapely.geometry.box(*bounds)
 						modified = box.intersection(contour)
 						if modified.area >= min_area:
@@ -1191,7 +1192,7 @@ def divide(shape, dividers, axis):
 		for i in (0, 1):
 			geoms = bins[i]
 			if len(geoms) > 1:
-				part = shapely.ops.cascaded_union(geoms).convex_hull
+				part = shapely.ops.unary_union(geoms).convex_hull
 			elif len(geoms) == 1:
 				part = geoms[0]
 			else:

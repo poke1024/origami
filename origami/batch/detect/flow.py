@@ -160,7 +160,7 @@ class BorderEstimator:
 
 		regions = [b.image_space_polygon for b in blocks.values()]
 		separators = list(separators.values()) if separators else []
-		hull = shapely.ops.cascaded_union(
+		hull = shapely.ops.unary_union(
 			regions + separators).convex_hull
 
 		coords = np.array(list(hull.exterior.coords))
@@ -307,7 +307,7 @@ class FlowDetectionProcessor(Processor):
 				samples.append(np.array(pt) + np.array(pos), phi)
 
 		if True:  # processing all blocks at once takes 1/2 time.
-			region = shapely.ops.cascaded_union([
+			region = shapely.ops.unary_union([
 				block.text_area() for block in blocks.values()])
 
 			mask = Mask(region)
