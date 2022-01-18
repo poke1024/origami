@@ -365,7 +365,7 @@ def _extended_baseline(text_area, p, right, up, max_ext=3):
 		if new_length > old_length:
 			right = right * (new_length / old_length)
 	else:
-		logging.warning("no extended baseline for (%s, %s, %s) in area %s" % (
+		logging.info("no extended baseline for (%s, %s, %s) in area %s" % (
 			p, right, up, text_area.bounds))
 
 	return dict(p=p, right=right, up=up)
