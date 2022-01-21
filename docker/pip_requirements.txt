@@ -184,7 +184,7 @@ torchvision==0.10.0
 tqdm==4.47.0
 typer==0.3.2
 typing-extensions==3.10.0.0
-ujson==4.0.2
+ujson==5.1.0
 urllib3==1.26.6
 virtualenv==16.7.5
 wasabi==0.8.2
