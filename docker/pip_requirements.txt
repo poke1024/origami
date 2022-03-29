@@ -98,7 +98,7 @@ opencv-python-headless==4.2.0.32
 opt-einsum==3.3.0
 packaging==21.0
 pandas==0.25.3
-paramiko==2.6.0
+paramiko==2.10.1
 parso==0.7.1
 pathlib2==2.3.4
 pathy==0.6.0
