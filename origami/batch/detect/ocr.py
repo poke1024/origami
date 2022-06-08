@@ -7,8 +7,36 @@ import functools
 
 from pathlib import Path
 
-from calamari_ocr.ocr import Predictor, MultiPredictor
-from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
+import calamari_ocr
+
+calamari_version = tuple(map(int, calamari_ocr.__version__.split('.')))
+
+print(f"calamari_ocr version is {calamari_version}.")
+if calamari_version >= (2, 1):
+	from calamari_ocr.ocr.predict.predictor import Predictor, MultiPredictor, PredictorParams
+
+
+	def load_predictor(path, **kwargs):
+		return Predictor.from_checkpoint(
+			params=PredictorParams(),
+			checkpoint=path)
+
+
+	def load_multi_predictor(paths, **kwargs):
+		return MultiPredictor.from_paths(
+			checkpoints=paths,
+			params=PredictorParams()), None
+else:
+	from calamari_ocr.ocr import Predictor, MultiPredictor
+	from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
+
+
+	def load_predictor(path, **kwargs):
+		return Predictor(path, **kwargs)
+
+
+	def load_multi_predictor(paths, **kwargs):
+		return MultiPredictor(checkpoints=paths, **kwargs), ConfidenceVoter()
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
@@ -96,18 +124,15 @@ class OCRProcessor(Processor):
 		self._chunk_size = batch_size
 
 		if len(self._models) == 1:
-			self._predictor = Predictor(
-				str(self._models[0]), **batch_size_kwargs)
+			self._predictor = load_predictor(str(self._models[0]))
 			self._predict_kwargs = batch_size_kwargs
 			self._voter = None
 			self._line_height = int(self._predictor.model_params.line_height)
 		else:
 			logging.info("using Calamari voting with %d models." % len(self._models))
-			self._predictor = MultiPredictor(
-				checkpoints=[str(p) for p in self._models],
-				**batch_size_kwargs)
+			self._predictor, self._voter = load_multi_predictor(
+				[str(p) for p in self._models], **batch_size_kwargs)
 			self._predict_kwargs = dict()
-			self._voter = ConfidenceVoter()
 			self._line_height = int(self._predictor.predictors[0].model_params.line_height)
 
 	def artifacts(self):
@@ -158,7 +183,7 @@ class OCRProcessor(Processor):
 		else:
 			for i in range(0, len(images), chunk_size):
 				for prediction in self._predictor.predict_raw(
-					images[i:i + chunk_size], progress_bar=False, **self._predict_kwargs):
+						images[i:i + chunk_size], progress_bar=False, **self._predict_kwargs):
 
 					if self._voter is not None:
 						prediction = self._voter.vote_prediction_result(prediction)
