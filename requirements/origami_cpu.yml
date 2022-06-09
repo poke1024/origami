@@ -12,6 +12,7 @@ dependencies:
     - numba>=0.49.1
     - opencv
     - pyside2
+    - tesserocr>=2.5.1
     - pip
     - pip:
         - sympy>=1.5.1
@@ -40,4 +41,3 @@ dependencies:
         - scikit-learn>=0.24.1
         - paramiko==2.7.2
         - awesome-slugify==1.6.5
-        - tesserocr>=2.5.1

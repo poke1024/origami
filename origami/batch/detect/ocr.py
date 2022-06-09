@@ -4,39 +4,81 @@ import click
 import numpy as np
 import logging
 import functools
+import PIL.Image
 
 from pathlib import Path
 
-import calamari_ocr
 
-calamari_version = tuple(map(int, calamari_ocr.__version__.split('.')))
-
-print(f"calamari_ocr version is {calamari_version}.")
-if calamari_version >= (2, 1):
-	from calamari_ocr.ocr.predict.predictor import Predictor, MultiPredictor, PredictorParams
-
-
-	def load_predictor(path, **kwargs):
-		return Predictor.from_checkpoint(
-			params=PredictorParams(),
-			checkpoint=path)
+class CalamariPredictor:
+	def __init__(self, predictor):
+		self._predictor = predictor
+		
+	def __call__(self, images, **kwargs):
+		for prediction in self._predictor.predict_raw(
+			images, progress_bar=False, **kwargs):
+			yield prediction.sentence
 
 
-	def load_multi_predictor(paths, **kwargs):
-		return MultiPredictor.from_paths(
-			checkpoints=paths,
-			params=PredictorParams()), None
-else:
-	from calamari_ocr.ocr import Predictor, MultiPredictor
-	from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
+class VotedCalamariPredictor:
+	def __init__(self, predictor, voter):
+		self._predictor = predictor
+		self._voter = voter
+		
+	def __call__(self, images, **kwargs):
+		for prediction in self._predictor.predict_raw(
+			images, progress_bar=False, **kwargs):
+	   		yield self._voter.vote_prediction_result(prediction).sentence
 
 
-	def load_predictor(path, **kwargs):
-		return Predictor(path, **kwargs)
+class Calamari:
+	def __init__(self):
+		import calamari_ocr
+		calamari_version = tuple(map(int, calamari_ocr.__version__.split('.')))
+
+		print(f"calamari_ocr version is {calamari_version}.")
+		if calamari_version >= (2, 1):
+			from calamari_ocr.ocr.predict.predictor import Predictor, MultiPredictor, PredictorParams
+		
+			def load_predictor(path, **kwargs):
+				return CalamariPredictor(Predictor.from_checkpoint(
+					params=PredictorParams(),
+					checkpoint=path))
+		
+			def load_multi_predictor(paths, **kwargs):
+				return CalamariPredictor(MultiPredictor.from_paths(
+					checkpoints=paths,
+					params=PredictorParams()))
+					
+			self.load_predictor = load_predictor
+			self.load_multi_predictor = load_multi_predictor
+					
+		else:
+			from calamari_ocr.ocr import Predictor, MultiPredictor
+			from calamari_ocr.ocr.voting.confidence_voter import ConfidenceVoter
+		
+			def load_predictor(path, **kwargs):
+				return CalamariPredictor(Predictor(path, **kwargs))
+				
+			def load_multi_predictor(paths, **kwargs):
+				return VotedCalamariPredictor(
+					MultiPredictor(checkpoints=paths, **kwargs), ConfidenceVoter())
+
+			self.load_predictor = load_predictor
+			self.load_multi_predictor = load_multi_predictor
 
 
-	def load_multi_predictor(paths, **kwargs):
-		return MultiPredictor(checkpoints=paths, **kwargs), ConfidenceVoter()
+
+class TesseractPredictor:
+	def __init__(self, kwargs):
+		from tesserocr import PyTessBaseAPI, PSM
+		self._api = PyTessBaseAPI(psm=PSM.SINGLE_LINE, **kwargs)
+
+	def __call__(self, images, **kwargs):
+		for image in images:
+			self._api.SetImage(PIL.Image.fromarray(image))
+			self._api.Recognize()
+			yield self._api.GetUTF8Text()
+
 
 from origami.batch.core.processor import Processor
 from origami.batch.core.io import Artifact, Stage, Input, Output
@@ -48,14 +90,16 @@ class OCRProcessor(Processor):
 	def __init__(self, options):
 		super().__init__(options)
 		self._options = options
+		self._backend = self._options["backend"]
 		self._ocr = self._options["ocr"]
+		self._predictor = None
 
 		if self._ocr == "FAKE":
 			self._model_path = None
 			self._models = []
 			self._line_height = 48
 			self._chunk_size = 1
-		else:
+		elif self._backend == "calamari":
 			if not options["model"]:
 				raise click.BadParameter(
 					"Please specify a model path", param="model")
@@ -71,9 +115,18 @@ class OCRProcessor(Processor):
 
 			self._line_height = None
 			self._chunk_size = None
-
-		self._predictor = None
-		self._voter = None
+		elif self._backend == "tesseract":
+			kwargs = {}
+			if self._options["tess_data"]:
+				kwargs["path"] = self._options["tess_data"]
+			if self._options["tess_lang"]:
+				kwargs["lang"] = self._options["tess_lang"]
+			self._predictor = TesseractPredictor(kwargs)
+			self._predict_kwargs = {}
+			self._line_height = 48
+			self._chunk_size = 1
+		else:
+			raise RuntimeError(f"unsupported ocr backend {self._backend}")
 
 		self._ignored = RegionsFilter(options["ignore"])
 
@@ -84,6 +137,29 @@ class OCRProcessor(Processor):
 	def options(f):
 		options = [
 			click.option(
+				'-a', '--backend',
+				required=False,
+				type=click.Choice(['calamari', 'tesseract'], case_sensitive=False),
+				default='calamari',
+				help='ocr backend to use'),
+			click.option(
+				'-m', '--model',
+				required=False,
+				type=click.Path(exists=True),
+				help='path that contains Calamari model(s)'),
+			click.option(
+				'--tess-lang',
+				required=False,
+				default='eng',
+				type=str,
+				help='language to use when using Tesseract'),
+			click.option(
+				'--tess-data',
+				required=False,
+				default='',
+				type=str,
+				help='tessdata path to use when using Tesseract'),
+			click.option(
 				'--legacy-model',
 				is_flag=True,
 				default=False,
@@ -92,7 +168,8 @@ class OCRProcessor(Processor):
 				'-b', '--batch-size',
 				type=int,
 				default=-1,
-				required=False),
+				required=False,
+				help='batch size to use for Calamari'),
 			click.option(
 				'--ignore',
 				type=str,
@@ -109,7 +186,10 @@ class OCRProcessor(Processor):
 	def processor_name(self):
 		return __loader__.name
 
-	def _load_models(self):
+	def _load_calamari_models(self):
+		if self._backend != 'calamari':
+			return
+		
 		if self._predictor is not None:
 			return
 
@@ -122,15 +202,16 @@ class OCRProcessor(Processor):
 		else:
 			batch_size_kwargs = dict()
 		self._chunk_size = batch_size
+		
+		calamari = Calamari()
 
 		if len(self._models) == 1:
-			self._predictor = load_predictor(str(self._models[0]))
+			self._predictor = calamari.load_predictor(str(self._models[0]))
 			self._predict_kwargs = batch_size_kwargs
-			self._voter = None
 			self._line_height = int(self._predictor.model_params.line_height)
 		else:
 			logging.info("using Calamari voting with %d models." % len(self._models))
-			self._predictor, self._voter = load_multi_predictor(
+			self._predictor = calamari.load_multi_predictor(
 				[str(p) for p in self._models], **batch_size_kwargs)
 			self._predict_kwargs = dict()
 			self._line_height = int(self._predictor.predictors[0].model_params.line_height)
@@ -144,7 +225,7 @@ class OCRProcessor(Processor):
 		]
 
 	def process(self, page_path: Path, reliable, output):
-		self._load_models()
+		self._load_calamari_models()
 
 		lines = reliable.lines.by_path
 
@@ -182,12 +263,9 @@ class OCRProcessor(Processor):
 				texts.append("text for %s." % name)
 		else:
 			for i in range(0, len(images), chunk_size):
-				for prediction in self._predictor.predict_raw(
-						images[i:i + chunk_size], progress_bar=False, **self._predict_kwargs):
-
-					if self._voter is not None:
-						prediction = self._voter.vote_prediction_result(prediction)
-					texts.append(prediction.sentence)
+				for text in self._predictor(
+						images[i:i + chunk_size], **self._predict_kwargs):
+					texts.append(text)
 
 		with output.ocr() as zf:
 			for name, text in zip(names, texts):
@@ -200,11 +278,6 @@ class OCRProcessor(Processor):
 @Processor.options
 @LineExtractor.options
 @OCRProcessor.options
-@click.option(
-	'-m', '--model',
-	required=False,
-	type=str,
-	help='path that contains Calamari model(s)')
 def make_processor(**kwargs):
 	return OCRProcessor(kwargs)
 
@@ -214,11 +287,6 @@ def make_processor(**kwargs):
 	'data_path',
 	type=click.Path(exists=True),
 	required=True)
-@click.option(
-	'-m', '--model',
-	required=False,
-	type=click.Path(exists=True),
-	help='path that contains Calamari model(s)')
 @Processor.options
 @LineExtractor.options
 @OCRProcessor.options
