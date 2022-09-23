@@ -115,7 +115,7 @@ portion==2.0.2
 preshed==3.0.2
 prettytable==0.7.2
 prompt-toolkit==3.0.7
-protobuf==3.17.3
+protobuf==3.18.3
 psutil==5.8.0
 ptyprocess==0.6.0
 py==1.8.0
