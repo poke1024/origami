@@ -172,7 +172,7 @@ SQLAlchemy==1.4.23
 sympy==1.5.1
 tabulate==0.8.7
 tensorboard==2.1.1
-tensorflow==2.0.0
+tensorflow==2.9.3
 tensorflow-determinism==0.3.0
 tensorflow-estimator==2.1.0
 termcolor==1.1.0
