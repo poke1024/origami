@@ -1,3 +1,13 @@
+🛑🛑🛑 IMPORTANT NOTE FROM 2022/04/24: ORIGAMI IS NOW LEGACY 🛑🛑🛑
+
+Origami's segmentation model was trained on an old version of TensorFlow. To run it, you need to install
+a working version of TensorFlow that is no higher than 2.1.x. This proves pretty unfeasible now on
+basically all current OS / CPU / GPU configurations.
+
+Origami's OCR uses Calamari v1, which proves similarly difficult to install now.
+
+Therefore, Origami has been retired. The repository status has been changed to "archive".
+
 # Origami
 
 Origami is a self-contained suite of batches and tools for OCR processing of historical newspapers.
