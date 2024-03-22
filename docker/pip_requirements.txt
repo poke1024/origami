@@ -189,7 +189,7 @@ urllib3==1.26.6
 virtualenv==16.7.5
 wasabi==0.8.2
 wcwidth==0.1.7
-Werkzeug==2.0.1
+Werkzeug==2.2.3
 wquantiles==0.5
 wrapt==1.12.1
 xlrd==1.2.0
